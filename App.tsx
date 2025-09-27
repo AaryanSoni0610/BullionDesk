@@ -12,6 +12,11 @@ import { EntryScreen } from './src/screens/EntryScreen';
 import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
 import { Customer, TransactionEntry } from './src/types';
+import { DatabaseService } from './src/services/database';
+import { DatabaseTestUtils } from './src/utils/databaseTest';
+
+// Clear database on app start (development/testing only)
+DatabaseService.clearAllData().then(() => console.log('Database cleared for fresh start'));
 
 const Tab = createBottomTabNavigator();
 
@@ -24,6 +29,7 @@ export default function App() {
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSelectCustomer = (customer: Customer) => {
     setCustomerModalVisible(false);
@@ -32,17 +38,32 @@ export default function App() {
     setAppState('entry');
   };
 
-  const handleCreateCustomer = (name: string) => {
+  const handleCreateCustomer = async (name: string) => {
     setCustomerModalVisible(false);
-    // Create new customer
-    const newCustomer: Customer = {
-      id: Date.now().toString(),
-      name,
-      balance: 0,
-    };
-    setCurrentCustomer(newCustomer);
-    setCurrentEntries([]);
-    setAppState('entry');
+    try {
+      // Create new customer
+      const newCustomer: Customer = {
+        id: Date.now().toString(),
+        name,
+        balance: 0,
+      };
+      
+      // Save customer to database
+      const saved = await DatabaseService.saveCustomer(newCustomer);
+      if (saved) {
+        console.log('New customer created:', newCustomer);
+        setCurrentCustomer(newCustomer);
+        setCurrentEntries([]);
+        setAppState('entry');
+      } else {
+        setSnackbarMessage('Failed to create customer');
+        setSnackbarVisible(true);
+      }
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      setSnackbarMessage('Error creating customer');
+      setSnackbarVisible(true);
+    }
   };
 
   const handleBackToHome = () => {
@@ -70,16 +91,47 @@ export default function App() {
     }
   };
 
-  const handleSaveTransaction = () => {
-    // TODO: Save to database
-    console.log('Saving transaction:', { customer: currentCustomer, entries: currentEntries });
-    
-    // Show success message
-    setSnackbarMessage('Transaction saved successfully!');
-    setSnackbarVisible(true);
-    
-    // Navigate back to home
-    handleBackToHome();
+  const handleSaveTransaction = async (receivedAmount: number = 0) => {
+    if (!currentCustomer || currentEntries.length === 0 || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+    console.log('Saving transaction:', { 
+      customer: currentCustomer, 
+      entries: currentEntries,
+      receivedAmount 
+    });
+
+    try {
+      // Save transaction to database
+      const result = await DatabaseService.saveTransaction(
+        currentCustomer, 
+        currentEntries, 
+        receivedAmount
+      );
+
+      if (result.success) {
+        // Show success message
+        setSnackbarMessage('Transaction saved successfully!');
+        setSnackbarVisible(true);
+        
+        // Navigate back to home
+        handleBackToHome();
+        console.log('Transaction saved with ID:', result.transactionId);
+      } else {
+        // Show error message
+        setSnackbarMessage(result.error || 'Failed to save transaction');
+        setSnackbarVisible(true);
+        console.error('Failed to save transaction:', result.error);
+      }
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+      setSnackbarMessage('Error saving transaction');
+      setSnackbarVisible(true);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const showFAB = appState === 'home' || appState === 'settlement';

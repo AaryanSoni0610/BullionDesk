@@ -20,6 +20,7 @@ import {
 } from 'react-native-paper';
 import { Customer } from '../types';
 import { theme } from '../theme';
+import { DatabaseService } from '../services/database';
 
 interface CustomerSelectionModalProps {
   visible: boolean;
@@ -57,31 +58,34 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     }
   }, [visible, slideAnim]);
 
-  // Mock data - in real app, this would come from storage/API
+  // Load customers from database
   useEffect(() => {
-    const mockCustomers: Customer[] = [
-      {
-        id: '1',
-        name: 'John Doe',
-        lastTransaction: '2024-01-15',
-        balance: 5000, // Customer has credit
-      },
-      {
-        id: '2',
-        name: 'Jane Smith',
-        lastTransaction: '2024-01-10',
-        balance: -2500, // Customer owes debt
-      },
-      {
-        id: '3',
-        name: 'Robert Johnson',
-        lastTransaction: '2024-01-08',
-        balance: 0,
-      },
-    ];
-    setCustomers(mockCustomers);
-    setRecentCustomers(mockCustomers.slice(0, 3)); // Show recent customers
-  }, []);
+    const loadCustomers = async () => {
+      try {
+        const allCustomers = await DatabaseService.getAllCustomers();
+        setCustomers(allCustomers);
+        
+        // Sort by last transaction date for recent customers
+        const sortedByTransaction = [...allCustomers].sort((a, b) => {
+          if (!a.lastTransaction && !b.lastTransaction) return 0;
+          if (!a.lastTransaction) return 1;
+          if (!b.lastTransaction) return -1;
+          return new Date(b.lastTransaction).getTime() - new Date(a.lastTransaction).getTime();
+        });
+        
+        setRecentCustomers(sortedByTransaction.slice(0, 5)); // Show 5 most recent
+      } catch (error) {
+        console.error('Error loading customers:', error);
+        // Fallback to empty state
+        setCustomers([]);
+        setRecentCustomers([]);
+      }
+    };
+
+    if (visible) {
+      loadCustomers();
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -125,9 +129,9 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   };
 
   const formatBalance = (balance: number) => {
-    if (balance === 0) return 'No balance';
-    const sign = balance > 0 ? '+' : '-';
-    return `${sign}₹${Math.abs(balance).toLocaleString()}`;
+    if (balance === 0) return 'Balance: ₹0';
+    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`;
+    return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
   };
 
   const getBalanceColor = (balance: number) => {
@@ -149,8 +153,22 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   const renderCustomerItem = ({ item }: { item: Customer }) => (
     <List.Item
       title={item.name}
-      description={`${formatLastTransaction(item.lastTransaction)}\nBalance: ${formatBalance(item.balance)}`}
-      descriptionNumberOfLines={2}
+      description={() => (
+        <View>
+          <Text variant="bodySmall" style={styles.customerDescription}>
+            {formatLastTransaction(item.lastTransaction)}
+          </Text>
+          <Text 
+            variant="bodySmall" 
+            style={[
+              styles.customerDescription,
+              { color: getBalanceColor(item.balance) }
+            ]}
+          >
+            {formatBalance(item.balance)}
+          </Text>
+        </View>
+      )}
       left={() => (
         <Avatar.Text
           size={40}
@@ -161,10 +179,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       onPress={() => handleSelectCustomer(item)}
       style={styles.customerItem}
       titleStyle={styles.customerName}
-      descriptionStyle={[
-        styles.customerDescription,
-        { color: getBalanceColor(item.balance) }
-      ]}
     />
   );
 

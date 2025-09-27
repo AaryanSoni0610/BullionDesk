@@ -37,14 +37,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [moneyAmount, setMoneyAmount] = useState('');
   const [moneyType, setMoneyType] = useState<'debt' | 'balance'>('debt');
 
-  // Mock prices - in real app, these would come from settings/API
-  const mockPrices = {
-    gold999: 68500,
-    gold995: 68000,
-    silver: 80000,
-    silver98: 80000, // Default silver for calculations
-    silver96: 76000,
-  };
+
 
   const itemOptions = [
     { label: 'Gold 999', value: 'gold999' },
@@ -74,9 +67,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (itemType === 'rupu') {
       const touchNum = parseFloat(touch) || 0;
       const pureWeight = (weightNum * touchNum) / 100;
-      // Use Silver 98 price as default for Rupu money calculation
-      const defaultPrice = priceNum || mockPrices.silver98;
-      return (pureWeight * defaultPrice) / 1000; // Silver price is per kg
+      return (pureWeight * priceNum) / 1000; // Silver price is per kg
     }
 
     if (itemType.startsWith('gold')) {
@@ -91,24 +82,40 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   };
 
   const subtotal = calculateSubtotal();
-  const isValid = itemType === 'money' ? 
-    parseFloat(moneyAmount) > 0 : 
-    parseFloat(weight) > 0 && parseFloat(price) > 0;
+  const isValid = () => {
+    if (itemType === 'money') {
+      return moneyAmount.trim() !== '' && parseFloat(moneyAmount) > 0;
+    }
+    
+    const hasRequiredFields = weight.trim() !== '' && parseFloat(weight) > 0 && 
+                              price.trim() !== '' && parseFloat(price) > 0;
+    
+    if (itemType === 'rani' || itemType === 'rupu') {
+      return hasRequiredFields && touch.trim() !== '' && parseFloat(touch) > 0;
+    }
+    
+    return hasRequiredFields;
+  };
 
   const handleAddEntry = () => {
-    if (!isValid) return;
+    if (!isValid()) return;
 
     const entry: TransactionEntry = {
       id: Date.now().toString(),
       type: transactionType,
       itemType,
-      weight: parseFloat(weight) || undefined,
-      price: parseFloat(price) || undefined,
-      touch: parseFloat(touch) || undefined,
-      extraPerKg: parseFloat(extraPerKg) || undefined,
-      actualGoldGiven: parseFloat(actualGoldGiven) || undefined,
+      weight: weight.trim() ? parseFloat(weight) : undefined,
+      price: price.trim() ? parseFloat(price) : undefined,
+      touch: touch.trim() ? parseFloat(touch) : undefined,
+      extraPerKg: extraPerKg.trim() ? parseFloat(extraPerKg) : undefined,
+      pureWeight: itemType === 'rani' && weight.trim() && touch.trim() ? 
+        (parseFloat(weight) * parseFloat(touch)) / 100 : 
+        itemType === 'rupu' && weight.trim() && touch.trim() ?
+        (parseFloat(weight) * parseFloat(touch)) / 100 : 
+        undefined,
+      actualGoldGiven: actualGoldGiven.trim() ? parseFloat(actualGoldGiven) : undefined,
       moneyType: itemType === 'money' ? moneyType : undefined,
-      amount: parseFloat(moneyAmount) || undefined,
+      amount: itemType === 'money' && moneyAmount.trim() ? parseFloat(moneyAmount) : undefined,
       subtotal,
     };
 
@@ -249,7 +256,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
     // Regular Gold/Silver
     const unit = itemType.startsWith('gold') ? '10g' : 'kg';
-    const defaultPrice = mockPrices[itemType as keyof typeof mockPrices] || 0;
     
     return (
       <>
@@ -267,7 +273,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           onChangeText={setPrice}
           mode="outlined"
           keyboardType="numeric"
-          placeholder={defaultPrice.toString()}
           style={styles.input}
         />
       </>
@@ -276,15 +281,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* App Title Bar */}
+      {/* Page Title Bar */}
       <Surface style={styles.appTitleBar} elevation={2}>
         <View style={styles.appTitleContent}>
-          <Image 
-            source={require('../../assets/icon.png')} 
-            style={styles.appIcon}
-          />
           <Text variant="titleLarge" style={styles.appTitle}>
-            BullionDesk
+            Transaction Entry
           </Text>
         </View>
       </Surface>
@@ -347,13 +348,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               onPress={() => {
                 setItemType(option.value as ItemType);
                 setMenuVisible(false);
-                // Auto-fill price for regular metals and Rupu (Silver 98 default)
-                if (mockPrices[option.value as keyof typeof mockPrices]) {
-                  setPrice(mockPrices[option.value as keyof typeof mockPrices].toString());
-                } else if (option.value === 'rupu') {
-                  // Set Silver 98 price as default for Rupu
-                  setPrice(mockPrices.silver98.toString());
-                }
               }}
               title={option.label}
             />
@@ -390,7 +384,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           <Button
             mode="contained"
             onPress={handleAddEntry}
-            disabled={!isValid}
+            disabled={!isValid()}
             style={[styles.actionButton, { flex: 0.45 }]}
           >
             Add Entry

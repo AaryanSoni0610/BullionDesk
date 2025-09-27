@@ -20,7 +20,7 @@ interface SettlementSummaryScreenProps {
   onBack: () => void;
   onAddMoreEntry: () => void;
   onDeleteEntry: (entryId: string) => void;
-  onSaveTransaction: () => void;
+  onSaveTransaction: (receivedAmount?: number) => void;
 }
 
 export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = ({
@@ -67,16 +67,16 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   };
 
   const calculateTotals = () => {
-    let totalGive = 0;
-    let totalTake = 0;
-    const giveItems: { item: string; amount: string }[] = [];
-    const takeItems: { item: string; amount: string }[] = [];
+    let netMoneyFlow = 0; // Net money from merchant perspective: positive = merchant takes money, negative = merchant gives money
+    const giveItems: { item: string; amount: string }[] = []; // What merchant gives to customer
+    const takeItems: { item: string; amount: string }[] = []; // What merchant takes from customer
 
     entries.forEach(entry => {
       if (entry.type === 'sell') {
-        totalGive += Math.abs(entry.subtotal);
+        // Merchant sells: takes money (+), gives goods
+        netMoneyFlow += Math.abs(entry.subtotal);
         if (entry.itemType === 'money') {
-          giveItems.push({ item: 'Money', amount: `₹${entry.amount?.toLocaleString()}` });
+          takeItems.push({ item: 'Money', amount: `₹${entry.amount?.toLocaleString()}` });
         } else {
           giveItems.push({ 
             item: getItemDisplayName(entry), 
@@ -84,9 +84,10 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           });
         }
       } else {
-        totalTake += Math.abs(entry.subtotal);
+        // Merchant purchases: gives money (-), takes goods
+        netMoneyFlow -= Math.abs(entry.subtotal);
         if (entry.itemType === 'money') {
-          takeItems.push({ item: 'Money', amount: `₹${entry.amount?.toLocaleString()}` });
+          giveItems.push({ item: 'Money', amount: `₹${entry.amount?.toLocaleString()}` });
         } else {
           takeItems.push({ 
             item: getItemDisplayName(entry), 
@@ -96,25 +97,28 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       }
     });
 
-    const netAmount = totalGive - totalTake;
+    const netAmount = netMoneyFlow; // Positive = customer owes merchant, Negative = merchant owes customer
     
-    return { totalGive, totalTake, netAmount, giveItems, takeItems };
+    return { 
+      totalGive: netMoneyFlow < 0 ? Math.abs(netMoneyFlow) : 0, 
+      totalTake: netMoneyFlow > 0 ? netMoneyFlow : 0, 
+      netAmount, 
+      giveItems, 
+      takeItems 
+    };
   };
 
   const { totalGive, totalTake, netAmount, giveItems, takeItems } = calculateTotals();
   const received = parseFloat(receivedAmount) || 0;
-  const finalBalance = netAmount - received;
+  const finalBalance = netAmount - received; // Net amount customer owes - what they paid
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">
       <Card.Content style={styles.entryCardContent}>
         <View style={styles.entryHeader}>
           <View style={styles.entryTitleContainer}>
-            <Text variant="titleSmall" style={styles.entryTitle}>
-              Entry {index + 1}
-            </Text>
             <Text 
-              variant="bodyMedium" 
+              variant="titleSmall" 
               style={[
                 styles.entryType,
                 { color: entry.type === 'sell' ? theme.colors.sellColor : theme.colors.primary }
@@ -146,15 +150,11 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* App Title Bar */}
+      {/* Page Title Bar */}
       <Surface style={styles.appTitleBar} elevation={2}>
         <View style={styles.appTitleContent}>
-          <Image 
-            source={require('../../assets/icon.png')} 
-            style={styles.appIcon}
-          />
           <Text variant="titleLarge" style={styles.appTitle}>
-            BullionDesk
+            Transaction Summary
           </Text>
         </View>
       </Surface>
@@ -197,11 +197,19 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               {/* Give Section */}
               <View style={styles.summarySection}>
                 <View style={styles.sectionHeader}>
-                  <IconButton 
-                    icon="arrow-up-circle" 
-                    iconColor={theme.colors.primary}
-                    size={20}
-                  />
+                  <View style={styles.iconContainer}>
+                    <IconButton 
+                      icon="hand-coin-outline" 
+                      iconColor={theme.colors.primary}
+                      size={20}
+                    />
+                    <IconButton 
+                      icon="arrow-up" 
+                      iconColor={theme.colors.primary}
+                      size={16}
+                      style={styles.arrowIcon}
+                    />
+                  </View>
                   <Text variant="titleSmall" style={styles.sectionTitle}>Give</Text>
                 </View>
                 {giveItems.map((item, index) => (
@@ -223,11 +231,19 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               {/* Take Section */}
               <View style={styles.summarySection}>
                 <View style={styles.sectionHeader}>
-                  <IconButton 
-                    icon="arrow-down-circle" 
-                    iconColor={theme.colors.sellColor}
-                    size={20}
-                  />
+                  <View style={styles.iconContainer}>
+                    <IconButton 
+                      icon="hand-coin-outline" 
+                      iconColor={theme.colors.sellColor}
+                      size={20}
+                    />
+                    <IconButton 
+                      icon="arrow-down" 
+                      iconColor={theme.colors.sellColor}
+                      size={16}
+                      style={styles.arrowIcon}
+                    />
+                  </View>
                   <Text variant="titleSmall" style={styles.sectionTitle}>Take</Text>
                 </View>
                 {takeItems.map((item, index) => (
@@ -256,7 +272,9 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         <Card style={styles.totalCard} mode="contained">
           <Card.Content>
             <View style={styles.totalSection}>
-              <Text variant="titleMedium">Net Total:</Text>
+              <Text variant="titleMedium">
+                {netAmount >= 0 ? 'Customer Gets:' : 'Customer Owes:'}
+              </Text>
               <Text 
                 variant="titleMedium" 
                 style={[
@@ -285,7 +303,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
             {/* Final Balance */}
             <View style={styles.balanceSection}>
               <Text variant="titleMedium">
-                {finalBalance > 0 ? 'Debt:' : finalBalance < 0 ? 'Balance:' : 'Settled:'}
+                {finalBalance > 0 ? 'Debt:' : 'Balance:'}
               </Text>
               <Text 
                 variant="titleMedium" 
@@ -313,7 +331,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         <Button
           mode="contained"
           icon="check"
-          onPress={onSaveTransaction}
+          onPress={() => onSaveTransaction(received)}
           disabled={entries.length === 0}
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
@@ -449,6 +467,14 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontWeight: 'bold',
     marginLeft: theme.spacing.xs,
+  },
+  iconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  arrowIcon: {
+    margin: -8,
+    marginLeft: -12,
   },
   summaryItem: {
     marginLeft: theme.spacing.md,

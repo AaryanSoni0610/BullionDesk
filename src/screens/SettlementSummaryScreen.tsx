@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, Image } from 'react-native';
 import {
   Surface,
@@ -9,8 +9,12 @@ import {
   FAB,
   Divider,
   TextInput,
+  HelperText,
+  Snackbar,
+  Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Customer, TransactionEntry } from '../types';
 
@@ -20,6 +24,7 @@ interface SettlementSummaryScreenProps {
   onBack: () => void;
   onAddMoreEntry: () => void;
   onDeleteEntry: (entryId: string) => void;
+  onEditEntry: (entryId: string) => void;
   onSaveTransaction: (receivedAmount?: number) => void;
 }
 
@@ -29,9 +34,46 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   onBack,
   onAddMoreEntry,
   onDeleteEntry,
+  onEditEntry,
   onSaveTransaction,
 }) => {
   const [receivedAmount, setReceivedAmount] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
+  
+  // Enhanced payment validation
+  const validatePaymentAmount = (value: string, maxAmount: number): string => {
+    if (!value.trim()) return ''; // Allow empty for partial payments
+    const num = parseFloat(value);
+    if (isNaN(num)) return 'Please enter a valid amount';
+    if (num < 0) return 'Amount cannot be negative';
+    if (num > maxAmount * 1.1) return `Amount seems too high. Maximum expected: ₹${maxAmount.toLocaleString()}`;
+    if (num > 10000000) return 'Amount cannot exceed ₹1,00,00,000';
+    return '';
+  };
+  
+  // Debounced validation
+  const debouncedValidatePayment = useCallback(
+    debounce((value: string, maxAmount: number) => {
+      const error = validatePaymentAmount(value, maxAmount);
+      setPaymentError(error);
+    }, 300),
+    []
+  );
+  
+  function debounce<T extends (...args: any[]) => any>(
+    func: T,
+    wait: number
+  ): (...args: Parameters<T>) => void {
+    let timeout: NodeJS.Timeout;
+    return (...args: Parameters<T>) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
+  }
   
   const getItemDisplayName = (entry: TransactionEntry): string => {
     const typeMap: Record<string, string> = {
@@ -48,7 +90,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   };
 
   const formatEntryDetails = (entry: TransactionEntry): string => {
-    if (entry.itemType === 'money') {
+    if (entry.type === 'money') {
       const type = entry.moneyType === 'debt' ? 'Debt' : 'Balance';
       return `${type}: ₹${entry.amount?.toLocaleString()}`;
     }
@@ -75,7 +117,8 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       if (entry.type === 'sell') {
         // Merchant sells: takes money (+), gives goods
         netMoneyFlow += Math.abs(entry.subtotal);
-        if (entry.itemType === 'money') {
+        if (entry.amount) {
+          // This is a money entry
           takeItems.push({ item: 'Money', amount: `₹${entry.amount?.toLocaleString()}` });
         } else {
           giveItems.push({ 
@@ -86,7 +129,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       } else {
         // Merchant purchases: gives money (-), takes goods
         netMoneyFlow -= Math.abs(entry.subtotal);
-        if (entry.itemType === 'money') {
+        if (entry.type === 'money') {
           giveItems.push({ item: 'Money', amount: `₹${entry.amount?.toLocaleString()}` });
         } else {
           takeItems.push({ 
@@ -110,7 +153,39 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
   const { totalGive, totalTake, netAmount, giveItems, takeItems } = calculateTotals();
   const received = parseFloat(receivedAmount) || 0;
-  const finalBalance = netAmount - received; // Net amount customer owes - what they paid
+  
+  // Enhanced save transaction with validation
+  const handleSaveTransaction = async () => {
+    const validationError = validatePaymentAmount(receivedAmount, Math.abs(netAmount));
+    if (validationError) {
+      setPaymentError(validationError);
+      setSnackbarMessage('Please fix payment amount errors');
+      setSnackbarVisible(true);
+      return;
+    }
+    
+    setIsSaving(true);
+    try {
+      await onSaveTransaction(received);
+      setSnackbarMessage('Transaction saved successfully');
+      setSnackbarVisible(true);
+    } catch (error) {
+      setSnackbarMessage('Failed to save transaction. Please try again.');
+      setSnackbarVisible(true);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  // Calculate final balance based on money flow direction
+  let finalBalance;
+  if (netAmount > 0) {
+    // Inward flow: Customer pays merchant
+    finalBalance = netAmount - received; // Positive = debt, Negative = balance
+  } else {
+    // Outward flow: Merchant pays customer
+    finalBalance = netAmount + received; // Negative = still owes, Positive = overpaid
+  }
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">
@@ -127,13 +202,22 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               {entry.type === 'sell' ? 'Sell' : 'Purchase'} - {getItemDisplayName(entry)}
             </Text>
           </View>
-          <IconButton
-            icon="delete"
-            iconColor={theme.colors.error}
-            size={20}
-            onPress={() => onDeleteEntry(entry.id)}
-            style={styles.deleteButton}
-          />
+          <View style={styles.actionButtons}>
+            <IconButton
+              icon="pencil"
+              iconColor={theme.colors.primary}
+              size={20}
+              onPress={() => onEditEntry(entry.id)}
+              style={styles.editButton}
+            />
+            <IconButton
+              icon="delete"
+              iconColor={theme.colors.error}
+              size={20}
+              onPress={() => onDeleteEntry(entry.id)}
+              style={styles.deleteButton}
+            />
+          </View>
         </View>
         
         <Divider style={styles.entryDivider} />
@@ -162,14 +246,23 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       {/* Customer Header */}
       <Surface style={styles.customerHeader} elevation={1}>
         <View style={styles.customerHeaderContent}>
-          <Button
-            icon="arrow-left"
-            mode="text"
-            onPress={onBack}
-            contentStyle={styles.backButton}
-          >
-            {customer.name}
-          </Button>
+          <View style={styles.customerHeaderRow}>
+            <Button
+              mode="text"
+              onPress={onBack}
+              contentStyle={styles.backButton}
+              labelStyle={styles.customerNameLabel}
+            >
+              {customer.name}
+            </Button>
+            <IconButton
+              icon="close"
+              onPress={onBack}
+              iconColor={theme.colors.onError}
+              containerColor={theme.colors.error}
+              style={styles.crossButton}
+            />
+          </View>
         </View>
       </Surface>
 
@@ -273,13 +366,13 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           <Card.Content>
             <View style={styles.totalSection}>
               <Text variant="titleMedium">
-                {netAmount >= 0 ? 'Customer Gets:' : 'Customer Owes:'}
+                {netAmount > 0 ? 'Customer Pays:' : 'Customer Gets:'}
               </Text>
               <Text 
                 variant="titleMedium" 
                 style={[
                   styles.totalAmount,
-                  { color: netAmount >= 0 ? theme.colors.sellColor : theme.colors.primary }
+                  { color: netAmount > 0 ? theme.colors.sellColor : theme.colors.primary }
                 ]}
               >
                 ₹{Math.abs(netAmount).toLocaleString()}
@@ -288,31 +381,84 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
             <Divider style={styles.totalDivider} />
 
-            {/* Received Money Input */}
-            <TextInput
-              label="Received Money (₹)"
-              value={receivedAmount}
-              onChangeText={setReceivedAmount}
-              mode="outlined"
-              keyboardType="numeric"
-              style={styles.receivedInput}
-            />
+            {/* Enhanced Money Input */}
+            <View>
+              <TextInput
+                label={netAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)"}
+                value={receivedAmount}
+                onChangeText={(text) => {
+                  setReceivedAmount(text);
+                  setHasPaymentInteracted(true);
+                  debouncedValidatePayment(text, Math.abs(netAmount));
+                }}
+                mode="outlined"
+                keyboardType="numeric"
+                style={[
+                  styles.receivedInput,
+                  paymentError ? styles.inputError : null
+                ]}
+                error={!!paymentError}
+                placeholder={`Suggested: ₹${Math.abs(netAmount).toLocaleString()}`}
+                right={
+                  paymentError ? (
+                    <TextInput.Icon icon="alert-circle" />
+                  ) : receivedAmount && !paymentError && hasPaymentInteracted ? (
+                    <TextInput.Icon icon="check-circle" />
+                  ) : (
+                    <TextInput.Icon 
+                      icon="calculator" 
+                      onPress={() => setReceivedAmount(Math.abs(netAmount).toString())}
+                    />
+                  )
+                }
+              />
+              <HelperText type="error" visible={!!paymentError}>
+                {paymentError}
+              </HelperText>
+              
+              {/* Quick Amount Chips */}
+              <View style={styles.quickAmountChips}>
+                <Chip 
+                  mode="outlined" 
+                  onPress={() => setReceivedAmount(Math.abs(netAmount).toString())}
+                  style={styles.amountChip}
+                >
+                  Full: ₹{Math.abs(netAmount).toLocaleString()}
+                </Chip>
+                <Chip 
+                  mode="outlined" 
+                  onPress={() => setReceivedAmount((Math.abs(netAmount) / 2).toString())}
+                  style={styles.amountChip}
+                >
+                  Half: ₹{(Math.abs(netAmount) / 2).toLocaleString()}
+                </Chip>
+                <Chip 
+                  mode="outlined" 
+                  onPress={() => setReceivedAmount('')}
+                  style={styles.amountChip}
+                >
+                  Clear
+                </Chip>
+              </View>
+            </View>
 
             <Divider style={styles.totalDivider} />
 
             {/* Final Balance */}
             <View style={styles.balanceSection}>
               <Text variant="titleMedium">
-                {finalBalance > 0 ? 'Debt:' : 'Balance:'}
+                {netAmount > 0 
+                  ? (finalBalance > 0 ? 'Debt:' : 'Balance:') 
+                  : (finalBalance < 0 ? 'Balance:' : 'Debt:')}
               </Text>
               <Text 
                 variant="titleMedium" 
                 style={[
                   styles.balanceAmount,
                   { 
-                    color: finalBalance > 0 
+                    color: (netAmount > 0 && finalBalance > 0) || (netAmount <= 0 && finalBalance > 0)
                       ? theme.colors.debtColor 
-                      : finalBalance < 0 
+                      : (netAmount > 0 && finalBalance < 0) || (netAmount <= 0 && finalBalance < 0)
                         ? theme.colors.balanceColor 
                         : theme.colors.onSurface 
                   }
@@ -327,17 +473,18 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         {/* Horizontal Line */}
         <Divider style={styles.sectionDivider} />
 
-        {/* Save Transaction Button */}
+        {/* Enhanced Save Transaction Button */}
         <Button
           mode="contained"
-          icon="check"
-          onPress={() => onSaveTransaction(received)}
-          disabled={entries.length === 0}
+          icon={isSaving ? undefined : "check"}
+          onPress={handleSaveTransaction}
+          disabled={entries.length === 0 || isSaving || !!paymentError}
+          loading={isSaving}
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
           buttonColor={theme.colors.success}
         >
-          Save Transaction
+          {isSaving ? 'Saving...' : 'Save Transaction'}
         </Button>
       </ScrollView>
 
@@ -347,6 +494,18 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         style={styles.fab}
         onPress={onAddMoreEntry}
       />
+      
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        action={{
+          label: 'OK',
+          onPress: () => setSnackbarVisible(false),
+        }}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </SafeAreaView>
   );
 };
@@ -428,6 +587,13 @@ const styles = StyleSheet.create({
   entryType: {
     fontWeight: '500',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editButton: {
+    margin: 0,
+  },
   deleteButton: {
     margin: 0,
   },
@@ -446,9 +612,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   summaryTitle: {
-    textAlign: 'center',
+    textAlign: 'left',
     marginBottom: theme.spacing.md,
     fontWeight: 'bold',
+  },
+  customerHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  customerNameLabel: {
+    textAlign: 'left',
+  },
+  crossButton: {
+    margin: 0,
+    borderRadius: 8,
   },
   summaryContent: {
     flexDirection: 'row',
@@ -524,5 +702,21 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 16,
     backgroundColor: theme.colors.primary,
+  },
+  
+  // Part 5 Enhanced Styles - Validation & Error Handling
+  inputError: {
+    borderColor: theme.colors.error,
+    borderWidth: 2,
+  },
+  quickAmountChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: theme.spacing.sm,
+  },
+  amountChip: {
+    marginRight: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
 });

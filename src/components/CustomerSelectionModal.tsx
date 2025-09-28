@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,6 +6,8 @@ import {
   Keyboard,
   Animated,
   Dimensions,
+  TouchableWithoutFeedback,
+  PanResponder,
 } from 'react-native';
 import {
   Modal,
@@ -17,7 +19,11 @@ import {
   Text,
   Avatar,
   Divider,
+  ActivityIndicator,
+  Snackbar,
+  IconButton,
 } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Customer } from '../types';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
@@ -40,6 +46,59 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [recentCustomers, setRecentCustomers] = useState<Customer[]>([]);
   const [slideAnim] = useState(new Animated.Value(Dimensions.get('window').height));
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  const [validationError, setValidationError] = useState<string>('');
+
+  // Enhanced validation functions
+  const validateCustomerName = (name: string): string => {
+    if (!name.trim()) {
+      return 'Customer name is required';
+    }
+    if (name.trim().length < 2) {
+      return 'Customer name must be at least 2 characters';
+    }
+    if (name.length > 50) {
+      return 'Customer name cannot exceed 50 characters';
+    }
+    if (!/^[a-zA-Z0-9\s\-\.]+$/.test(name)) {
+      return 'Customer name contains invalid characters';
+    }
+    return '';
+  };
+
+  // Debounce utility function
+  function debounce<T extends (...args: any[]) => any>(
+    func: T,
+    wait: number
+  ): (...args: Parameters<T>) => void {
+    let timeout: NodeJS.Timeout;
+    return (...args: Parameters<T>) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
+  }
+
+  // Enhanced filter function
+  const filterCustomers = useCallback((query: string) => {
+    if (query.trim() === '') {
+      setFilteredCustomers([]);
+    } else {
+      const filtered = customers.filter(customer =>
+        customer.name.toLowerCase().includes(query.toLowerCase())
+      );
+      setFilteredCustomers(filtered);
+    }
+  }, [customers]);
+
+  // Debounced search function
+  const debouncedSearch = useCallback(
+    debounce((query: string) => {
+      filterCustomers(query);
+    }, 300),
+    [filterCustomers]
+  );
 
   // Animation effect
   useEffect(() => {
@@ -88,15 +147,8 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   }, [visible]);
 
   useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredCustomers([]);
-    } else {
-      const filtered = customers.filter(customer =>
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredCustomers(filtered);
-    }
-  }, [searchQuery, customers]);
+    debouncedSearch(searchQuery);
+  }, [searchQuery, debouncedSearch]);
 
   const handleSelectCustomer = (customer: Customer) => {
     setSearchQuery('');
@@ -104,12 +156,36 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     onSelectCustomer(customer);
   };
 
-  const handleCreateCustomer = () => {
-    if (searchQuery.trim()) {
-      const customerName = searchQuery.trim();
+  const handleCreateCustomer = async () => {
+    const customerName = searchQuery.trim();
+    const validationResult = validateCustomerName(customerName);
+    
+    if (validationResult) {
+      setValidationError(validationResult);
+      return;
+    }
+
+    // Check if customer already exists
+    const existingCustomer = customers.find(
+      customer => customer.name.toLowerCase() === customerName.toLowerCase()
+    );
+    
+    if (existingCustomer) {
+      setValidationError('Customer with this name already exists');
+      return;
+    }
+
+    setIsCreatingCustomer(true);
+    setValidationError('');
+    
+    try {
       setSearchQuery('');
       setFilteredCustomers([]);
       onCreateCustomer(customerName);
+    } catch (error) {
+      setError('Failed to create customer. Please try again.');
+    } finally {
+      setIsCreatingCustomer(false);
     }
   };
 
@@ -206,12 +282,46 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
             {/* Search Input */}
             <Searchbar
               placeholder="Search or create customer..."
-              onChangeText={setSearchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                setValidationError('');
+                setError('');
+              }}
               value={searchQuery}
-              style={styles.searchBar}
+              style={[
+                styles.searchBar,
+                validationError ? styles.searchBarError : null
+              ]}
               inputStyle={styles.searchInput}
               autoFocus
+              right={() => searchQuery ? (
+                <IconButton
+                  icon="close"
+                  size={20}
+                  onPress={() => {
+                    setSearchQuery('');
+                    setValidationError('');
+                  }}
+                />
+              ) : null}
             />
+            
+            {/* Validation Error */}
+            {validationError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {validationError}
+              </Text>
+            ) : null}
+            
+            {/* Network Error */}
+            {error ? (
+              <Surface style={styles.errorBanner}>
+                <MaterialCommunityIcons name="alert-circle" size={20} color={theme.colors.error} />
+                <Text variant="bodySmall" style={[styles.errorText, { marginLeft: 8 }]}>
+                  {error}
+                </Text>
+              </Surface>
+            ) : null}
           </View>
           
           {/* Scrollable Results */}
@@ -219,12 +329,14 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
             {showCreateButton && (
               <Button
                 mode="contained-tonal"
-                icon="account-plus"
+                icon={isCreatingCustomer ? undefined : "account-plus"}
                 onPress={handleCreateCustomer}
                 style={styles.createButton}
                 contentStyle={styles.createButtonContent}
+                disabled={isCreatingCustomer || !!validationError}
+                loading={isCreatingCustomer}
               >
-                Create "{searchQuery}"
+                {isCreatingCustomer ? 'Creating...' : `Create "${searchQuery}"`}
               </Button>
             )}
             
@@ -376,5 +488,25 @@ const styles = StyleSheet.create({
   },
   cancelButtonContent: {
     paddingVertical: theme.spacing.sm,
+  },
+  
+  // Part 5 Enhanced Styles - Validation & Error Handling
+  searchBarError: {
+    borderColor: theme.colors.error,
+    borderWidth: 2,
+  },
+  errorText: {
+    color: theme.colors.error,
+    marginTop: theme.spacing.xs,
+    marginLeft: theme.spacing.sm,
+    fontSize: 12,
+  },
+  errorBanner: {
+    backgroundColor: `${theme.colors.error}12`,
+    padding: theme.spacing.sm,
+    borderRadius: 8,
+    marginBottom: theme.spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

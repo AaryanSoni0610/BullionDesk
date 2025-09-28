@@ -2,15 +2,15 @@
   "expo": {
     "name": "BullionDesk",
     "slug": "BullionDesk",
-    "version": "0.0.1",
+    "sdkVersion": "51.0.0",
+    "version": "0.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#fff"
+      "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true
@@ -18,14 +18,16 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png"
-      },
-      "edgeToEdgeEnabled": true
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

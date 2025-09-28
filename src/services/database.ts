@@ -95,8 +95,12 @@ export class DatabaseService {
 
       // Calculate totals
       const { netAmount, subtotal } = this.calculateTransactionTotals(entries);
-      // Final balance: netAmount (what customer owes) - receivedAmount (what customer paid)
-      const finalBalance = netAmount - receivedAmount;
+      // Final balance calculation:
+      // If netAmount > 0: customer owes merchant, so finalBalance = netAmount - receivedAmount
+      // If netAmount < 0: merchant owes customer, so finalBalance = netAmount + receivedAmount
+      const finalBalance = netAmount > 0 
+        ? netAmount - receivedAmount  // Customer owes: positive = still owes, negative = overpaid
+        : netAmount + receivedAmount; // Merchant owes: negative = still owes, positive = overpaid
 
       // Generate transaction ID
       const transactionId = `txn_${Date.now()}`;
@@ -110,7 +114,7 @@ export class DatabaseService {
         entries: entries,
         discount: 0,
         subtotal: Math.abs(subtotal),
-        total: Math.abs(netAmount),
+        total: netAmount, // Keep the sign: positive = customer owes, negative = merchant owes
         amountPaid: receivedAmount,
         settlementType: finalBalance === 0 ? 'full' : finalBalance > 0 ? 'partial' : 'full',
         status: 'completed',
@@ -183,9 +187,16 @@ export class DatabaseService {
       if (entry.type === 'sell') {
         // Merchant sells: takes money (+)
         netMoneyFlow += Math.abs(entry.subtotal);
-      } else {
+      } else if (entry.type === 'purchase') {
         // Merchant purchases: gives money (-)
         netMoneyFlow -= Math.abs(entry.subtotal);
+      } else if (entry.type === 'money') {
+        // Money transactions: debt = customer owes (+), balance = merchant owes (-)
+        if (entry.moneyType === 'debt') {
+          netMoneyFlow += Math.abs(entry.subtotal);
+        } else {
+          netMoneyFlow -= Math.abs(entry.subtotal);
+        }
       }
     });
 

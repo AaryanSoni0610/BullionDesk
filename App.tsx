@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
 import { PaperProvider, FAB, Snackbar } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
 import { theme } from './src/theme';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { HistoryScreen } from './src/screens/HistoryScreen';
+import { LedgerScreen } from './src/screens/LedgerScreen';
 import { EntryScreen } from './src/screens/EntryScreen';
 import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
+import { AppProvider, useAppContext } from './src/context/AppContext';
 import { Customer, TransactionEntry } from './src/types';
 import { DatabaseService } from './src/services/database';
 import { DatabaseTestUtils } from './src/utils/databaseTest';
@@ -20,150 +25,122 @@ DatabaseService.clearAllData().then(() => console.log('Database cleared for fres
 
 const Tab = createBottomTabNavigator();
 
-type AppState = 'home' | 'entry' | 'settlement';
+type AppState = 'tabs' | 'entry' | 'settlement';
 
-export default function App() {
-  const [appState, setAppState] = useState<AppState>('home');
-  const [customerModalVisible, setCustomerModalVisible] = useState(false);
-  const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
-  const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+// Main App Component with Context
+interface AppContentProps {
+  appState: AppState;
+  onNavigateToEntry: () => void;
+  onNavigateToSettlement: () => void;
+  onNavigateToTabs: () => void;
+}
 
-  const handleSelectCustomer = (customer: Customer) => {
-    setCustomerModalVisible(false);
-    setCurrentCustomer(customer);
-    setCurrentEntries([]);
-    setAppState('entry');
-  };
-
-  const handleCreateCustomer = async (name: string) => {
-    setCustomerModalVisible(false);
-    try {
-      // Create new customer
-      const newCustomer: Customer = {
-        id: Date.now().toString(),
-        name,
-        balance: 0,
-      };
-      
-      // Save customer to database
-      const saved = await DatabaseService.saveCustomer(newCustomer);
-      if (saved) {
-        console.log('New customer created:', newCustomer);
-        setCurrentCustomer(newCustomer);
-        setCurrentEntries([]);
-        setAppState('entry');
-      } else {
-        setSnackbarMessage('Failed to create customer');
-        setSnackbarVisible(true);
-      }
-    } catch (error) {
-      console.error('Error creating customer:', error);
-      setSnackbarMessage('Error creating customer');
-      setSnackbarVisible(true);
-    }
-  };
-
-  const handleBackToHome = () => {
-    setCurrentCustomer(null);
-    setCurrentEntries([]);
-    setAppState('home');
-  };
-
-  const handleAddEntry = (entry: TransactionEntry) => {
-    setCurrentEntries(prev => [...prev, entry]);
-    // Navigate to settlement summary after adding entry
-    setAppState('settlement');
-  };
+const AppContent: React.FC<AppContentProps> = ({
+  appState,
+  onNavigateToEntry,
+  onNavigateToSettlement,
+  onNavigateToTabs,
+}) => {
+  const {
+    currentCustomer,
+    currentEntries,
+    editingEntryId,
+    customerModalVisible,
+    setCustomerModalVisible,
+    snackbarVisible,
+    setSnackbarVisible,
+    snackbarMessage,
+    handleSelectCustomer,
+    handleCreateCustomer,
+    handleAddEntry,
+    handleEditEntry,
+    handleDeleteEntry,
+    handleSaveTransaction,
+  } = useAppContext();
 
   const handleAddMoreEntry = () => {
-    // Go back to entry screen to add more entries
-    setAppState('entry');
+    onNavigateToEntry();
   };
 
-  const handleDeleteEntry = (entryId: string) => {
-    setCurrentEntries(prev => prev.filter(entry => entry.id !== entryId));
-    // If no entries left, go back to entry screen
-    if (currentEntries.length <= 1) {
-      setAppState('entry');
-    }
-  };
-
-  const handleSaveTransaction = async (receivedAmount: number = 0) => {
-    if (!currentCustomer || currentEntries.length === 0 || isSaving) {
-      return;
-    }
-
-    setIsSaving(true);
-    console.log('Saving transaction:', { 
-      customer: currentCustomer, 
-      entries: currentEntries,
-      receivedAmount 
-    });
-
-    try {
-      // Save transaction to database
-      const result = await DatabaseService.saveTransaction(
-        currentCustomer, 
-        currentEntries, 
-        receivedAmount
-      );
-
-      if (result.success) {
-        // Show success message
-        setSnackbarMessage('Transaction saved successfully!');
-        setSnackbarVisible(true);
-        
-        // Navigate back to home
-        handleBackToHome();
-        console.log('Transaction saved with ID:', result.transactionId);
-      } else {
-        // Show error message
-        setSnackbarMessage(result.error || 'Failed to save transaction');
-        setSnackbarVisible(true);
-        console.error('Failed to save transaction:', result.error);
-      }
-    } catch (error) {
-      console.error('Error saving transaction:', error);
-      setSnackbarMessage('Error saving transaction');
-      setSnackbarVisible(true);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const showFAB = appState === 'home' || appState === 'settlement';
-  const fabIcon = appState === 'home' ? 'plus' : 'plus';
-  
-  const handleFABPress = () => {
-    if (appState === 'home') {
-      setCustomerModalVisible(true);
-    } else if (appState === 'settlement') {
-      handleAddMoreEntry();
-    }
-  };
+  // Main Tab Navigator Component
+  const MainTabNavigator = () => (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarIcon: ({ focused, size }) => {
+          let iconName: keyof typeof Icon.glyphMap;
+          
+          switch (route.name) {
+            case 'Home':
+              iconName = focused ? 'home' : 'home-outline';
+              break;
+            case 'History':
+              iconName = focused ? 'history' : 'clock-outline';
+              break;
+            case 'Ledger':
+              iconName = focused ? 'chart-line' : 'chart-line-variant';
+              break;
+            default:
+              iconName = 'circle';
+          }
+          
+          return (
+            <Icon 
+              name={iconName} 
+              size={24} 
+              color={focused ? theme.colors.primary : theme.colors.onSurfaceVariant}
+            />
+          );
+        },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
+        tabBarStyle: {
+          height: theme.dimensions.bottomNavHeight,
+          backgroundColor: theme.colors.surface,
+          elevation: theme.elevation.level3,
+          borderTopWidth: 0,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+          marginBottom: 4,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
+      })}
+    >
+      <Tab.Screen 
+        name="Home" 
+        component={HomeScreen}
+        options={{ tabBarLabel: 'Home' }}
+      />
+      <Tab.Screen 
+        name="History" 
+        component={HistoryScreen}
+        options={{ tabBarLabel: 'History' }}
+      />
+      <Tab.Screen 
+        name="Ledger" 
+        component={LedgerScreen}
+        options={{ tabBarLabel: 'Ledger' }}
+      />
+    </Tab.Navigator>
+  );
 
   return (
     <SafeAreaProvider>
       <PaperProvider theme={theme}>
         <NavigationContainer>
-          {appState === 'home' && (
-            <Tab.Navigator
-              screenOptions={{
-                headerShown: false,
-                tabBarStyle: { display: 'none' }, // Hide tab bar for now
-              }}
-            >
-              <Tab.Screen name="Home" component={HomeScreen} />
-            </Tab.Navigator>
+          {appState === 'tabs' && (
+            <MainTabNavigator />
           )}
           
           {appState === 'entry' && currentCustomer && (
             <EntryScreen
               customer={currentCustomer}
-              onBack={handleBackToHome}
+              editingEntry={editingEntryId ? currentEntries.find(e => e.id === editingEntryId) : undefined}
+              onBack={onNavigateToTabs}
               onAddEntry={handleAddEntry}
             />
           )}
@@ -172,21 +149,15 @@ export default function App() {
             <SettlementSummaryScreen
               customer={currentCustomer}
               entries={currentEntries}
-              onBack={handleBackToHome}
+              onBack={onNavigateToTabs}
               onAddMoreEntry={handleAddMoreEntry}
               onDeleteEntry={handleDeleteEntry}
+              onEditEntry={handleEditEntry}
               onSaveTransaction={handleSaveTransaction}
             />
           )}
 
-          {/* Floating Action Button */}
-          {showFAB && (
-            <FAB
-              icon={fabIcon}
-              style={styles.fab}
-              onPress={handleFABPress}
-            />
-          )}
+
 
           {/* Customer Selection Modal */}
           <CustomerSelectionModal
@@ -214,6 +185,29 @@ export default function App() {
       </PaperProvider>
     </SafeAreaProvider>
   );
+};
+
+export default function App() {
+  const [appState, setAppState] = useState<AppState>('tabs');
+
+  const handleNavigateToEntry = () => setAppState('entry');
+  const handleNavigateToSettlement = () => setAppState('settlement');
+  const handleNavigateToTabs = () => setAppState('tabs');
+
+  return (
+    <AppProvider
+      onNavigateToEntry={handleNavigateToEntry}
+      onNavigateToSettlement={handleNavigateToSettlement}
+      onNavigateToTabs={handleNavigateToTabs}
+    >
+      <AppContent 
+        appState={appState}
+        onNavigateToEntry={handleNavigateToEntry}
+        onNavigateToSettlement={handleNavigateToSettlement}
+        onNavigateToTabs={handleNavigateToTabs}
+      />
+    </AppProvider>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -221,7 +215,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     margin: 16,
     right: 0,
-    bottom: 16,
+    bottom: theme.dimensions.bottomNavHeight + 16,
     backgroundColor: theme.colors.primary,
   },
 });

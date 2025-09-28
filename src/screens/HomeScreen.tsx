@@ -1,37 +1,70 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Image, ScrollView } from 'react-native';
-import { Surface, Text, List } from 'react-native-paper';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Image, ScrollView, RefreshControl, FlatList } from 'react-native';
+import { Surface, Text, List, FAB, Card, Chip, Button, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
+import { useAppContext } from '../context/AppContext';
 import { DatabaseService } from '../services/database';
-import { Transaction } from '../types';
+import { Transaction, Customer } from '../types';
 
 export const HomeScreen: React.FC = () => {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [customers, setCustomers] = useState<Map<string, Customer>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { setCustomerModalVisible } = useAppContext();
 
   useEffect(() => {
     loadRecentTransactions();
   }, []);
 
-  const loadRecentTransactions = async () => {
+  const loadRecentTransactions = async (refresh = false) => {
     try {
-      setIsLoading(true);
-      const allTransactions = await DatabaseService.getAllTransactions();
+      if (refresh) {
+        setIsRefreshing(true);
+        setError(null);
+      } else {
+        setIsLoading(true);
+      }
+      
+      // Load both transactions and customers
+      const [allTransactions, allCustomers] = await Promise.all([
+        DatabaseService.getAllTransactions(),
+        DatabaseService.getAllCustomers()
+      ]);
       
       // Sort by date (most recent first) and take the first 20
       const sortedTransactions = allTransactions
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 20);
       
+      // Create customer lookup map
+      const customerMap = new Map<string, Customer>();
+      allCustomers.forEach(customer => {
+        customerMap.set(customer.id, customer);
+      });
+      
       setRecentTransactions(sortedTransactions);
+      setCustomers(customerMap);
+      setError(null);
     } catch (error) {
       console.error('Error loading recent transactions:', error);
-      setRecentTransactions([]);
+      setError('Unable to load transactions. Please try again.');
+      if (!refresh) {
+        setRecentTransactions([]);
+        setCustomers(new Map());
+      }
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    loadRecentTransactions(true);
+  }, []);
 
   const formatAmount = (transaction: Transaction) => {
     const amount = transaction.total;
@@ -42,6 +75,28 @@ export const HomeScreen: React.FC = () => {
 
   const getAmountColor = (transaction: Transaction) => {
     return transaction.total > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
+  };
+
+  const getBalanceColor = (balance: number) => {
+    if (balance > 0) return theme.colors.sellColor; // Green - customer owes merchant
+    if (balance < 0) return theme.colors.purchaseColor; // Red - merchant owes customer
+    return theme.colors.onSurfaceVariant; // Grey - settled
+  };
+
+  const getBalanceLabel = (balance: number) => {
+    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`;
+    if (balance < 0) return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
+    return 'Settled';
+  };
+
+  const getSettlementStatus = (transaction: Transaction) => {
+    if (transaction.status === 'completed' && transaction.amountPaid >= Math.abs(transaction.total)) {
+      return { label: 'Settled', color: theme.colors.success };
+    } else if (transaction.amountPaid > 0) {
+      return { label: 'Partial', color: theme.colors.primary };
+    } else {
+      return { label: 'Pending', color: theme.colors.warning };
+    }
   };
 
   const formatTransactionDate = (dateString: string) => {
@@ -56,8 +111,37 @@ export const HomeScreen: React.FC = () => {
     } else if (diffInDays < 7) {
       return `${diffInDays} days ago`;
     } else {
-      return date.toLocaleDateString();
+      return date.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short'
+      });
     }
+  };
+
+  const getPrimaryItems = (transaction: Transaction) => {
+    const itemCounts = new Map<string, number>();
+    const itemWeights = new Map<string, number>();
+    
+    transaction.entries.forEach(entry => {
+      if (entry.type !== 'money') {
+        const displayName = getItemDisplayName(entry);
+        itemCounts.set(displayName, (itemCounts.get(displayName) || 0) + 1);
+        if (entry.weight) {
+          itemWeights.set(displayName, (itemWeights.get(displayName) || 0) + entry.weight);
+        }
+      }
+    });
+    
+    const items = Array.from(itemWeights.entries())
+      .map(([name, weight]) => `${name} ${weight.toFixed(1)}g`)
+      .slice(0, 2); // Show max 2 items
+    
+    const remaining = itemWeights.size - 2;
+    if (remaining > 0) {
+      items.push(`+${remaining} more`);
+    }
+    
+    return items.join(', ') || 'Money transaction';
   };
 
   const getItemDisplayName = (entry: any): string => {
@@ -74,15 +158,126 @@ export const HomeScreen: React.FC = () => {
     return typeMap[entry.itemType] || entry.itemType;
   };
 
+  // Transaction Card Component
+  const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
+    const status = getSettlementStatus(transaction);
+    const transactionType = transaction.total > 0 ? 'Sell' : 'Purchase';
+    const primaryItems = getPrimaryItems(transaction);
+    const customer = customers.get(transaction.customerId);
+    const customerBalance = customer?.balance || 0;
+
+    return (
+      <Card style={styles.transactionCard} mode="contained">
+        <Card.Content style={styles.cardContent}>
+          {/* Row 1: Customer & Status */}
+          <View style={styles.cardRow1}>
+            <View style={styles.customerInfo}>
+              <Text variant="titleMedium" style={styles.customerName}>
+                {transaction.customerName}
+              </Text>
+              <Text variant="bodyMedium" style={styles.transactionDate}>
+                {formatTransactionDate(transaction.date)}
+              </Text>
+            </View>
+            <Chip 
+              mode="flat"
+              style={[styles.statusChip, { backgroundColor: `${status.color}20` }]}
+              textStyle={[styles.statusChipText, { color: status.color }]}
+            >
+              {status.label}
+            </Chip>
+          </View>
+
+          {/* Row 2: Transaction Summary */}
+          <View style={styles.cardRow2}>
+            <View style={styles.transactionSummary}>
+              <Text variant="bodyLarge" style={styles.transactionType}>
+                <Text style={{ color: getAmountColor(transaction) }}>
+                  {transactionType}: 
+                </Text>{' '}
+                {primaryItems}
+              </Text>
+            </View>
+            <Text 
+              variant="titleMedium" 
+              style={[styles.totalAmount, { color: getAmountColor(transaction) }]}
+            >
+              {formatAmount(transaction)}
+            </Text>
+          </View>
+
+          {/* Row 3: Balance Information */}
+          <View style={styles.cardRow3}>
+            <Text 
+              variant="bodyMedium" 
+              style={[styles.balanceInfo, { color: getBalanceColor(customerBalance) }]}
+            >
+              {getBalanceLabel(customerBalance)}
+            </Text>
+          </View>
+        </Card.Content>
+      </Card>
+    );
+  };
+
+  // Loading Skeleton Component
+  const LoadingCard: React.FC = () => (
+    <Card style={styles.transactionCard} mode="contained">
+      <Card.Content style={styles.cardContent}>
+        <View style={styles.skeletonContainer}>
+          <View style={styles.skeletonLine1} />
+          <View style={styles.skeletonLine2} />
+          <View style={styles.skeletonLine3} />
+        </View>
+      </Card.Content>
+    </Card>
+  );
+
+  // Empty State Component
+  const EmptyState: React.FC = () => (
+    <View style={styles.emptyState}>
+      <Icon name="receipt" size={72} color={theme.colors.onSurfaceVariant} />
+      <Text variant="headlineSmall" style={styles.emptyTitle}>
+        No Transactions Yet
+      </Text>
+      <Text variant="bodyLarge" style={styles.emptyDescription}>
+        Start by adding your first transaction with a customer
+      </Text>
+      <Button 
+        mode="contained" 
+        style={styles.emptyButton}
+        onPress={() => setCustomerModalVisible(true)}
+      >
+        Add Transaction
+      </Button>
+    </View>
+  );
+
+  // Error State Component
+  const ErrorState: React.FC = () => (
+    <View style={styles.emptyState}>
+      <Icon name="alert-circle-outline" size={48} color={theme.colors.error} />
+      <Text variant="titleLarge" style={[styles.emptyTitle, { color: theme.colors.error }]}>
+        Unable to Load Transactions
+      </Text>
+      <Text variant="bodyMedium" style={styles.emptyDescription}>
+        {error}
+      </Text>
+      <Button 
+        mode="outlined" 
+        style={styles.emptyButton}
+        onPress={() => loadRecentTransactions()}
+      >
+        Retry
+      </Button>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {/* App Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={2}>
+      <Surface style={styles.appTitleBar} elevation={1}>
         <View style={styles.appTitleContent}>
-          <Image 
-            source={require('../../assets/icon.png')} 
-            style={styles.appIcon}
-          />
           <Text variant="titleLarge" style={styles.appTitle}>
             BullionDesk
           </Text>
@@ -90,113 +285,59 @@ export const HomeScreen: React.FC = () => {
       </Surface>
 
       {/* Content Area */}
-      <ScrollView 
-        style={styles.content} 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {isLoading ? (
-          /* Loading State */
-          <View style={styles.emptyState}>
-            <Text variant="bodyLarge" style={styles.emptyDescription}>
-              Loading transactions...
-            </Text>
-          </View>
-        ) : recentTransactions.length === 0 ? (
-          /* Empty State */
-          <View style={styles.emptyState}>
-            <Text variant="headlineMedium" style={styles.emptyTitle}>
-              Welcome to BullionDesk
-            </Text>
-            <Text variant="bodyLarge" style={styles.emptyDescription}>
-              Tap the + button to start your first transaction
-            </Text>
-          </View>
-        ) : (
-          /* Transaction List */
-          <Surface style={styles.transactionList} elevation={1}>
-            <Text variant="titleMedium" style={styles.sectionTitle}>
-              Recent Transactions ({recentTransactions.length})
-            </Text>
-            {recentTransactions.map((transaction) => (
-              <Surface key={transaction.id} style={styles.transactionCard} elevation={1}>
-                <View style={styles.transactionHeader}>
-                  <View style={styles.customerInfo}>
-                    <Text variant="titleSmall" style={styles.customerName}>
-                      {transaction.customerName}
-                    </Text>
-                    <Text variant="bodySmall" style={styles.transactionDate}>
-                      {formatTransactionDate(transaction.date)}
-                    </Text>
-                  </View>
-                </View>
-                
-                <View style={styles.transactionDetails}>
-                  {/* Items Summary */}
-                  <View style={styles.itemsSection}>
-                    {transaction.entries.map((entry, index) => (
-                      <Text key={index} variant="bodySmall" style={styles.itemText}>
-                        {entry.type === 'sell' ? '-' : '-'} {entry.type === 'sell' ? 'Sell' : 'Purchase'}: {getItemDisplayName(entry)} {entry.weight}g
-                      </Text>
-                    ))}
-                  </View>
-                  
-                  {/* Payment Summary */}
-                  <View style={styles.paymentSection}>
-                    <View style={styles.paymentRow}>
-                      <Text variant="bodySmall" style={styles.paymentLabel}>
-                        Total: {transaction.total >= 0 ? '+' : '-'}₹{Math.abs(transaction.total).toLocaleString()}
-                      </Text>
-                      <Text variant="bodySmall" style={styles.paymentLabel}>
-                        {transaction.total >= 0 ? 'Took' : 'Gave'}: ₹{transaction.amountPaid.toLocaleString()}
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.settlementRow}>
-                      <Text 
-                        variant="labelMedium" 
-                        style={[
-                          styles.settlementStatus,
-                          { 
-                            color: transaction.settlementType === 'full' 
-                              ? theme.colors.success 
-                              : transaction.settlementType === 'partial'
-                                ? theme.colors.warning
-                                : theme.colors.error
-                          }
-                        ]}
-                      >
-                        {transaction.settlementType === 'full' ? '✓ Settled' : 
-                         transaction.settlementType === 'partial' ? '⚠ Partial' : '⏳ Pending'}
-                      </Text>
-                      
-                      {transaction.amountPaid !== transaction.total && (
-                        <Text variant="bodySmall" style={styles.balanceText}>
-                          {(() => {
-                            const remaining = transaction.total - transaction.amountPaid;
-                            if (transaction.total >= 0) {
-                              // Customer owed money for this transaction
-                              return remaining > 0 
-                                ? `Debt: ₹${remaining.toLocaleString()}` 
-                                : `Overpaid: ₹${Math.abs(remaining).toLocaleString()}`;
-                            } else {
-                              // Customer was owed money for this transaction
-                              return remaining < 0 
-                                ? `Balance: ₹${Math.abs(remaining).toLocaleString()}` 
-                                : `Underpaid: ₹${remaining.toLocaleString()}`;
-                            }
-                          })()
-                          }
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                </View>
-              </Surface>
+      {error ? (
+        <ErrorState />
+      ) : isLoading ? (
+        <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.transactionsSection}>
+            <View style={styles.sectionHeader}>
+              <Text variant="titleLarge" style={styles.sectionTitle}>
+                Recent Transactions
+              </Text>
+            </View>
+            {[1, 2, 3, 4].map((item) => (
+              <LoadingCard key={item} />
             ))}
-          </Surface>
-        )}
-      </ScrollView>
+          </View>
+        </ScrollView>
+      ) : recentTransactions.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <FlatList
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          data={recentTransactions}
+          renderItem={({ item }) => <TransactionCard transaction={item} />}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
+          ListHeaderComponent={
+            <View style={styles.sectionHeader}>
+              <Text variant="titleLarge" style={styles.sectionTitle}>
+                Recent Transactions
+              </Text>
+            </View>
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+      
+      {/* Floating Action Button */}
+      <FAB
+        icon="plus"
+        label={recentTransactions.length === 0 ? "New Transaction" : undefined}
+        style={[
+          styles.fab,
+          recentTransactions.length === 0 && styles.extendedFab
+        ]}
+        onPress={() => setCustomerModalVisible(true)}
+      />
     </SafeAreaView>
   );
 };
@@ -336,5 +477,96 @@ const styles = StyleSheet.create({
   balanceText: {
     color: theme.colors.onSurfaceVariant,
     fontStyle: 'italic',
+  },
+  fab: {
+    position: 'absolute',
+    margin: theme.spacing.md,
+    right: 0,
+    bottom: theme.spacing.md,
+    backgroundColor: theme.colors.primary,
+  },
+  extendedFab: {
+    paddingHorizontal: theme.spacing.md,
+  },
+  
+  // New styles for Part 2 implementation
+  transactionsSection: {
+    flex: 1,
+    paddingBottom: theme.spacing.xxl,
+  },
+  sectionHeader: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
+  
+  // Transaction Card Styles
+  cardContent: {
+    padding: theme.spacing.md,
+  },
+  cardRow1: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing.sm,
+  },
+  cardRow2: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing.xs,
+  },
+  cardRow3: {
+    marginTop: theme.spacing.xs,
+  },
+  transactionSummary: {
+    flex: 1,
+    paddingRight: theme.spacing.sm,
+  },
+  transactionType: {
+    color: theme.colors.onSurface,
+  },
+  totalAmount: {
+    fontWeight: 'bold',
+  },
+  statusChip: {
+    height: 32,
+    borderRadius: 16,
+  },
+  statusChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  balanceInfo: {
+    fontStyle: 'italic',
+  },
+  
+  // Loading Skeleton Styles
+  skeletonContainer: {
+    gap: theme.spacing.sm,
+  },
+  skeletonLine1: {
+    height: 20,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: 4,
+    width: '70%',
+  },
+  skeletonLine2: {
+    height: 16,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: 4,
+    width: '90%',
+  },
+  skeletonLine3: {
+    height: 14,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: 4,
+    width: '50%',
+  },
+  
+  // Empty/Error State Styles
+  emptyButton: {
+    marginTop: theme.spacing.lg,
+    borderRadius: 12,
   },
 });

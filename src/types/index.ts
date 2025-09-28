@@ -22,8 +22,8 @@ export interface Transaction {
 
 export interface TransactionEntry {
   id: string;
-  type: 'sell' | 'purchase';
-  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'silver98' | 'silver96' | 'rupu' | 'money';
+  type: 'sell' | 'purchase' | 'money';
+  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'silver98' | 'silver96' | 'rupu';
   weight?: number;
   price?: number;
   touch?: number; // For Rani/Rupu
@@ -37,4 +37,4 @@ export interface TransactionEntry {
 
 export type MetalType = 'gold999' | 'gold995' | 'silver' | 'silver98' | 'silver96';
 export type ImpureMetalType = 'rani' | 'rupu';
-export type ItemType = MetalType | ImpureMetalType | 'money';
+export type ItemType = MetalType | ImpureMetalType;

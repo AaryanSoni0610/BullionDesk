@@ -30,7 +30,7 @@ export const HistoryScreen: React.FC = () => {
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('month');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('today');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   
@@ -127,6 +127,11 @@ export const HistoryScreen: React.FC = () => {
   };
 
   const getItemDisplayName = (entry: any): string => {
+    // For money transactions, show "Money" regardless of itemType
+    if (entry.type === 'money') {
+      return 'Money';
+    }
+    
     const typeMap: Record<string, string> = {
       'gold999': 'Gold 999',
       'gold995': 'Gold 995',
@@ -184,13 +189,18 @@ export const HistoryScreen: React.FC = () => {
 
   const formatAmount = (transaction: Transaction) => {
     const amount = transaction.total;
-    const isPositive = amount > 0;
+    // For money transactions, the sign might be inverted in storage
+    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
+    const displayAmount = isMoneyTransaction ? -amount : amount;
+    const isPositive = displayAmount > 0;
     const sign = isPositive ? '+' : '-';
-    return `${sign}₹${Math.abs(amount).toLocaleString()}`;
+    return `${sign}₹${Math.abs(displayAmount).toLocaleString()}`;
   };
 
   const getAmountColor = (transaction: Transaction) => {
-    return transaction.total > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
+    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
+    const displayAmount = isMoneyTransaction ? -transaction.total : transaction.total;
+    return displayAmount > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
   };
 
   const formatDate = (dateString: string) => {
@@ -207,6 +217,7 @@ export const HistoryScreen: React.FC = () => {
   // Enhanced Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const settlementStatus = getSettlementStatus(transaction);
+    const isMoneyOnlyTransaction = transaction.entries.length > 0 && transaction.entries.every(entry => entry.type === 'money');
     
     return (
       <Card style={styles.transactionCard} mode="outlined">
@@ -228,14 +239,16 @@ export const HistoryScreen: React.FC = () => {
               >
                 {formatAmount(transaction)}
               </Text>
-              <Chip 
-                mode="flat"
-                style={[styles.statusChip, { backgroundColor: `${settlementStatus.color}30` }]}
-                textStyle={[styles.statusChipText, { color: settlementStatus.color }]}
-                compact
-              >
-                {settlementStatus.label}
-              </Chip>
+              {!isMoneyOnlyTransaction && (
+                <Chip 
+                  mode="flat"
+                  style={[styles.statusChip, { backgroundColor: `${settlementStatus.color}30` }]}
+                  textStyle={[styles.statusChipText, { color: settlementStatus.color }]}
+                  compact
+                >
+                  {settlementStatus.label}
+                </Chip>
+              )}
             </View>
           </View>
 
@@ -249,7 +262,7 @@ export const HistoryScreen: React.FC = () => {
                 </Text>
                 <Text variant="bodySmall" style={styles.entryDetails}>
                   {entry.weight && `${entry.weight}g`}
-                  {entry.subtotal && ` - ₹${entry.subtotal.toLocaleString()}`}
+                  {entry.subtotal && ` : ₹${entry.subtotal.toLocaleString()}`}
                 </Text>
               </View>
             ))}
@@ -259,13 +272,13 @@ export const HistoryScreen: React.FC = () => {
                   {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
                 </Text>
                 <Text variant="bodySmall" style={[styles.transactionBalance, 
-                  { color: transaction.total - transaction.amountPaid > 0 ? theme.colors.sellColor : 
-                          transaction.total - transaction.amountPaid < 0 ? theme.colors.purchaseColor : 
+                  { color: transaction.total - transaction.amountPaid > 0 ? theme.colors.purchaseColor : 
+                          transaction.total - transaction.amountPaid < 0 ? theme.colors.sellColor : 
                           theme.colors.onSurfaceVariant }
                 ]}>
-                  {transaction.total - transaction.amountPaid > 0 ? `Balance: ₹${(transaction.total - transaction.amountPaid).toLocaleString()}` :
-                   transaction.total - transaction.amountPaid < 0 ? `Debt: ₹${Math.abs(transaction.total - transaction.amountPaid).toLocaleString()}` :
-                   'Settled'}
+                  {transaction.total - transaction.amountPaid > 0 ? `Debt: ₹${(transaction.total - transaction.amountPaid).toLocaleString()}` :
+                   transaction.total - transaction.amountPaid < 0 ? `Balance: ₹${Math.abs(transaction.total - transaction.amountPaid).toLocaleString()}` :
+                   'Balance: ₹0'}
                 </Text>
               </View>
             )}

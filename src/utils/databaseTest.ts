@@ -57,10 +57,4 @@ export class DatabaseTestUtils {
     
     console.log('=== Database Test Complete ===');
   }
-  
-  static async clearTestData() {
-    console.log('Clearing test data...');
-    await DatabaseService.clearAllData();
-    console.log('Test data cleared');
-  }
 }

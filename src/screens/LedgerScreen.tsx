@@ -54,13 +54,17 @@ interface InventoryCardProps {
   backgroundColor: string;
   iconColor: string;
   onPress: () => void;
+  isSelected?: boolean;
 }
 
 export const LedgerScreen: React.FC = () => {
   const [inventoryData, setInventoryData] = useState<InventoryData | null>(null);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month' | 'all'>('month');
+  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'yesterday' | 'custom'>('today');
+  const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
+  const [customDate, setCustomDate] = useState<Date>(new Date());
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
 
   useEffect(() => {
@@ -90,10 +94,11 @@ export const LedgerScreen: React.FC = () => {
       ]);
 
       // Filter transactions by selected period
-      const filteredTransactions = filterTransactionsByPeriod(transactions);
+      const filteredTrans = filterTransactionsByPeriod(transactions);
 
-      const data = calculateInventoryData(filteredTransactions, customers);
+      const data = calculateInventoryData(filteredTrans, customers);
       setInventoryData(data);
+      setFilteredTransactions(filteredTrans);
     } catch (error) {
       console.error('Error loading inventory data:', error);
     } finally {
@@ -105,16 +110,28 @@ export const LedgerScreen: React.FC = () => {
   const filterTransactionsByPeriod = (transactions: Transaction[]) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const monthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
 
     switch (selectedPeriod) {
       case 'today':
-        return transactions.filter(t => new Date(t.date) >= today);
-      case 'week':
-        return transactions.filter(t => new Date(t.date) >= weekAgo);
-      case 'month':
-        return transactions.filter(t => new Date(t.date) >= monthAgo);
+        const endOfDay = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
+        return transactions.filter(t => {
+          const transDate = new Date(t.date);
+          return transDate >= today && transDate <= endOfDay;
+        });
+      case 'yesterday':
+        const endOfYesterday = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
+        return transactions.filter(t => {
+          const transDate = new Date(t.date);
+          return transDate >= yesterday && transDate <= endOfYesterday;
+        });
+      case 'custom':
+        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+        const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+        return transactions.filter(t => {
+          const transDate = new Date(t.date);
+          return transDate >= selectedDate && transDate <= endOfSelectedDay;
+        });
       default:
         return transactions;
     }
@@ -231,6 +248,21 @@ export const LedgerScreen: React.FC = () => {
     loadInventoryData(true);
   };
 
+  const getFilteredTransactions = () => {
+    return filteredTransactions.filter(transaction => {
+      return transaction.entries.some(entry => {
+        if (selectedInventory === 'money') {
+          return entry.type === 'money';
+        } else if (selectedInventory === 'gold') {
+          return entry.itemType?.includes('gold') || entry.itemType === 'rani';
+        } else if (selectedInventory === 'silver') {
+          return entry.itemType?.includes('silver') || entry.itemType === 'rupu';
+        }
+        return false;
+      });
+    });
+  };
+
   const formatCurrency = (amount: number) => {
     const isNegative = amount < 0;
     const formattedAmount = `₹${Math.abs(amount).toLocaleString()}`;
@@ -262,6 +294,49 @@ export const LedgerScreen: React.FC = () => {
     console.log('Navigate to Money Out Ledger');
   };
 
+  // Transaction Row Component
+  const TransactionRow: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
+    const customer = inventoryData?.totalCustomers ? 
+      // We need customer data, but for now use placeholder
+      { name: 'Customer Name' } : { name: 'Customer Name' };
+
+    const relevantEntries = transaction.entries.filter(entry => {
+      if (selectedInventory === 'money') {
+        return entry.type === 'money';
+      } else if (selectedInventory === 'gold') {
+        return entry.itemType?.includes('gold') || entry.itemType === 'rani';
+      } else if (selectedInventory === 'silver') {
+        return entry.itemType?.includes('silver') || entry.itemType === 'rupu';
+      }
+      return false;
+    });
+
+    const totalAmount = relevantEntries.reduce((sum, entry) => sum + (entry.subtotal || 0), 0);
+
+    return (
+      <View style={styles.transactionRow}>
+        <View style={styles.transactionCell}>
+          <Text variant="bodyMedium" style={styles.customerName}>
+            {customer.name}
+          </Text>
+          <Text variant="bodySmall" style={styles.transactionDate}>
+            {new Date(transaction.date).toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={styles.transactionCell}>
+          <Text variant="bodyMedium" style={styles.transactionAmount}>
+            {formatCurrency(totalAmount)}
+          </Text>
+        </View>
+        <View style={styles.transactionCell}>
+          <Text variant="bodySmall" style={styles.transactionType}>
+            {transaction.status === 'completed' ? '✓' : transaction.status === 'pending' ? '⏳' : '✗'}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
   // Enhanced Inventory Card Component
   const InventoryCard: React.FC<InventoryCardProps> = ({ 
     title, 
@@ -270,10 +345,15 @@ export const LedgerScreen: React.FC = () => {
     icon, 
     backgroundColor, 
     iconColor, 
-    onPress 
+    onPress,
+    isSelected = false
   }) => (
     <TouchableOpacity 
-      style={[styles.inventoryCard, { backgroundColor }]} 
+      style={[
+        styles.inventoryCard, 
+        { backgroundColor },
+        isSelected && styles.inventoryCardSelected
+      ]} 
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -297,6 +377,7 @@ export const LedgerScreen: React.FC = () => {
           </Text>
         )}
       </View>
+      {isSelected && <View style={[styles.selectionIndicator, { borderColor: iconColor }]} />}
     </TouchableOpacity>
   );
 
@@ -352,61 +433,6 @@ export const LedgerScreen: React.FC = () => {
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Date Indicator */}
-        <View style={styles.dateContainer}>
-          <Text variant="bodyMedium" style={styles.dateText}>
-            {new Date().toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
-        </View>
-
-        {/* Enhanced Inventory Dashboard - 2x2 Grid */}
-        <View style={styles.dashboardGrid}>
-          <View style={styles.gridRow}>
-            <InventoryCard
-              title="Gold"
-              value={formatWeight(inventoryData.goldInventory.total)}
-              icon="gold"
-              backgroundColor="#FFF8E1"
-              iconColor="#E65100"
-              onPress={navigateToGoldLedger}
-            />
-            
-            <InventoryCard
-              title="Silver"
-              value={formatWeight(inventoryData.silverInventory.total)}
-              icon="circle-outline"
-              backgroundColor="#ECEFF1"
-              iconColor="#455A64"
-              onPress={navigateToSilverLedger}
-            />
-          </View>
-          
-          <View style={styles.gridRow}>
-            <InventoryCard
-              title="Money In"
-              value={formatCurrency(inventoryData.cashFlow.moneyIn)}
-              icon="cash-plus"
-              backgroundColor="#E8F5E8"
-              iconColor="#2E7D32"
-              onPress={navigateToMoneyInLedger}
-            />
-            
-            <InventoryCard
-              title="Money Out"
-              value={formatCurrency(inventoryData.cashFlow.moneyOut)}
-              icon="cash-minus"
-              backgroundColor="#FFEBEE"
-              iconColor="#C62828"
-              onPress={navigateToMoneyOutLedger}
-            />
-          </View>
-        </View>
-
         {/* Period Filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
           <Chip
@@ -418,196 +444,97 @@ export const LedgerScreen: React.FC = () => {
             Today
           </Chip>
           <Chip
-            mode={selectedPeriod === 'week' ? 'flat' : 'outlined'}
-            selected={selectedPeriod === 'week'}
-            onPress={() => setSelectedPeriod('week')}
+            mode={selectedPeriod === 'yesterday' ? 'flat' : 'outlined'}
+            selected={selectedPeriod === 'yesterday'}
+            onPress={() => setSelectedPeriod('yesterday')}
             style={styles.filterChip}
           >
-            This Week
+            Yesterday
           </Chip>
           <Chip
-            mode={selectedPeriod === 'month' ? 'flat' : 'outlined'}
-            selected={selectedPeriod === 'month'}
-            onPress={() => setSelectedPeriod('month')}
+            mode={selectedPeriod === 'custom' ? 'flat' : 'outlined'}
+            selected={selectedPeriod === 'custom'}
+            onPress={() => {
+              // TODO: Show date picker
+              setSelectedPeriod('custom');
+            }}
             style={styles.filterChip}
           >
-            This Month
-          </Chip>
-          <Chip
-            mode={selectedPeriod === 'all' ? 'flat' : 'outlined'}
-            selected={selectedPeriod === 'all'}
-            onPress={() => setSelectedPeriod('all')}
-            style={styles.filterChip}
-          >
-            All Time
+            Select Date
           </Chip>
         </ScrollView>
 
-        {/* Summary Cards */}
-        <Card style={styles.summaryCard} mode="outlined">
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.cardTitle}>
-              Business Overview
-            </Text>
-            <View style={styles.summaryGrid}>
-              <View style={styles.summaryItem}>
-                <Text variant="headlineMedium" style={[styles.summaryNumber, { color: theme.colors.primary }]}>
-                  {inventoryData.totalTransactions}
-                </Text>
-                <Text variant="bodySmall" style={styles.summaryLabel}>
-                  Transactions
-                </Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text variant="headlineMedium" style={[styles.summaryNumber, { color: theme.colors.primary }]}>
-                  {inventoryData.totalCustomers}
-                </Text>
-                <Text variant="bodySmall" style={styles.summaryLabel}>
-                  Customers
-                </Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
+        {/* Inventory Dashboard - Horizontal ScrollView */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.inventoryScrollContainer}
+          contentContainerStyle={styles.inventoryScrollContent}
+        >
+          {/* Gold Inventory Card */}
+          <InventoryCard
+            title="Gold"
+            value={formatWeight(inventoryData.goldInventory.total)}
+            unit="g"
+            icon="gold"
+            backgroundColor="#FFF8E1"
+            iconColor="#E65100"
+            onPress={() => setSelectedInventory('gold')}
+            isSelected={selectedInventory === 'gold'}
+          />
+          
+          {/* Silver Inventory Card */}
+          <InventoryCard
+            title="Silver"
+            value={formatWeight(inventoryData.silverInventory.total)}
+            unit="g"
+            icon="circle-outline"
+            backgroundColor="#ECEFF1"
+            iconColor="#455A64"
+            onPress={() => setSelectedInventory('silver')}
+            isSelected={selectedInventory === 'silver'}
+          />
+          
+          {/* Money Inventory Card */}
+          <InventoryCard
+            title="Money"
+            value={formatCurrency(inventoryData.cashFlow.moneyIn)}
+            icon="cash"
+            backgroundColor="#E8F5E8"
+            iconColor="#2E7D32"
+            onPress={() => setSelectedInventory('money')}
+            isSelected={selectedInventory === 'money'}
+          />
+        </ScrollView>
 
-        {/* Cash Flow */}
-        <Card style={styles.card} mode="outlined">
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.cardTitle}>
-              Cash Flow
+        {/* Transaction Table */}
+        <View style={styles.transactionTable}>
+          {/* Table Header */}
+          <View style={styles.transactionHeader}>
+            <Text variant="bodyMedium" style={styles.transactionHeaderText}>
+              Customer
             </Text>
-            <View style={styles.cashFlowRow}>
-              <View style={styles.cashFlowItem}>
-                <Text variant="titleMedium" style={[styles.cashAmount, { color: theme.colors.sellColor }]}>
-                  {formatCurrency(inventoryData.cashFlow.totalIn)}
-                </Text>
-                <Text variant="bodySmall" style={styles.cashLabel}>Cash In</Text>
-              </View>
-              <View style={styles.cashFlowItem}>
-                <Text variant="titleMedium" style={[styles.cashAmount, { color: theme.colors.purchaseColor }]}>
-                  {formatCurrency(inventoryData.cashFlow.totalOut)}
-                </Text>
-                <Text variant="bodySmall" style={styles.cashLabel}>Cash Out</Text>
-              </View>
-              <View style={styles.cashFlowItem}>
-                <Text variant="titleMedium" style={[
-                  styles.cashAmount, 
-                  { color: inventoryData.cashFlow.netFlow >= 0 ? theme.colors.sellColor : theme.colors.purchaseColor }
-                ]}>
-                  {formatCurrency(inventoryData.cashFlow.netFlow)}
-                </Text>
-                <Text variant="bodySmall" style={styles.cashLabel}>Net Flow</Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Sales vs Purchases */}
-        <Card style={styles.card} mode="outlined">
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.cardTitle}>
-              Sales & Purchases
+            <Text variant="bodyMedium" style={styles.transactionHeaderText}>
+              Amount
             </Text>
-            <View style={styles.salesPurchaseRow}>
-              <View style={styles.salesPurchaseItem}>
-                <Text variant="titleMedium" style={[styles.amount, { color: theme.colors.sellColor }]}>
-                  {formatCurrency(inventoryData.totalSales)}
-                </Text>
-                <Text variant="bodySmall" style={styles.salesPurchaseLabel}>Total Sales</Text>
-              </View>
-              <View style={styles.salesPurchaseItem}>
-                <Text variant="titleMedium" style={[styles.amount, { color: theme.colors.purchaseColor }]}>
-                  {formatCurrency(inventoryData.totalPurchases)}
-                </Text>
-                <Text variant="bodySmall" style={styles.salesPurchaseLabel}>Total Purchases</Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Customer Balance */}
-        <Card style={styles.card} mode="outlined">
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.cardTitle}>
-              Customer Balance
+            <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
+              Status
             </Text>
-            <View style={styles.balanceContainer}>
-              <Text variant="headlineMedium" style={[
-                styles.balanceAmount,
-                { color: inventoryData.netBalance >= 0 ? theme.colors.sellColor : theme.colors.purchaseColor }
-              ]}>
-                {formatCurrency(inventoryData.netBalance)}
-              </Text>
-              <Text variant="bodyMedium" style={styles.balanceLabel}>
-                {inventoryData.netBalance >= 0 ? 'Net credit to customers' : 'Net debt from customers'}
+          </View>
+          
+          {/* Transaction Rows */}
+          {getFilteredTransactions().length > 0 ? (
+            getFilteredTransactions().map((transaction, index) => (
+              <TransactionRow key={transaction.id || index} transaction={transaction} />
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Text variant="bodyMedium" style={styles.emptyStateText}>
+                No transactions found for {selectedInventory} in the selected period.
               </Text>
             </View>
-          </Card.Content>
-        </Card>
-
-        {/* Gold Inventory */}
-        <Card style={styles.card} mode="outlined">
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.cardTitle}>
-              Gold Inventory
-            </Text>
-            <View style={styles.inventoryGrid}>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.goldInventory.gold999)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Gold 999</Text>
-              </View>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.goldInventory.gold995)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Gold 995</Text>
-              </View>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.goldInventory.rani)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Rani</Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Silver Inventory */}
-        <Card style={styles.card} mode="outlined">
-          <Card.Content>
-            <Text variant="titleLarge" style={styles.cardTitle}>
-              Silver Inventory
-            </Text>
-            <View style={styles.inventoryGrid}>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.silverInventory.silver)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Silver</Text>
-              </View>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.silverInventory.silver98)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Silver 98</Text>
-              </View>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.silverInventory.silver96)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Silver 96</Text>
-              </View>
-              <View style={styles.inventoryItem}>
-                <Text variant="titleMedium" style={styles.inventoryWeight}>
-                  {formatWeight(inventoryData.silverInventory.rupu)}
-                </Text>
-                <Text variant="bodySmall" style={styles.inventoryLabel}>Rupu</Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -637,6 +564,89 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     marginRight: theme.spacing.sm,
+  },
+  inventoryScrollContainer: {
+    marginVertical: theme.spacing.md,
+  },
+  inventoryScrollContent: {
+    paddingHorizontal: theme.spacing.md,
+    gap: 8,
+  },
+  inventoryCardSelected: {
+    elevation: theme.elevation.level4,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  selectionIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 3,
+    borderRadius: 12,
+  },
+  inventorySelector: {
+    marginVertical: theme.spacing.md,
+  },
+  inventoryChip: {
+    marginRight: theme.spacing.sm,
+  },
+  transactionTable: {
+    marginTop: theme.spacing.md,
+  },
+  transactionHeader: {
+    flexDirection: 'row',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  transactionHeaderText: {
+    flex: 1,
+    fontWeight: 'bold',
+    color: theme.colors.onSurfaceVariant,
+  },
+  transactionRow: {
+    flexDirection: 'row',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  transactionCell: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  customerName: {
+    fontWeight: '500',
+    color: theme.colors.onSurface,
+  },
+  transactionDate: {
+    color: theme.colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  transactionAmount: {
+    fontWeight: '500',
+    color: theme.colors.onSurface,
+  },
+  transactionType: {
+    textAlign: 'center',
+    color: theme.colors.onSurfaceVariant,
+  },
+  emptyState: {
+    padding: theme.spacing.lg,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,

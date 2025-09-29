@@ -20,16 +20,50 @@ import { Customer, TransactionEntry, ItemType } from '../types';
 interface EntryScreenProps {
   customer: Customer;
   editingEntry?: TransactionEntry;
+  existingEntries?: TransactionEntry[];
   onBack: () => void;
+  onNavigateToSummary?: () => void;
   onAddEntry: (entry: TransactionEntry) => void;
 }
 
 export const EntryScreen: React.FC<EntryScreenProps> = ({
   customer,
   editingEntry,
+  existingEntries = [],
   onBack,
+  onNavigateToSummary,
   onAddEntry,
 }) => {
+  
+  // Check what types of entries already exist (excluding the one being edited)
+  const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
+  const hasMoneyEntries = otherEntries.some(entry => entry.type === 'money');
+  const hasSellPurchaseEntries = otherEntries.some(entry => entry.type === 'sell' || entry.type === 'purchase');
+  
+  // Handle back button navigation
+  const handleBack = () => {
+    if (existingEntries.length > 0 && onNavigateToSummary) {
+      onNavigateToSummary();
+    } else {
+      onBack();
+    }
+  };
+  
+  // Determine available transaction types
+  const getAvailableTransactionTypes = () => {
+    if (hasMoneyEntries) {
+      // If money entries exist, only allow money
+      return ['money'];
+    } else if (hasSellPurchaseEntries) {
+      // If sell/purchase entries exist, only allow sell/purchase
+      return ['sell', 'purchase'];
+    } else {
+      // No entries exist, allow all types
+      return ['sell', 'purchase', 'money'];
+    }
+  };
+  
+  const availableTypes = getAvailableTransactionTypes();
   const [transactionType, setTransactionType] = useState<'purchase' | 'sell' | 'money'>('sell');
   const [itemType, setItemType] = useState<ItemType>('gold999');
   const [menuVisible, setMenuVisible] = useState(false);
@@ -43,12 +77,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [moneyAmount, setMoneyAmount] = useState('');
   const [moneyType, setMoneyType] = useState<'debt' | 'balance'>('debt');
   
-  // Validation and error states
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Form states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [hasInteracted, setHasInteracted] = useState<Record<string, boolean>>({});
 
   // Pre-fill form when editing an entry
   useEffect(() => {
@@ -64,43 +96,139 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setMoneyType(editingEntry.moneyType || 'debt');
     }
   }, [editingEntry]);
+  
+  // Reset itemType to valid option when switching to sell tab with rani/rupu selected
+  useEffect(() => {
+    if (transactionType === 'sell' && (itemType === 'rani' || itemType === 'rupu')) {
+      setItemType('gold999');
+    }
+  }, [transactionType, itemType]);
+  
+  // Auto-select valid transaction type when available types change
+  useEffect(() => {
+    if (!availableTypes.includes(transactionType as any)) {
+      // Current transaction type is not available, switch to first available
+      if (availableTypes.length > 0) {
+        setTransactionType(availableTypes[0] as any);
+      }
+    }
+  }, [availableTypes, transactionType]);
 
-  const itemOptions = [
-    { label: 'Gold 999', value: 'gold999' },
-    { label: 'Gold 995', value: 'gold995' },
-    { label: 'Rani (Impure Gold)', value: 'rani' },
-    { label: 'Silver', value: 'silver' },
-    { label: 'Silver 98', value: 'silver98' },
-    { label: 'Silver 96', value: 'silver96' },
-    { label: 'Rupu (Impure Silver)', value: 'rupu' },
-  ];
+  const getItemOptions = () => {
+    const allOptions = [
+      { label: 'Gold 999', value: 'gold999' },
+      { label: 'Gold 995', value: 'gold995' },
+      { label: 'Rani (Impure Gold)', value: 'rani' },
+      { label: 'Silver', value: 'silver' },
+      { label: 'Silver 98', value: 'silver98' },
+      { label: 'Silver 96', value: 'silver96' },
+      { label: 'Rupu (Impure Silver)', value: 'rupu' },
+    ];
+    
+    // Filter out rani and rupu from sell transactions
+    if (transactionType === 'sell') {
+      return allOptions.filter(option => option.value !== 'rani' && option.value !== 'rupu');
+    }
+    
+    return allOptions;
+  };
+  
+  const itemOptions = getItemOptions();
+
+  // Money formatting function - rounds to nearest 10
+  const formatMoney = (value: string): string => {
+    if (!value || value.trim() === '') return value;
+    
+    const num = parseFloat(value);
+    if (isNaN(num) || num < 0) return value;
+    
+    // Get the last digit
+    const lastDigit = Math.floor(num) % 10;
+    let formattedAmount;
+    
+    if (lastDigit < 6) {
+      // Round down to nearest 10 (e.g., 11504 -> 11500)
+      formattedAmount = Math.floor(num / 10) * 10;
+    } else {
+      // Round up to nearest 10 (e.g., 11506 -> 11510)
+      formattedAmount = Math.floor(num / 10) * 10 + 10;
+    }
+    
+    return formattedAmount.toString();
+  };
+
+  // Pure gold formatting function for rani - 3 digits after decimal, last digit always zero
+  const formatPureGold = (value: number): string => {
+    if (isNaN(value)) return '0.000';
+    
+    // Get 3 decimal places
+    const rounded = Math.round(value * 1000) / 1000;
+    const str = rounded.toFixed(3);
+    const parts = str.split('.');
+    const decimals = parts[1] || '000';
+    
+    // Get the last (third) decimal digit
+    const lastDigit = parseInt(decimals.charAt(2) || '0');
+    
+    let newDecimals;
+    if (lastDigit > 8) {
+      // Add 0.010 if last digit > 8
+      const newValue = rounded + 0.010;
+      const newStr = newValue.toFixed(3);
+      const newParts = newStr.split('.');
+      newDecimals = (newParts[1] || '000').substring(0, 2) + '0';
+      return newParts[0] + '.' + newDecimals;
+    } else {
+      // Make last digit zero
+      newDecimals = decimals.substring(0, 2) + '0';
+      return parts[0] + '.' + newDecimals;
+    }
+  };
+
+  // Pure silver formatting function for rupu - if floating value >= 0.900, add +1g
+  const formatPureSilver = (value: number): number => {
+    if (isNaN(value)) return 0;
+    
+    const fractionalPart = value - Math.floor(value);
+    
+    if (fractionalPart >= 0.900) {
+      return Math.floor(value) + 1;
+    } else {
+      return Math.floor(value);
+    }
+  };
 
   const calculateSubtotal = (): number => {
     if (transactionType === 'money') {
-      return parseFloat(moneyAmount) || 0;
+      const formatted = formatMoney(moneyAmount);
+      const amount = parseFloat(formatted) || 0;
+      return moneyType === 'debt' ? -amount : amount;
     }
 
     const weightNum = parseFloat(weight) || 0;
     const priceNum = parseFloat(price) || 0;
+    let rawSubtotal = 0;
 
     if (itemType === 'rani') {
       const touchNum = parseFloat(touch) || 0;
       const pureGold = (weightNum * touchNum) / 100;
-      return (pureGold * priceNum) / 10; // Gold price is per 10g
-    }
-
-    if (itemType === 'rupu') {
+      const formattedPureGold = parseFloat(formatPureGold(pureGold));
+      rawSubtotal = (formattedPureGold * priceNum) / 10; // Gold price is per 10g
+    } else if (itemType === 'rupu') {
       const touchNum = parseFloat(touch) || 0;
       const pureWeight = (weightNum * touchNum) / 100;
-      return (pureWeight * priceNum) / 1000; // Silver price is per kg
+      const formattedPureSilver = formatPureSilver(pureWeight);
+      rawSubtotal = (formattedPureSilver * priceNum) / 1000; // Silver price is per kg
+    } else if (itemType.startsWith('gold')) {
+      rawSubtotal = (weightNum * priceNum) / 10; // Gold price is per 10g
+    } else if (itemType.startsWith('silver')) {
+      rawSubtotal = (weightNum * priceNum) / 1000; // Silver price is per kg
     }
 
-    if (itemType.startsWith('gold')) {
-      return (weightNum * priceNum) / 10; // Gold price is per 10g
-    }
-
-    if (itemType.startsWith('silver')) {
-      return (weightNum * priceNum) / 1000; // Silver price is per kg
+    // Apply money formatting to all non-money transaction subtotals
+    if (rawSubtotal > 0) {
+      const formatted = formatMoney(rawSubtotal.toString());
+      return parseFloat(formatted);
     }
 
     return 0;
@@ -108,119 +236,25 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
   const subtotal = calculateSubtotal();
   
-  // Enhanced validation functions
-  const validateWeight = (value: string): string => {
-    if (!value.trim()) return 'Weight is required';
-    const num = parseFloat(value);
-    if (isNaN(num)) return 'Please enter a valid number';
-    if (num <= 0) return 'Weight must be greater than 0';
-    if (num > 10000) return 'Weight cannot exceed 10,000g';
-    if (!/^\d+(\.\d{1,2})?$/.test(value)) return 'Maximum 2 decimal places allowed';
-    return '';
-  };
-  
-  const validatePrice = (value: string): string => {
-    if (!value.trim()) return 'Price is required';
-    const num = parseFloat(value);
-    if (isNaN(num)) return 'Please enter a valid price';
-    if (num <= 0) return 'Price must be greater than ₹0';
-    if (num > 1000000) return 'Price seems unusually high, please verify';
-    return '';
-  };
-  
-  const validateTouch = (value: string): string => {
-    if (!value.trim()) return 'Touch percentage is required';
-    const num = parseFloat(value);
-    if (isNaN(num)) return 'Please enter a valid percentage';
-    if (num <= 0 || num > 100) return 'Touch percentage must be between 1-100%';
-    if (!Number.isInteger(num)) return 'Touch percentage must be a whole number';
-    return '';
-  };
-  
-  const validateMoneyAmount = (value: string): string => {
-    if (!value.trim()) return 'Amount is required';
-    const num = parseFloat(value);
-    if (isNaN(num)) return 'Please enter a valid amount';
-    if (num <= 0) return 'Amount must be greater than ₹0';
-    if (num > 10000000) return 'Amount cannot exceed ₹1,00,00,000';
-    return '';
-  };
-  
-  // Debounced validation
-  const debouncedValidate = useCallback(
-    debounce((field: string, value: string) => {
-      let error = '';
-      switch (field) {
-        case 'weight':
-          error = validateWeight(value);
-          break;
-        case 'price':
-          error = validatePrice(value);
-          break;
-        case 'touch':
-          error = validateTouch(value);
-          break;
-        case 'moneyAmount':
-          error = validateMoneyAmount(value);
-          break;
-      }
-      setFieldErrors(prev => ({ ...prev, [field]: error }));
-    }, 300),
-    []
-  );
-  
-  function debounce<T extends (...args: any[]) => any>(
-    func: T,
-    wait: number
-  ): (...args: Parameters<T>) => void {
-    let timeout: NodeJS.Timeout;
-    return (...args: Parameters<T>) => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func(...args), wait);
-    };
-  }
+
   
   const isValid = () => {
-    const hasErrors = Object.values(fieldErrors).some(error => error !== '');
-    if (hasErrors) return false;
-    
     if (transactionType === 'money') {
-      return moneyAmount.trim() !== '' && !validateMoneyAmount(moneyAmount);
+      return moneyAmount.trim() !== '';
     }
     
-    const hasRequiredFields = weight.trim() !== '' && !validateWeight(weight) && 
-                              price.trim() !== '' && !validatePrice(price);
+    const hasRequiredFields = weight.trim() !== '' && price.trim() !== '';
     
     if (itemType === 'rani' || itemType === 'rupu') {
-      return hasRequiredFields && touch.trim() !== '' && !validateTouch(touch);
+      return hasRequiredFields && touch.trim() !== '';
     }
     
     return hasRequiredFields;
   };
 
   const handleAddEntry = async () => {
-    // Validate all fields before submission
-    const errors: Record<string, string> = {};
-    
-    if (transactionType === 'money') {
-      errors.moneyAmount = validateMoneyAmount(moneyAmount);
-    } else {
-      errors.weight = validateWeight(weight);
-      errors.price = validatePrice(price);
-      if (itemType === 'rani' || itemType === 'rupu') {
-        errors.touch = validateTouch(touch);
-      }
-    }
-    
-    // Filter out empty errors
-    const validationErrors = Object.fromEntries(
-      Object.entries(errors).filter(([_, error]) => error !== '')
-    );
-    
-    setFieldErrors(validationErrors);
-    
-    if (Object.keys(validationErrors).length > 0) {
-      setSnackbarMessage('Please fix the errors above');
+    if (!isValid()) {
+      setSnackbarMessage('Please fill in all required fields');
       setSnackbarVisible(true);
       return;
     }
@@ -237,9 +271,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         touch: touch.trim() ? parseFloat(touch) : undefined,
         extraPerKg: extraPerKg.trim() ? parseFloat(extraPerKg) : undefined,
         pureWeight: itemType === 'rani' && weight.trim() && touch.trim() ? 
-          (parseFloat(weight) * parseFloat(touch)) / 100 : 
+          parseFloat(formatPureGold((parseFloat(weight) * parseFloat(touch)) / 100)) : 
           itemType === 'rupu' && weight.trim() && touch.trim() ?
-          (parseFloat(weight) * parseFloat(touch)) / 100 : 
+          formatPureSilver((parseFloat(weight) * parseFloat(touch)) / 100) : 
           undefined,
         actualGoldGiven: actualGoldGiven.trim() ? parseFloat(actualGoldGiven) : undefined,
         moneyType: transactionType === 'money' ? moneyType : undefined,
@@ -256,8 +290,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setExtraPerKg('');
       setActualGoldGiven('');
       setMoneyAmount('');
-      setFieldErrors({});
-      setHasInteracted({});
+
       
       setSnackbarMessage(editingEntry ? 'Entry updated successfully' : 'Entry added successfully');
       setSnackbarVisible(true);
@@ -299,27 +332,17 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               value={moneyAmount}
               onChangeText={(text) => {
                 setMoneyAmount(text);
-                setHasInteracted(prev => ({ ...prev, moneyAmount: true }));
-                debouncedValidate('moneyAmount', text);
+              }}
+              onBlur={() => {
+                if (moneyAmount.trim()) {
+                  const formatted = formatMoney(moneyAmount);
+                  setMoneyAmount(formatted);
+                }
               }}
               mode="outlined"
               keyboardType="numeric"
-              style={[
-                styles.input,
-                fieldErrors.moneyAmount ? styles.inputError : null
-              ]}
-              error={!!fieldErrors.moneyAmount}
-              right={
-                fieldErrors.moneyAmount ? (
-                  <TextInput.Icon icon="alert-circle" />
-                ) : moneyAmount && !fieldErrors.moneyAmount && hasInteracted.moneyAmount ? (
-                  <TextInput.Icon icon="check-circle" />
-                ) : null
-              }
+              style={styles.input}
             />
-            <HelperText type="error" visible={!!fieldErrors.moneyAmount}>
-              {fieldErrors.moneyAmount}
-            </HelperText>
           </View>
         </>
       );
@@ -327,67 +350,32 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
     if (itemType === 'rani') {
       const pureGold = (parseFloat(weight) * parseFloat(touch)) / 100 || 0;
+      const formattedPureGold = formatPureGold(pureGold);
       return (
         <>
           <View>
             <TextInput
               label="Rani Weight (g)"
               value={weight}
-              onChangeText={(text) => {
-                setWeight(text);
-                setHasInteracted(prev => ({ ...prev, weight: true }));
-                debouncedValidate('weight', text);
-              }}
+              onChangeText={setWeight}
               mode="outlined"
               keyboardType="numeric"
-              style={[
-                styles.input,
-                fieldErrors.weight ? styles.inputError : null
-              ]}
-              error={!!fieldErrors.weight}
-              right={
-                fieldErrors.weight ? (
-                  <TextInput.Icon icon="alert-circle" />
-                ) : weight && !fieldErrors.weight && hasInteracted.weight ? (
-                  <TextInput.Icon icon="check-circle" />
-                ) : null
-              }
+              style={styles.input}
             />
-            <HelperText type="error" visible={!!fieldErrors.weight}>
-              {fieldErrors.weight}
-            </HelperText>
           </View>
           <View>
             <TextInput
               label="Touch % (1-100)"
               value={touch}
-              onChangeText={(text) => {
-                setTouch(text);
-                setHasInteracted(prev => ({ ...prev, touch: true }));
-                debouncedValidate('touch', text);
-              }}
+              onChangeText={setTouch}
               mode="outlined"
               keyboardType="numeric"
-              style={[
-                styles.input,
-                fieldErrors.touch ? styles.inputError : null
-              ]}
-              error={!!fieldErrors.touch}
-              right={
-                fieldErrors.touch ? (
-                  <TextInput.Icon icon="alert-circle" />
-                ) : touch && !fieldErrors.touch && hasInteracted.touch ? (
-                  <TextInput.Icon icon="check-circle" />
-                ) : null
-              }
+              style={styles.input}
             />
-            <HelperText type="error" visible={!!fieldErrors.touch}>
-              {fieldErrors.touch}
-            </HelperText>
           </View>
           <TextInput
             label="Pure Gold Equivalent"
-            value={`${pureGold.toFixed(3)}g`}
+            value={`${formattedPureGold}g`}
             mode="outlined"
             editable={false}
             style={styles.input}
@@ -396,29 +384,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             <TextInput
               label="Price (₹/10g)"
               value={price}
-              onChangeText={(text) => {
-                setPrice(text);
-                setHasInteracted(prev => ({ ...prev, price: true }));
-                debouncedValidate('price', text);
-              }}
+              onChangeText={setPrice}
               mode="outlined"
               keyboardType="numeric"
-              style={[
-                styles.input,
-                fieldErrors.price ? styles.inputError : null
-              ]}
-              error={!!fieldErrors.price}
-              right={
-                fieldErrors.price ? (
-                  <TextInput.Icon icon="alert-circle" />
-                ) : price && !fieldErrors.price && hasInteracted.price ? (
-                  <TextInput.Icon icon="check-circle" />
-                ) : null
-              }
+              style={styles.input}
             />
-            <HelperText type="error" visible={!!fieldErrors.price}>
-              {fieldErrors.price}
-            </HelperText>
           </View>
           {transactionType === 'sell' && (
             <TextInput
@@ -436,8 +406,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
     if (itemType === 'rupu') {
       const pureWeight = (parseFloat(weight) * parseFloat(touch)) / 100 || 0;
+      const formattedPureSilver = formatPureSilver(pureWeight);
       const extraWeight = parseFloat(extraPerKg) || 0;
-      const totalGiven = pureWeight + (pureWeight * extraWeight) / 1000;
+      const totalGiven = formattedPureSilver + (formattedPureSilver * extraWeight) / 1000;
       
       return (
         <>
@@ -474,9 +445,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             style={styles.input}
           />
           <View style={styles.calculationDisplay}>
-            <Text variant="bodySmall">Pure Silver: {pureWeight.toFixed(3)}g</Text>
+            <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
             {extraWeight > 0 && (
-              <Text variant="bodySmall">Bonus: {((pureWeight * extraWeight) / 1000).toFixed(3)}g</Text>
+              <Text variant="bodySmall">Bonus: {((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
             )}
             <Text variant="bodySmall">Total Given: {totalGiven.toFixed(3)}g</Text>
           </View>
@@ -533,7 +504,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             </Button>
             <IconButton
               icon="close"
-              onPress={onBack}
+              onPress={handleBack}
               iconColor={theme.colors.onError}
               containerColor={theme.colors.error}
               style={styles.crossButton}
@@ -544,28 +515,29 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Transaction Type Selector */}
+        
         <SegmentedButtons
           value={transactionType}
           onValueChange={setTransactionType as any}
           buttons={[
-            {
+            ...(availableTypes.includes('purchase') ? [{
               value: 'purchase',
               label: 'Purchase',
               icon: 'arrow-down-circle',
               style: { backgroundColor: transactionType === 'purchase' ? theme.colors.primary : undefined }
-            },
-            {
+            }] : []),
+            ...(availableTypes.includes('sell') ? [{
               value: 'sell',
               label: 'Sell',
               icon: 'arrow-up-circle',
               style: { backgroundColor: transactionType === 'sell' ? theme.colors.sellColor : undefined }
-            },
-            {
+            }] : []),
+            ...(availableTypes.includes('money') ? [{
               value: 'money',
               label: 'Money',
               icon: 'cash',
               style: { backgroundColor: transactionType === 'money' ? theme.colors.secondary : undefined }
-            },
+            }] : []),
           ]}
           style={styles.segmentedButtons}
         />
@@ -611,7 +583,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               variant="titleMedium" 
               style={styles.subtotalAmount}
             >
-              {transactionType === 'sell' ? '+' : '-'}₹{Math.abs(subtotal).toLocaleString()}
+              {subtotal >= 0 ? '+' : '-'}₹{
+                parseFloat(formatMoney(Math.abs(subtotal).toString())).toLocaleString()
+              }
             </Text>
           </View>
         </Surface>
@@ -622,7 +596,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         <View style={styles.buttonRow}>
           <Button
             mode="outlined"
-            onPress={onBack}
+            onPress={handleBack}
             style={[styles.actionButton, { flex: 0.45 }]}
           >
             Back
@@ -730,6 +704,18 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: theme.spacing.md,
+  },
+  restrictionNotice: {
+    backgroundColor: theme.colors.primaryContainer,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: 8,
+    marginBottom: theme.spacing.md,
+  },
+  restrictionText: {
+    color: theme.colors.onPrimaryContainer,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   calculationDisplay: {
     backgroundColor: theme.colors.surfaceVariant,

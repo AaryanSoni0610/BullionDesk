@@ -18,10 +18,6 @@ import { CustomerSelectionModal } from './src/components/CustomerSelectionModal'
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { Customer, TransactionEntry } from './src/types';
 import { DatabaseService } from './src/services/database';
-import { DatabaseTestUtils } from './src/utils/databaseTest';
-
-// Clear database on app start (development/testing only)
-DatabaseService.clearAllData().then(() => console.log('Database cleared for fresh start'));
 
 const Tab = createBottomTabNavigator();
 
@@ -140,7 +136,9 @@ const AppContent: React.FC<AppContentProps> = ({
             <EntryScreen
               customer={currentCustomer}
               editingEntry={editingEntryId ? currentEntries.find(e => e.id === editingEntryId) : undefined}
+              existingEntries={currentEntries}
               onBack={onNavigateToTabs}
+              onNavigateToSummary={onNavigateToSettlement}
               onAddEntry={handleAddEntry}
             />
           )}

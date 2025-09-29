@@ -68,13 +68,18 @@ export const HomeScreen: React.FC = () => {
 
   const formatAmount = (transaction: Transaction) => {
     const amount = transaction.total;
-    const isPositive = amount > 0;
+    // For money transactions, the sign might be inverted in storage
+    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
+    const displayAmount = isMoneyTransaction ? -amount : amount;
+    const isPositive = displayAmount > 0;
     const sign = isPositive ? '+' : '-';
-    return `${sign}₹${Math.abs(amount).toLocaleString()}`;
+    return `${sign}₹${Math.abs(displayAmount).toLocaleString()}`;
   };
 
   const getAmountColor = (transaction: Transaction) => {
-    return transaction.total > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
+    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
+    const displayAmount = isMoneyTransaction ? -transaction.total : transaction.total;
+    return displayAmount > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
   };
 
   const getBalanceColor = (balance: number) => {
@@ -86,7 +91,7 @@ export const HomeScreen: React.FC = () => {
   const getBalanceLabel = (balance: number) => {
     if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`;
     if (balance < 0) return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
-    return 'Settled';
+    return 'Balance: ₹0';
   };
 
   const getSettlementStatus = (transaction: Transaction) => {
@@ -166,6 +171,7 @@ export const HomeScreen: React.FC = () => {
     const primaryItems = getPrimaryItems(transaction);
     const customer = customers.get(transaction.customerId);
     const customerBalance = customer?.balance || 0;
+    const isMoneyOnlyTransaction = transaction.entries.length > 0 && transaction.entries.every(entry => entry.type === 'money');
 
     return (
       <Card style={styles.transactionCard} mode="contained">
@@ -180,13 +186,15 @@ export const HomeScreen: React.FC = () => {
                 {formatTransactionDate(transaction.date)}
               </Text>
             </View>
-            <Chip 
-              mode="flat"
-              style={[styles.statusChip, { backgroundColor: `${status.color}20` }]}
-              textStyle={[styles.statusChipText, { color: status.color }]}
-            >
-              {status.label}
-            </Chip>
+            {!isMoneyOnlyTransaction && (
+              <Chip 
+                mode="flat"
+                style={[styles.statusChip, { backgroundColor: `${status.color}20` }]}
+                textStyle={[styles.statusChipText, { color: status.color }]}
+              >
+                {status.label}
+              </Chip>
+            )}
           </View>
 
           {/* Row 2: Transaction Summary */}

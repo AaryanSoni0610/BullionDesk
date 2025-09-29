@@ -210,21 +210,6 @@ export class DatabaseService {
     };
   }
 
-  // Database management
-  static async clearAllData(): Promise<boolean> {
-    try {
-      await AsyncStorage.multiRemove([
-        STORAGE_KEYS.CUSTOMERS,
-        STORAGE_KEYS.TRANSACTIONS,
-        STORAGE_KEYS.LAST_TRANSACTION_ID,
-      ]);
-      return true;
-    } catch (error) {
-      console.error('Error clearing data:', error);
-      return false;
-    }
-  }
-
   static async exportData(): Promise<{
     customers: Customer[];
     transactions: Transaction[];

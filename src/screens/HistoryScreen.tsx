@@ -4,11 +4,7 @@ import {
   StyleSheet, 
   ScrollView, 
   FlatList, 
-  Animated, 
-  TouchableOpacity,
-  LayoutAnimation,
-  UIManager,
-  Platform
+  TouchableOpacity
 } from 'react-native';
 import {
   Surface,
@@ -16,13 +12,9 @@ import {
   Searchbar,
   Card,
   Chip,
-  List,
   Divider,
   Button,
-  ActivityIndicator,
-  IconButton,
-  Menu,
-  Appbar
+  ActivityIndicator
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
@@ -30,10 +22,7 @@ import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
 import { Transaction } from '../types';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+
 
 export const HistoryScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,14 +31,9 @@ export const HistoryScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('month');
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   
-  // Animation refs
-  const searchHeight = useRef(new Animated.Value(0)).current;
-  const searchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadTransactions();
@@ -142,20 +126,6 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query);
-    
-    // Clear existing timer
-    if (searchDebounceTimer.current) {
-      clearTimeout(searchDebounceTimer.current);
-    }
-    
-    // Set new timer for debounced search
-    searchDebounceTimer.current = setTimeout(() => {
-      performSearch(query);
-    }, 300);
-  };
-
   const getItemDisplayName = (entry: any): string => {
     const typeMap: Record<string, string> = {
       'gold999': 'Gold 999',
@@ -168,85 +138,6 @@ export const HistoryScreen: React.FC = () => {
       'money': 'Money',
     };
     return typeMap[entry.itemType] || entry.itemType;
-  };
-
-  // Search bar animation functions
-  const toggleSearchExpanded = () => {
-    const toValue = isSearchExpanded ? 0 : 72;
-    
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setIsSearchExpanded(!isSearchExpanded);
-    
-    Animated.timing(searchHeight, {
-      toValue,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  };
-
-  const clearSearch = () => {
-    setSearchQuery('');
-    performSearch('');
-    if (isSearchExpanded) {
-      toggleSearchExpanded();
-    }
-  };
-
-  const toggleCardExpansion = (transactionId: string) => {
-    const newExpanded = new Set(expandedCards);
-    if (newExpanded.has(transactionId)) {
-      newExpanded.delete(transactionId);
-    } else {
-      newExpanded.add(transactionId);
-    }
-    setExpandedCards(newExpanded);
-  };
-
-  const addToRecentSearches = (query: string) => {
-    if (query.trim() && !recentSearches.includes(query)) {
-      const newSearches = [query, ...recentSearches.slice(0, 4)];
-      setRecentSearches(newSearches);
-      // In a real app, save to AsyncStorage here
-    }
-  };
-
-  const selectRecentSearch = (query: string) => {
-    setSearchQuery(query);
-    performSearch(query);
-    if (isSearchExpanded) {
-      toggleSearchExpanded();
-    }
-  };
-
-  // Additional utility functions
-  const getTransactionType = (transaction: Transaction) => {
-    const hasGold = transaction.entries.some(e => e.itemType.includes('gold') || e.itemType === 'rani');
-    const hasSilver = transaction.entries.some(e => e.itemType.includes('silver') || e.itemType === 'rupu');
-    const isOnlyMoney = transaction.entries.every(e => e.type === 'money');
-    
-    if (isOnlyMoney) {
-      return { label: 'Money Transfer', color: theme.colors.secondary };
-    } else if (hasGold && hasSilver) {
-      return { label: 'Mixed Transaction', color: theme.colors.tertiary || theme.colors.secondary };
-    } else if (transaction.total > 0) {
-      return { label: 'Sale', color: theme.colors.success };
-    } else {
-      return { label: 'Purchase', color: theme.colors.primary };
-    }
-  };
-
-  const getItemsSummary = (transaction: Transaction) => {
-    const items = transaction.entries
-      .filter(e => e.type !== 'money')
-      .map(e => getItemDisplayName(e))
-      .slice(0, 2);
-    
-    const remaining = Math.max(0, transaction.entries.filter(e => e.type !== 'money').length - 2);
-    
-    if (items.length === 0) return 'Money transaction';
-    if (remaining > 0) items.push(`+${remaining} more`);
-    
-    return items.join(', ');
   };
 
   const getSettlementStatus = (transaction: Transaction) => {
@@ -315,9 +206,6 @@ export const HistoryScreen: React.FC = () => {
 
   // Enhanced Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
-    const isExpanded = expandedCards.has(transaction.id);
-    const transactionType = getTransactionType(transaction);
-    const itemsSummary = getItemsSummary(transaction);
     const settlementStatus = getSettlementStatus(transaction);
     
     return (
@@ -333,75 +221,55 @@ export const HistoryScreen: React.FC = () => {
                 {formatDate(transaction.date)}
               </Text>
             </View>
-            <Text 
-              variant="titleMedium" 
-              style={[styles.amount, { color: getAmountColor(transaction) }]}
-            >
-              {formatAmount(transaction)}
-            </Text>
-          </View>
-          
-          {/* Details Row */}
-          <View style={styles.cardDetails}>
-            <View style={styles.transactionTypeContainer}>
-              <View style={[styles.typeIndicator, { backgroundColor: transactionType.color }]} />
-              <Text variant="bodyMedium" style={styles.transactionTypeText}>
-                {transactionType.label}
+            <View style={styles.rightSection}>
+              <Text 
+                variant="titleMedium" 
+                style={[styles.amount, { color: getAmountColor(transaction) }]}
+              >
+                {formatAmount(transaction)}
               </Text>
+              <Chip 
+                mode="flat"
+                style={[styles.statusChip, { backgroundColor: `${settlementStatus.color}30` }]}
+                textStyle={[styles.statusChipText, { color: settlementStatus.color }]}
+                compact
+              >
+                {settlementStatus.label}
+              </Chip>
             </View>
-            <Text variant="bodySmall" style={styles.itemsSummary}>
-              {itemsSummary}
-            </Text>
-            <Chip 
-              mode="flat"
-              style={[styles.statusChip, { backgroundColor: `${settlementStatus.color}20` }]}
-              textStyle={[styles.statusChipText, { color: settlementStatus.color }]}
-              compact
-            >
-              {settlementStatus.label}
-            </Chip>
           </View>
 
-          {/* Expandable Section */}
-          {isExpanded && (
-            <View style={styles.expandedContent}>
-              <Divider style={styles.expandedDivider} />
-              <Text variant="labelMedium" style={styles.expandedSectionTitle}>
-                Transaction Details
-              </Text>
-              {transaction.entries.map((entry, index) => (
-                <View key={index} style={styles.entryRow}>
-                  <Text variant="bodySmall" style={styles.entryType}>
-                    {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
-                  </Text>
-                  <Text variant="bodySmall" style={styles.entryDetails}>
-                    {entry.weight && `${entry.weight}g`}
-                    {entry.amount && ` - ₹${entry.amount.toLocaleString()}`}
-                  </Text>
-                </View>
-              ))}
-              {transaction.amountPaid > 0 && (
-                <View style={styles.paymentRow}>
-                  <Text variant="bodySmall" style={styles.paymentLabel}>
-                    Amount Paid: ₹{transaction.amountPaid.toLocaleString()}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-          
-          {/* Expand/Collapse Button */}
-          <TouchableOpacity 
-            style={styles.expandButton}
-            onPress={() => toggleCardExpansion(transaction.id)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Icon 
-              name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-              size={24} 
-              color={theme.colors.onSurfaceVariant} 
-            />
-          </TouchableOpacity>
+          {/* Transaction Details - Always Visible */}
+          <View style={styles.expandedContent}>
+            <Divider style={styles.expandedDivider} />
+            {transaction.entries.map((entry, index) => (
+              <View key={index} style={styles.entryRow}>
+                <Text variant="bodySmall" style={styles.entryType}>
+                  {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
+                </Text>
+                <Text variant="bodySmall" style={styles.entryDetails}>
+                  {entry.weight && `${entry.weight}g`}
+                  {entry.subtotal && ` - ₹${entry.subtotal.toLocaleString()}`}
+                </Text>
+              </View>
+            ))}
+            {transaction.amountPaid > 0 && (
+              <View style={styles.paymentRow}>
+                <Text variant="bodySmall" style={styles.paymentLabel}>
+                  {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+                </Text>
+                <Text variant="bodySmall" style={[styles.transactionBalance, 
+                  { color: transaction.total - transaction.amountPaid > 0 ? theme.colors.sellColor : 
+                          transaction.total - transaction.amountPaid < 0 ? theme.colors.purchaseColor : 
+                          theme.colors.onSurfaceVariant }
+                ]}>
+                  {transaction.total - transaction.amountPaid > 0 ? `Balance: ₹${(transaction.total - transaction.amountPaid).toLocaleString()}` :
+                   transaction.total - transaction.amountPaid < 0 ? `Debt: ₹${Math.abs(transaction.total - transaction.amountPaid).toLocaleString()}` :
+                   'Settled'}
+                </Text>
+              </View>
+            )}
+          </View>
         </Card.Content>
       </Card>
     );
@@ -432,13 +300,6 @@ export const HistoryScreen: React.FC = () => {
           <Text variant="headlineMedium" style={styles.title}>
             History
           </Text>
-          <IconButton 
-            icon="magnify"
-            size={24}
-            onPress={toggleSearchExpanded}
-            style={styles.searchToggle}
-            iconColor={isSearchExpanded ? theme.colors.primary : theme.colors.onSurfaceVariant}
-          />
         </View>
       </Surface>
 
@@ -450,70 +311,52 @@ export const HistoryScreen: React.FC = () => {
           style={styles.searchBar}
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
-          <Chip
-            mode={selectedFilter === 'today' ? 'flat' : 'outlined'}
-            selected={selectedFilter === 'today'}
-            onPress={() => handleFilterChange('today')}
-            style={styles.filterChip}
+        <View style={styles.filterContainer}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            contentContainerStyle={styles.filterContent}
           >
-            Today
-          </Chip>
-          <Chip
-            mode={selectedFilter === 'week' ? 'flat' : 'outlined'}
-            selected={selectedFilter === 'week'}
-            onPress={() => handleFilterChange('week')}
-            style={styles.filterChip}
-          >
-            This Week
-          </Chip>
-          <Chip
-            mode={selectedFilter === 'month' ? 'flat' : 'outlined'}
-            selected={selectedFilter === 'month'}
-            onPress={() => handleFilterChange('month')}
-            style={styles.filterChip}
-          >
-            This Month
-          </Chip>
-          <Chip
-            mode={selectedFilter === 'all' ? 'flat' : 'outlined'}
-            selected={selectedFilter === 'all'}
-            onPress={() => handleFilterChange('all')}
-            style={styles.filterChip}
-          >
-            All Time
-          </Chip>
-        </ScrollView>
+            <Chip
+              mode={selectedFilter === 'today' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'today'}
+              onPress={() => handleFilterChange('today')}
+              style={styles.filterChip}
+              compact
+            >
+              Today
+            </Chip>
+            <Chip
+              mode={selectedFilter === 'week' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'week'}
+              onPress={() => handleFilterChange('week')}
+              style={styles.filterChip}
+              compact
+            >
+              This Week
+            </Chip>
+            <Chip
+              mode={selectedFilter === 'month' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'month'}
+              onPress={() => handleFilterChange('month')}
+              style={styles.filterChip}
+              compact
+            >
+              This Month
+            </Chip>
+            <Chip
+              mode={selectedFilter === 'all' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'all'}
+              onPress={() => handleFilterChange('all')}
+              style={styles.filterChip}
+              compact
+            >
+              All Time
+            </Chip>
+          </ScrollView>
+        </View>
 
-        {/* Search Bar */}
-        <Animated.View style={[styles.searchContainer, { height: searchHeight }]}>
-          <Searchbar
-            placeholder="Search by customer name..."
-            onChangeText={handleSearchChange}
-            value={searchQuery}
-            style={styles.searchBar}
-            onClearIconPress={clearSearch}
-            icon={() => <Icon name="magnify" size={24} color={theme.colors.onSurfaceVariant} />}
-            clearIcon={() => searchQuery ? <Icon name="close" size={24} color={theme.colors.onSurfaceVariant} /> : null}
-          />
-          
-          {/* Recent Searches */}
-          {isSearchExpanded && recentSearches.length > 0 && !searchQuery && (
-            <ScrollView horizontal style={styles.recentSearches} showsHorizontalScrollIndicator={false}>
-              {recentSearches.map((search, index) => (
-                <Chip
-                  key={index}
-                  onPress={() => selectRecentSearch(search)}
-                  style={styles.recentSearchChip}
-                  mode="outlined"
-                  compact
-                >
-                  {search}
-                </Chip>
-              ))}
-            </ScrollView>
-          )}
-        </Animated.View>
+
 
         {filteredTransactions.length === 0 ? (
           error ? (
@@ -528,29 +371,24 @@ export const HistoryScreen: React.FC = () => {
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <Icon name="magnify" size={48} color={theme.colors.onSurfaceVariant} />
-              <Text variant="titleLarge" style={styles.emptyTitle}>
-                {searchQuery.trim() || selectedFilter !== 'all' ? 'No transactions found' : 'No transactions yet'}
+              <Icon name="magnify" size={72} color={theme.colors.onSurfaceVariant} />
+              <Text variant="headlineSmall" style={styles.emptyTitle}>
+                No transactions found
               </Text>
-              <Text variant="bodyMedium" style={styles.emptyMessage}>
-                {searchQuery.trim() || selectedFilter !== 'all'
-                  ? 'Try adjusting your search or date filters'
-                  : 'Start by creating your first transaction from the Home tab'
-                }
+              <Text variant="bodyLarge" style={styles.emptyMessage}>
+                Try adjusting your search or date filters
               </Text>
-              {(searchQuery.trim() || selectedFilter !== 'all') && (
-                <Button 
-                  mode="outlined" 
-                  onPress={() => {
-                    setSearchQuery('');
-                    setSelectedFilter('all');
-                    performSearch('');
-                  }}
-                  style={styles.clearFiltersButton}
-                >
-                  Clear Filters
-                </Button>
-              )}
+              <Button 
+                mode="contained" 
+                onPress={() => {
+                  setSearchQuery('');
+                  setSelectedFilter('all');
+                  performSearch('');
+                }}
+                style={styles.clearFiltersButton}
+              >
+                Clear Filters
+              </Button>
             </View>
           )
         ) : (
@@ -597,15 +435,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   searchBar: {
-    marginTop: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    elevation: theme.elevation.level1,
+    marginHorizontal: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+    elevation: 0,
+    backgroundColor: theme.colors.surfaceVariant,
   },
   filterContainer: {
-    marginBottom: theme.spacing.md,
+    marginVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+  },
+  filterContent: {
+    paddingRight: theme.spacing.md,
   },
   filterChip: {
     marginRight: theme.spacing.sm,
+    height: 32,
   },
   loadingContainer: {
     flex: 1,
@@ -620,22 +465,27 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
+    minHeight: 400,
   },
   emptyTitle: {
-    color: theme.colors.onBackground,
+    color: theme.colors.onSurface,
     textAlign: 'center',
+    marginTop: theme.spacing.md,
     marginBottom: theme.spacing.sm,
   },
   emptyMessage: {
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
+    marginBottom: theme.spacing.lg,
   },
   transactionsList: {
     paddingBottom: theme.spacing.xxl,
   },
   transactionCard: {
-    marginBottom: theme.spacing.sm,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderRadius: 12,
     elevation: theme.elevation.level1,
   },
   transactionHeader: {
@@ -647,6 +497,11 @@ const styles = StyleSheet.create({
   customerInfo: {
     flex: 1,
   },
+  rightSection: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    gap: theme.spacing.xs,
+  },
   customerName: {
     color: theme.colors.onSurface,
     fontWeight: '500',
@@ -657,6 +512,7 @@ const styles = StyleSheet.create({
   },
   amount: {
     fontWeight: 'bold',
+    textAlign: 'right',
   },
   receivedAmount: {
     marginTop: theme.spacing.xs,
@@ -673,27 +529,10 @@ const styles = StyleSheet.create({
   
   // Part 3 Enhanced Styles
   headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
   },
-  searchToggle: {
-    margin: 0,
-  },
-  searchContainer: {
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: theme.spacing.md,
-    overflow: 'hidden',
-  },
-  recentSearches: {
-    marginTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm,
-  },
-  recentSearchChip: {
-    marginRight: theme.spacing.sm,
-  },
+
   retryButton: {
     marginTop: theme.spacing.md,
   },
@@ -716,7 +555,7 @@ const styles = StyleSheet.create({
   },
   cardDetails: {
     gap: theme.spacing.xs,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   transactionTypeContainer: {
     flexDirection: 'row',
@@ -737,12 +576,14 @@ const styles = StyleSheet.create({
     marginLeft: theme.spacing.md,
   },
   statusChip: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     height: 24,
+    paddingHorizontal: theme.spacing.xs / 2,
   },
   statusChipText: {
-    fontSize: 10,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 14,
   },
   expandedContent: {
     marginTop: theme.spacing.sm,
@@ -770,17 +611,19 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   paymentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: theme.spacing.xs,
     borderTopWidth: 1,
     borderTopColor: theme.colors.outline + '20',
     marginTop: theme.spacing.xs,
   },
-  expandButton: {
-    position: 'absolute',
-    top: theme.spacing.xs,
-    right: theme.spacing.xs,
-    padding: theme.spacing.xs,
+  transactionBalance: {
+    fontWeight: '500',
+    fontSize: 11,
   },
+
   
   // Payment and Additional Styles
   paymentLabel: {

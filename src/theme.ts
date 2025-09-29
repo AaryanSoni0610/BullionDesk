@@ -101,11 +101,11 @@ export const theme = {
   // Elevation system - Following Material Design 3
   elevation: {
     level0: 0,
-    level1: 1,
-    level2: 3,
-    level3: 6,
-    level4: 8,
-    level5: 12
+    level1: 2,
+    level2: 4,
+    level3: 8,
+    level4: 12,
+    level5: 16
   },
   
   // Component dimensions following guidelines

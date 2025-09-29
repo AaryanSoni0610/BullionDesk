@@ -137,6 +137,8 @@ export const LedgerScreen: React.FC = () => {
         pendingTransactions++;
       }
 
+      // Cash flow is based on actual money movement
+      // Money IN: Cash received from customers
       totalIn += transaction.amountPaid;
 
       transaction.entries.forEach(entry => {
@@ -162,7 +164,8 @@ export const LedgerScreen: React.FC = () => {
           }
         } else if (entry.type === 'purchase') {
           totalPurchases += entry.subtotal;
-          totalOut += entry.subtotal;
+          // Cash flow OUT: Only add to totalOut if we actually paid cash for the purchase
+          // In bullion business, purchases create debt until settled
           
           // Track inventory coming in
           if (entry.weight) {
@@ -182,7 +185,8 @@ export const LedgerScreen: React.FC = () => {
             }
           }
         } else if (entry.type === 'money') {
-          if (entry.moneyType === 'balance') {
+          // Money OUT: Direct money payments to customers
+          if (entry.moneyType === 'debt' || entry.moneyType === 'balance') {
             totalOut += entry.amount || 0;
           }
         }

@@ -399,18 +399,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                 ]}
                 error={!!paymentError}
                 placeholder={`Suggested: ₹${Math.abs(netAmount).toLocaleString()}`}
-                right={
-                  paymentError ? (
-                    <TextInput.Icon icon="alert-circle" />
-                  ) : receivedAmount && !paymentError && hasPaymentInteracted ? (
-                    <TextInput.Icon icon="check-circle" />
-                  ) : (
-                    <TextInput.Icon 
-                      icon="calculator" 
-                      onPress={() => setReceivedAmount(Math.abs(netAmount).toString())}
-                    />
-                  )
-                }
               />
               <HelperText type="error" visible={!!paymentError}>
                 {paymentError}

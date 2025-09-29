@@ -119,29 +119,31 @@ export const HomeScreen: React.FC = () => {
   };
 
   const getPrimaryItems = (transaction: Transaction) => {
-    const itemCounts = new Map<string, number>();
-    const itemWeights = new Map<string, number>();
+    const sellItems: string[] = [];
+    const purchaseItems: string[] = [];
     
     transaction.entries.forEach(entry => {
       if (entry.type !== 'money') {
         const displayName = getItemDisplayName(entry);
-        itemCounts.set(displayName, (itemCounts.get(displayName) || 0) + 1);
-        if (entry.weight) {
-          itemWeights.set(displayName, (itemWeights.get(displayName) || 0) + entry.weight);
+        const itemText = entry.weight ? `${displayName} ${entry.weight.toFixed(1)}g` : displayName;
+        
+        if (entry.type === 'sell') {
+          sellItems.push(itemText);
+        } else if (entry.type === 'purchase') {
+          purchaseItems.push(itemText);
         }
       }
     });
     
-    const items = Array.from(itemWeights.entries())
-      .map(([name, weight]) => `${name} ${weight.toFixed(1)}g`)
-      .slice(0, 2); // Show max 2 items
-    
-    const remaining = itemWeights.size - 2;
-    if (remaining > 0) {
-      items.push(`+${remaining} more`);
+    const parts: string[] = [];
+    if (sellItems.length > 0) {
+      parts.push(`Sell: ${sellItems.slice(0, 2).join(', ')}${sellItems.length > 2 ? ` +${sellItems.length - 2} more` : ''}`);
+    }
+    if (purchaseItems.length > 0) {
+      parts.push(`Purchase: ${purchaseItems.slice(0, 2).join(', ')}${purchaseItems.length > 2 ? ` +${purchaseItems.length - 2} more` : ''}`);
     }
     
-    return items.join(', ') || 'Money transaction';
+    return parts.join('\n') || 'Money transaction';
   };
 
   const getItemDisplayName = (entry: any): string => {
@@ -161,7 +163,6 @@ export const HomeScreen: React.FC = () => {
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const status = getSettlementStatus(transaction);
-    const transactionType = transaction.total > 0 ? 'Sell' : 'Purchase';
     const primaryItems = getPrimaryItems(transaction);
     const customer = customers.get(transaction.customerId);
     const customerBalance = customer?.balance || 0;
@@ -192,9 +193,6 @@ export const HomeScreen: React.FC = () => {
           <View style={styles.cardRow2}>
             <View style={styles.transactionSummary}>
               <Text variant="bodyLarge" style={styles.transactionType}>
-                <Text style={{ color: getAmountColor(transaction) }}>
-                  {transactionType}: 
-                </Text>{' '}
                 {primaryItems}
               </Text>
             </View>
@@ -331,10 +329,8 @@ export const HomeScreen: React.FC = () => {
       {/* Floating Action Button */}
       <FAB
         icon="plus"
-        label={recentTransactions.length === 0 ? "New Transaction" : undefined}
         style={[
-          styles.fab,
-          recentTransactions.length === 0 && styles.extendedFab
+          styles.fab
         ]}
         onPress={() => setCustomerModalVisible(true)}
       />
@@ -387,15 +383,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.xl,
-    minHeight: 400, // Ensure minimum height for proper centering
+    minHeight: 400,
   },
   emptyTitle: {
     textAlign: 'center',
-    marginBottom: theme.spacing.md,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
     color: theme.colors.onSurface,
   },
   emptyDescription: {
     textAlign: 'center',
+    marginBottom: theme.spacing.lg,
     color: theme.colors.onSurfaceVariant,
   },
   transactionList: {
@@ -417,11 +415,10 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   transactionCard: {
-    marginHorizontal: theme.spacing.md,
     marginBottom: theme.spacing.md,
     borderRadius: 12,
-    padding: theme.spacing.md,
     backgroundColor: theme.colors.surface,
+    elevation: theme.elevation.level1,
   },
   transactionHeader: {
     flexDirection: 'row',
@@ -484,9 +481,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: theme.spacing.md,
     backgroundColor: theme.colors.primary,
-  },
-  extendedFab: {
-    paddingHorizontal: theme.spacing.md,
+    borderRadius: 16,
   },
   
   // New styles for Part 2 implementation
@@ -502,7 +497,8 @@ const styles = StyleSheet.create({
   
   // Transaction Card Styles
   cardContent: {
-    padding: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
   },
   cardRow1: {
     flexDirection: 'row',

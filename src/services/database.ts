@@ -5,6 +5,7 @@ const STORAGE_KEYS = {
   CUSTOMERS: '@bulliondesk_customers',
   TRANSACTIONS: '@bulliondesk_transactions',
   LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
+  BASE_INVENTORY: '@bulliondesk_base_inventory',
 };
 
 export class DatabaseService {
@@ -213,11 +214,22 @@ export class DatabaseService {
   static async exportData(): Promise<{
     customers: Customer[];
     transactions: Transaction[];
+    baseInventory: {
+      gold999: number;
+      gold995: number;
+      silver: number;
+      silver98: number;
+      silver96: number;
+      rani: number;
+      rupu: number;
+      money: number;
+    };
   } | null> {
     try {
       const customers = await this.getAllCustomers();
       const transactions = await this.getAllTransactions();
-      return { customers, transactions };
+      const baseInventory = await this.getBaseInventory();
+      return { customers, transactions, baseInventory };
     } catch (error) {
       console.error('Error exporting data:', error);
       return null;
@@ -227,13 +239,91 @@ export class DatabaseService {
   static async importData(data: {
     customers: Customer[];
     transactions: Transaction[];
+    baseInventory?: {
+      gold999: number;
+      gold995: number;
+      silver: number;
+      silver98: number;
+      silver96: number;
+      rani: number;
+      rupu: number;
+      money: number;
+    };
   }): Promise<boolean> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(data.customers));
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
+      if (data.baseInventory) {
+        await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(data.baseInventory));
+      }
       return true;
     } catch (error) {
       console.error('Error importing data:', error);
+      return false;
+    }
+  }
+
+  // Base inventory operations
+  static async getBaseInventory(): Promise<{
+    gold999: number;
+    gold995: number;
+    silver: number;
+    silver98: number;
+    silver96: number;
+    rani: number;
+    rupu: number;
+    money: number;
+  }> {
+    try {
+      const baseInventoryJson = await AsyncStorage.getItem(STORAGE_KEYS.BASE_INVENTORY);
+      if (baseInventoryJson) {
+        return JSON.parse(baseInventoryJson);
+      }
+      
+      // Initialize with default values
+      const defaultInventory = {
+        gold999: 300,
+        gold995: 100,
+        silver: 10000,
+        silver98: 20000,
+        silver96: 5000,
+        rani: 0,
+        rupu: 0,
+        money: 3000000
+      };
+      
+      await this.setBaseInventory(defaultInventory);
+      return defaultInventory;
+    } catch (error) {
+      console.error('Error getting base inventory:', error);
+      return {
+        gold999: 300,
+        gold995: 100,
+        silver: 10000,
+        silver98: 20000,
+        silver96: 5000,
+        rani: 0,
+        rupu: 0,
+        money: 3000000
+      };
+    }
+  }
+
+  static async setBaseInventory(inventory: {
+    gold999: number;
+    gold995: number;
+    silver: number;
+    silver98: number;
+    silver96: number;
+    rani: number;
+    rupu: number;
+    money: number;
+  }): Promise<boolean> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(inventory));
+      return true;
+    } catch (error) {
+      console.error('Error setting base inventory:', error);
       return false;
     }
   }

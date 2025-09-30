@@ -261,12 +261,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     }
 
     // Apply money formatting to all non-money transaction subtotals
-    if (rawSubtotal > 0) {
-      const formatted = formatMoney(rawSubtotal.toString());
-      return parseFloat(formatted);
-    }
-
-    return 0;
+    const formatted = formatMoney(Math.abs(rawSubtotal).toString());
+    const formattedAmount = parseFloat(formatted);
+    return rawSubtotal >= 0 ? formattedAmount : -formattedAmount;
   };
 
   const subtotal = calculateSubtotal();
@@ -519,8 +516,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               {extraWeight > 0 && (
                 <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
               )}
-              <Text variant="bodySmall">Total: {(totalPureWithExtra).toFixed(3)}g</Text>
-              <Text variant="bodySmall">Subtotal: ₹{subtotal.toFixed(2)}</Text>
             </View>
           ) : (
             <>
@@ -545,7 +540,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                 {extraWeight > 0 && (
                   <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
                 )}
-                <Text variant="bodySmall">Total Given: {totalPureWithExtra.toFixed(3)}g</Text>
                 <Text variant="bodySmall">Silver 98: {parseFloat(silver98Weight) || 0}g</Text>
                 <Text variant="bodySmall">Silver: {parseFloat(silverWeight) || 0}g</Text>
                 <Text variant="bodySmall">Net Weight: {(() => {

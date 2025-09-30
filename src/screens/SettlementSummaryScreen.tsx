@@ -159,12 +159,22 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           amount: `${entry.weight}g` 
         });
       } else if (entry.type === 'purchase') {
-        // Merchant purchases: gives money (-), takes goods
-        netMoneyFlow -= Math.abs(entry.subtotal);
-        takeItems.push({ 
-          item: getItemDisplayName(entry), 
-          amount: `${entry.weight}g` 
-        });
+        // Special case for rupu purchase with silver return and net weight < 0: inward flow
+        if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver' && (entry.netWeight || 0) < 0) {
+          // Inward flow: merchant receives money
+          netMoneyFlow += Math.abs(entry.subtotal);
+          takeItems.push({ 
+            item: getItemDisplayName(entry), 
+            amount: `${entry.weight}g` 
+          });
+        } else {
+          // Normal purchase: gives money (-), takes goods
+          netMoneyFlow -= Math.abs(entry.subtotal);
+          takeItems.push({ 
+            item: getItemDisplayName(entry), 
+            amount: `${entry.weight}g` 
+          });
+        }
       } else if (entry.type === 'money') {
         // Money transaction: add to net money flow based on moneyType
         if (entry.moneyType === 'debt') {

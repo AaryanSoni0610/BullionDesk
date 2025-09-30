@@ -46,6 +46,12 @@ interface InventoryData {
   };
 }
 
+interface EntryData {
+  transactionId: string;
+  customerName: string;
+  entry: any; // TransactionEntry
+}
+
 interface InventoryCardProps {
   title: string;
   value: string;
@@ -60,6 +66,7 @@ interface InventoryCardProps {
 export const LedgerScreen: React.FC = () => {
   const [inventoryData, setInventoryData] = useState<InventoryData | null>(null);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'yesterday' | 'custom'>('today');
@@ -96,9 +103,10 @@ export const LedgerScreen: React.FC = () => {
       // Filter transactions by selected period
       const filteredTrans = filterTransactionsByPeriod(transactions);
 
-      const data = calculateInventoryData(filteredTrans, customers);
+      const data = await calculateInventoryData(filteredTrans, customers);
       setInventoryData(data);
       setFilteredTransactions(filteredTrans);
+      setCustomers(customers);
     } catch (error) {
       console.error('Error loading inventory data:', error);
     } finally {
@@ -137,25 +145,34 @@ export const LedgerScreen: React.FC = () => {
     }
   };
 
-  const calculateInventoryData = (transactions: Transaction[], customers: Customer[]): InventoryData => {
+  const calculateInventoryData = async (transactions: Transaction[], customers: Customer[]): Promise<InventoryData> => {
     let totalSales = 0;
     let totalPurchases = 0;
-    let totalIn = 0;
-    let totalOut = 0;
+    let totalIn = 0;  // Cash received from customers
+    let totalOut = 0; // Cash paid to customers
     let pendingTransactions = 0;
-    let moneyIn = 0;  // Customer owes to merchant
-    let moneyOut = 0; // Merchant owes to customer
 
     const goldInventory = { gold999: 0, gold995: 0, rani: 0, total: 0 };
     const silverInventory = { silver: 0, silver98: 0, silver96: 0, rupu: 0, total: 0 };
+
+    // Get base inventory
+    const baseInventory = await DatabaseService.getBaseInventory();
+    
+    // Initialize with base values
+    goldInventory.gold999 = baseInventory.gold999;
+    goldInventory.gold995 = baseInventory.gold995;
+    goldInventory.rani = baseInventory.rani;
+    silverInventory.silver = baseInventory.silver;
+    silverInventory.silver98 = baseInventory.silver98;
+    silverInventory.silver96 = baseInventory.silver96;
+    silverInventory.rupu = baseInventory.rupu;
 
     transactions.forEach(transaction => {
       if (transaction.status === 'pending') {
         pendingTransactions++;
       }
 
-      // Cash flow is based on actual money movement
-      // Money IN: Cash received from customers
+      // Cash flow: amountPaid is cash received from customers
       totalIn += transaction.amountPaid;
 
       transaction.entries.forEach(entry => {
@@ -181,8 +198,6 @@ export const LedgerScreen: React.FC = () => {
           }
         } else if (entry.type === 'purchase') {
           totalPurchases += entry.subtotal;
-          // Cash flow OUT: Only add to totalOut if we actually paid cash for the purchase
-          // In bullion business, purchases create debt until settled
           
           // Track inventory coming in
           if (entry.weight) {
@@ -212,9 +227,13 @@ export const LedgerScreen: React.FC = () => {
             }
           }
         } else if (entry.type === 'money') {
-          // Money OUT: Direct money payments to customers
-          if (entry.moneyType === 'debt' || entry.moneyType === 'balance') {
-            totalOut += entry.amount || 0;
+          // Money transactions: track cash paid out to customers
+          if (entry.moneyType === 'debt') {
+            // Merchant owes money to customer (customer debt)
+            totalOut += Math.abs(entry.subtotal);
+          } else if (entry.moneyType === 'balance') {
+            // Merchant gives money to customer (customer had credit)
+            totalOut += Math.abs(entry.subtotal);
           }
         }
       });
@@ -222,18 +241,12 @@ export const LedgerScreen: React.FC = () => {
 
     const netBalance = customers.reduce((sum, customer) => sum + customer.balance, 0);
     
-    // Calculate money in/out based on customer balances
-    customers.forEach(customer => {
-      if (customer.balance > 0) {
-        moneyIn += customer.balance; // Customer owes money
-      } else {
-        moneyOut += Math.abs(customer.balance); // Merchant owes money
-      }
-    });
-    
     // Calculate inventory totals
     goldInventory.total = goldInventory.gold999 + goldInventory.gold995 + goldInventory.rani;
     silverInventory.total = silverInventory.silver + silverInventory.silver98 + silverInventory.silver96 + silverInventory.rupu;
+
+    // Calculate actual money inventory: base money + cash in - cash out
+    const actualMoneyInventory = baseInventory.money + totalIn - totalOut;
 
     return {
       totalTransactions: transactions.length,
@@ -248,8 +261,8 @@ export const LedgerScreen: React.FC = () => {
         totalIn,
         totalOut,
         netFlow: totalIn - totalOut,
-        moneyIn,
-        moneyOut
+        moneyIn: actualMoneyInventory,  // Actual cash holdings
+        moneyOut: 0  // Not used for actual inventory
       }
     };
   };
@@ -258,19 +271,37 @@ export const LedgerScreen: React.FC = () => {
     loadInventoryData(true);
   };
 
-  const getFilteredTransactions = () => {
-    return filteredTransactions.filter(transaction => {
-      return transaction.entries.some(entry => {
+  const getFilteredEntries = (): EntryData[] => {
+    const entries: EntryData[] = [];
+    
+    filteredTransactions.forEach(transaction => {
+      const customer = customers.find(c => c.id === transaction.customerId);
+      const customerName = customer?.name || 'Unknown Customer';
+      
+      transaction.entries.forEach(entry => {
+        let includeEntry = false;
+        
         if (selectedInventory === 'money') {
-          return entry.type === 'money';
-        } else if (selectedInventory === 'gold') {
-          return entry.itemType?.includes('gold') || entry.itemType === 'rani';
-        } else if (selectedInventory === 'silver') {
-          return entry.itemType?.includes('silver') || entry.itemType === 'rupu';
+          includeEntry = true;
+        } 
+        else if (selectedInventory === 'gold') {
+          includeEntry = entry.itemType.startsWith('gold');
         }
-        return false;
+        else if (selectedInventory === 'silver') {
+          includeEntry = entry.itemType.startsWith('silver');
+        }
+
+        if (includeEntry) {
+          entries.push({
+            transactionId: transaction.id,
+            customerName,
+            entry
+          });
+        }
       });
     });
+    
+    return entries;
   };
 
   const formatCurrency = (amount: number) => {
@@ -279,72 +310,99 @@ export const LedgerScreen: React.FC = () => {
     return isNegative ? `-${formattedAmount}` : formattedAmount;
   };
 
-  const formatWeight = (weight: number) => {
-    return `${weight.toFixed(3)}g`;
+  const formatWeight = (weight: number, isSilver: boolean = false) => {
+    const decimals = isSilver ? 1 : 2;
+    return `${weight.toFixed(decimals)}g`;
   };
 
-  // Navigation handlers for sub-ledgers
-  const navigateToGoldLedger = () => {
-    // TODO: Navigate to Gold Sub-Ledger screen
-    console.log('Navigate to Gold Ledger');
+  const getItemTypeDisplay = (itemType: string) => {
+    const typeMap: Record<string, string> = {
+      'gold999': 'Gold 999',
+      'gold995': 'Gold 995',
+      'rani': 'Rani',
+      'silver': 'Silver',
+      'silver98': 'Silver 98',
+      'silver96': 'Silver 96',
+      'rupu': 'Rupu',
+    };
+    return typeMap[itemType] || itemType;
   };
 
-  const navigateToSilverLedger = () => {
-    // TODO: Navigate to Silver Sub-Ledger screen
-    console.log('Navigate to Silver Ledger');
-  };
-
-  const navigateToMoneyInLedger = () => {
-    // TODO: Navigate to Money In (Receivables) Sub-Ledger screen
-    console.log('Navigate to Money In Ledger');
-  };
-
-  const navigateToMoneyOutLedger = () => {
-    // TODO: Navigate to Money Out (Payables) Sub-Ledger screen
-    console.log('Navigate to Money Out Ledger');
-  };
-
-  // Transaction Row Component
-  const TransactionRow: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
-    const customer = inventoryData?.totalCustomers ? 
-      // We need customer data, but for now use placeholder
-      { name: 'Customer Name' } : { name: 'Customer Name' };
-
-    const relevantEntries = transaction.entries.filter(entry => {
-      if (selectedInventory === 'money') {
-        return entry.type === 'money';
-      } else if (selectedInventory === 'gold') {
-        return entry.itemType?.includes('gold') || entry.itemType === 'rani';
-      } else if (selectedInventory === 'silver') {
-        return entry.itemType?.includes('silver') || entry.itemType === 'rupu';
-      }
-      return false;
-    });
-
-    const totalAmount = relevantEntries.reduce((sum, entry) => sum + (entry.subtotal || 0), 0);
-
-    return (
-      <View style={styles.transactionRow}>
-        <View style={styles.transactionCell}>
-          <Text variant="bodyMedium" style={styles.customerName}>
-            {customer.name}
-          </Text>
-          <Text variant="bodySmall" style={styles.transactionDate}>
-            {new Date(transaction.date).toLocaleDateString()}
-          </Text>
+  // Entry Row Component
+  const EntryRow: React.FC<{ entryData: EntryData }> = ({ entryData }) => {
+    const { customerName, entry } = entryData;
+    
+    if (selectedInventory === 'money') {
+      // For money: Customer, Balance, Debt
+      const isDebt = entry.moneyType === 'debt';
+      const balanceAmount = isDebt ? Math.abs(entry.subtotal) : 0;
+      const debtAmount = isDebt ? 0 : Math.abs(entry.subtotal);
+      
+      return (
+        <View style={styles.transactionRow}>
+          <View style={styles.transactionCell}>
+            <Text variant="bodyMedium" style={styles.customerName}>
+              {customerName}
+            </Text>
+          </View>
+          <View style={styles.transactionCell}>
+            <Text variant="bodyMedium" style={styles.transactionAmount}>
+              {balanceAmount > 0 ? formatCurrency(balanceAmount) : '-'}
+            </Text>
+          </View>
+          <View style={styles.transactionCell}>
+            <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
+              {debtAmount > 0 ? formatCurrency(debtAmount) : '-'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.transactionCell}>
-          <Text variant="bodyMedium" style={styles.transactionAmount}>
-            {formatCurrency(totalAmount)}
-          </Text>
+      );
+    } else {
+      // For gold/silver: Customer, Purchase, Sell
+      const isPurchase = entry.type === 'purchase';
+      const weight = entry.pureWeight || entry.weight || 0;
+      const purchaseWeight = isPurchase ? weight : 0;
+      const sellWeight = isPurchase ? 0 : weight;
+      const isSilverItem = entry.itemType?.includes('silver') || entry.itemType === 'rupu';
+      
+      return (
+        <View style={styles.transactionRow}>
+          <View style={styles.transactionCell}>
+            <Text variant="bodyMedium" style={styles.customerName}>
+              {customerName}
+            </Text>
+          </View>
+          <View style={styles.transactionCell}>
+            {purchaseWeight > 0 ? (
+              <View>
+                <Text variant="bodyMedium" style={styles.transactionAmount}>
+                  {formatWeight(purchaseWeight, isSilverItem)}
+                </Text>
+                <Text variant="bodySmall" style={styles.itemTypeText}>
+                  {getItemTypeDisplay(entry.itemType)}
+                </Text>
+              </View>
+            ) : (
+              <Text variant="bodyMedium" style={styles.transactionAmount}>-</Text>
+            )}
+          </View>
+          <View style={styles.transactionCell}>
+            {sellWeight > 0 ? (
+              <View>
+                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
+                  {formatWeight(sellWeight, isSilverItem)}
+                </Text>
+                <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'center' }]}>
+                  {getItemTypeDisplay(entry.itemType)}
+                </Text>
+              </View>
+            ) : (
+              <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>-</Text>
+            )}
+          </View>
         </View>
-        <View style={styles.transactionCell}>
-          <Text variant="bodySmall" style={styles.transactionType}>
-            {transaction.status === 'completed' ? '✓' : transaction.status === 'pending' ? '⏳' : '✗'}
-          </Text>
-        </View>
-      </View>
-    );
+      );
+    }
   };
 
   // Enhanced Inventory Card Component
@@ -496,7 +554,7 @@ export const LedgerScreen: React.FC = () => {
           {/* Silver Inventory Card */}
           <InventoryCard
             title="Silver"
-            value={formatWeight(inventoryData.silverInventory.total)}
+            value={formatWeight(inventoryData.silverInventory.total, true)}
             unit="g"
             icon="circle-outline"
             backgroundColor="#ECEFF1"
@@ -524,18 +582,31 @@ export const LedgerScreen: React.FC = () => {
             <Text variant="bodyMedium" style={styles.transactionHeaderText}>
               Customer
             </Text>
-            <Text variant="bodyMedium" style={styles.transactionHeaderText}>
-              Amount
-            </Text>
-            <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-              Status
-            </Text>
+            {selectedInventory === 'money' ? (
+              <>
+                <Text variant="bodyMedium" style={styles.transactionHeaderText}>
+                  Balance
+                </Text>
+                <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
+                  Debt
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text variant="bodyMedium" style={styles.transactionHeaderText}>
+                  Purchase
+                </Text>
+                <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
+                  Sell
+                </Text>
+              </>
+            )}
           </View>
           
           {/* Transaction Rows */}
-          {getFilteredTransactions().length > 0 ? (
-            getFilteredTransactions().map((transaction, index) => (
-              <TransactionRow key={transaction.id || index} transaction={transaction} />
+          {getFilteredEntries().length > 0 ? (
+            getFilteredEntries().map((entryData, index) => (
+              <EntryRow key={`${entryData.transactionId}-${entryData.entry.id}`} entryData={entryData} />
             ))
           ) : (
             <View style={styles.emptyState}>
@@ -583,14 +654,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   inventoryCardSelected: {
-    elevation: theme.elevation.level4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    // Remove excess shadow - keep base shadow only
   },
   selectionIndicator: {
     position: 'absolute',
@@ -645,6 +709,10 @@ const styles = StyleSheet.create({
   transactionAmount: {
     fontWeight: '500',
     color: theme.colors.onSurface,
+  },
+  itemTypeText: {
+    color: theme.colors.onSurfaceVariant,
+    marginTop: 2,
   },
   transactionType: {
     textAlign: 'center',

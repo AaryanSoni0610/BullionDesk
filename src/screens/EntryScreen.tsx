@@ -77,6 +77,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [moneyAmount, setMoneyAmount] = useState('');
   const [moneyType, setMoneyType] = useState<'debt' | 'balance'>('debt');
   
+  // Rupu specific fields
+  const [rupuReturnType, setRupuReturnType] = useState<'money' | 'silver'>('money');
+  const [silver98Weight, setSilver98Weight] = useState('');
+  const [silverWeight, setSilverWeight] = useState('');
+  
   // Form states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
@@ -94,6 +99,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setTouch(editingEntry.touch?.toString() || '');
       setMoneyAmount(editingEntry.amount?.toString() || '');
       setMoneyType(editingEntry.moneyType || 'debt');
+      setRupuReturnType(editingEntry.rupuReturnType || 'money');
+      setSilver98Weight(editingEntry.silver98Weight?.toString() || '');
+      setSilverWeight(editingEntry.silverWeight?.toString() || '');
     }
   }, [editingEntry]);
   
@@ -135,23 +143,31 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   const itemOptions = getItemOptions();
 
-  // Money formatting function - rounds to nearest 10
+  // Money formatting function - rounds to nearest 10 with specific rules
   const formatMoney = (value: string): string => {
     if (!value || value.trim() === '') return value;
     
     const num = parseFloat(value);
     if (isNaN(num) || num < 0) return value;
     
-    // Get the last digit
-    const lastDigit = Math.floor(num) % 10;
+    // If there's any fractional part > 0, round up to next integer
+    let integerPart = Math.floor(num);
+    const fractionalPart = num - integerPart;
+    
+    if (fractionalPart > 0) {
+      integerPart += 1;
+    }
+    
+    // Now round the integer part to nearest 10
+    const lastDigit = integerPart % 10;
     let formattedAmount;
     
     if (lastDigit < 6) {
-      // Round down to nearest 10 (e.g., 11504 -> 11500)
-      formattedAmount = Math.floor(num / 10) * 10;
+      // Round down to nearest 10
+      formattedAmount = Math.floor(integerPart / 10) * 10;
     } else {
-      // Round up to nearest 10 (e.g., 11506 -> 11510)
-      formattedAmount = Math.floor(num / 10) * 10 + 10;
+      // Round up to nearest 10
+      formattedAmount = Math.floor(integerPart / 10) * 10 + 10;
     }
     
     return formattedAmount.toString();
@@ -171,8 +187,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     const lastDigit = parseInt(decimals.charAt(2) || '0');
     
     let newDecimals;
-    if (lastDigit > 8) {
-      // Add 0.010 if last digit > 8
+    if (lastDigit >= 8) {
+      // Add 0.010 if last digit >= 8
       const newValue = rounded + 0.010;
       const newStr = newValue.toFixed(3);
       const newParts = newStr.split('.');
@@ -185,16 +201,22 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     }
   };
 
-  // Pure silver formatting function for rupu - if floating value >= 0.900, add +1g
+  // Pure silver formatting function for rupu - complex rounding rules
   const formatPureSilver = (value: number): number => {
     if (isNaN(value)) return 0;
     
-    const fractionalPart = value - Math.floor(value);
+    const integerPart = Math.floor(value);
+    const fractionalPart = value - integerPart;
     
-    if (fractionalPart >= 0.900) {
-      return Math.floor(value) + 1;
+    if (fractionalPart >= 0.899) {
+      // Make fractional 0 and add +1g
+      return integerPart + 1;
+    } else if (fractionalPart > 0.399 && fractionalPart < 0.900) {
+      // Make fractional .500
+      return integerPart + 0.5;
     } else {
-      return Math.floor(value);
+      // Make fractional 0
+      return integerPart;
     }
   };
 
@@ -216,9 +238,22 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       rawSubtotal = (formattedPureGold * priceNum) / 10; // Gold price is per 10g
     } else if (itemType === 'rupu') {
       const touchNum = parseFloat(touch) || 0;
+      const extraNum = parseFloat(extraPerKg) || 0;
       const pureWeight = (weightNum * touchNum) / 100;
       const formattedPureSilver = formatPureSilver(pureWeight);
-      rawSubtotal = (formattedPureSilver * priceNum) / 1000; // Silver price is per kg
+      const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
+      
+      if (rupuReturnType === 'money') {
+        // Money return: subtotal = (pure weight + extra) * price per kg / 1000 (outward flow)
+        rawSubtotal = (totalPureWithExtra * priceNum) / 1000;
+      } else {
+        // Silver return: net weight = (pure silver + extra) - (silver98 + silver)
+        const silver98Num = parseFloat(silver98Weight) || 0;
+        const silverNum = parseFloat(silverWeight) || 0;
+        const rawNetWeight = totalPureWithExtra - (silver98Num + silverNum);
+        const netWeight = formatPureSilver(rawNetWeight);
+        rawSubtotal = (netWeight * priceNum) / 1000;
+      }
     } else if (itemType.startsWith('gold')) {
       rawSubtotal = (weightNum * priceNum) / 10; // Gold price is per 10g
     } else if (itemType.startsWith('silver')) {
@@ -246,7 +281,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     const hasRequiredFields = weight.trim() !== '' && price.trim() !== '';
     
     if (itemType === 'rani' || itemType === 'rupu') {
-      return hasRequiredFields && touch.trim() !== '';
+      const hasTouch = touch.trim() !== '';
+      if (itemType === 'rupu' && rupuReturnType === 'silver') {
+        return hasRequiredFields && hasTouch && silver98Weight.trim() !== '' && silverWeight.trim() !== '';
+      }
+      return hasRequiredFields && hasTouch;
     }
     
     return hasRequiredFields;
@@ -278,6 +317,20 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         actualGoldGiven: actualGoldGiven.trim() ? parseFloat(actualGoldGiven) : undefined,
         moneyType: transactionType === 'money' ? moneyType : undefined,
         amount: transactionType === 'money' && moneyAmount.trim() ? parseFloat(moneyAmount) : undefined,
+        rupuReturnType: itemType === 'rupu' ? rupuReturnType : undefined,
+        silver98Weight: itemType === 'rupu' && rupuReturnType === 'silver' ? parseFloat(silver98Weight) || 0 : undefined,
+        silverWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? parseFloat(silverWeight) || 0 : undefined,
+        netWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? (() => {
+          const touchNum = parseFloat(touch) || 0;
+          const extraNum = parseFloat(extraPerKg) || 0;
+          const pureWeight = (parseFloat(weight) * touchNum) / 100;
+          const formattedPureSilver = formatPureSilver(pureWeight);
+          const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
+          const silver98Num = parseFloat(silver98Weight) || 0;
+          const silverNum = parseFloat(silverWeight) || 0;
+          const rawNetWeight = totalPureWithExtra - (silver98Num + silverNum);
+          return formatPureSilver(rawNetWeight);
+        })() : undefined,
         subtotal,
       };
 
@@ -290,6 +343,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setExtraPerKg('');
       setActualGoldGiven('');
       setMoneyAmount('');
+      setRupuReturnType('money');
+      setSilver98Weight('');
+      setSilverWeight('');
 
       
       setSnackbarMessage(editingEntry ? 'Entry updated successfully' : 'Entry added successfully');
@@ -408,7 +464,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       const pureWeight = (parseFloat(weight) * parseFloat(touch)) / 100 || 0;
       const formattedPureSilver = formatPureSilver(pureWeight);
       const extraWeight = parseFloat(extraPerKg) || 0;
-      const totalGiven = formattedPureSilver + (formattedPureSilver * extraWeight) / 1000;
+      const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraWeight) / 1000;
       
       return (
         <>
@@ -444,13 +500,64 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             keyboardType="numeric"
             style={styles.input}
           />
-          <View style={styles.calculationDisplay}>
-            <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
-            {extraWeight > 0 && (
-              <Text variant="bodySmall">Bonus: {((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
-            )}
-            <Text variant="bodySmall">Total Given: {totalGiven.toFixed(3)}g</Text>
+          
+          {/* Return Type Selection */}
+          <View style={styles.segmentedButtons}>
+            <SegmentedButtons
+              value={rupuReturnType}
+              onValueChange={setRupuReturnType as any}
+              buttons={[
+                { value: 'money', label: 'Money Return' },
+                { value: 'silver', label: 'Silver Return' },
+              ]}
+            />
           </View>
+          
+          {rupuReturnType === 'money' ? (
+            <View style={styles.calculationDisplay}>
+              <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
+              {extraWeight > 0 && (
+                <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
+              )}
+              <Text variant="bodySmall">Total: {(totalPureWithExtra).toFixed(3)}g</Text>
+              <Text variant="bodySmall">Subtotal: ₹{subtotal.toFixed(2)}</Text>
+            </View>
+          ) : (
+            <>
+              <TextInput
+                label="Silver 98 (g)"
+                value={silver98Weight}
+                onChangeText={setSilver98Weight}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.input}
+              />
+              <TextInput
+                label="Silver (g)"
+                value={silverWeight}
+                onChangeText={setSilverWeight}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.input}
+              />
+              <View style={styles.calculationDisplay}>
+                <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
+                {extraWeight > 0 && (
+                  <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
+                )}
+                <Text variant="bodySmall">Total Given: {totalPureWithExtra.toFixed(3)}g</Text>
+                <Text variant="bodySmall">Silver 98: {parseFloat(silver98Weight) || 0}g</Text>
+                <Text variant="bodySmall">Silver: {parseFloat(silverWeight) || 0}g</Text>
+                <Text variant="bodySmall">Net Weight: {(() => {
+                  const silver98Num = parseFloat(silver98Weight) || 0;
+                  const silverNum = parseFloat(silverWeight) || 0;
+                  const rawNet = totalPureWithExtra - (silver98Num + silverNum);
+                  const net = formatPureSilver(rawNet);
+                  return net.toFixed(3);
+                })()}g</Text>
+              </View>
+            </>
+          )}
         </>
       );
     }

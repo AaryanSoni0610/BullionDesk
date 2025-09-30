@@ -32,6 +32,10 @@ export interface TransactionEntry {
   actualGoldGiven?: number; // For Rani sell entries
   moneyType?: 'debt' | 'balance'; // For money entries
   amount?: number; // For money entries
+  rupuReturnType?: 'money' | 'silver'; // For Rupu purchase entries
+  silver98Weight?: number; // For Rupu silver return
+  silverWeight?: number; // For Rupu silver return
+  netWeight?: number; // For Rupu silver return calculation
   subtotal: number;
 }
 

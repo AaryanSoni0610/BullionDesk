@@ -201,6 +201,16 @@ export const LedgerScreen: React.FC = () => {
                 break;
             }
           }
+          
+          // Special handling for rupu purchase with silver return
+          if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
+            if (entry.silver98Weight) {
+              silverInventory.silver98 -= entry.silver98Weight;
+            }
+            if (entry.silverWeight) {
+              silverInventory.silver -= entry.silverWeight;
+            }
+          }
         } else if (entry.type === 'money') {
           // Money OUT: Direct money payments to customers
           if (entry.moneyType === 'debt' || entry.moneyType === 'balance') {

@@ -7,6 +7,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import { useFonts } from 'expo-font';
+import {
+  Roboto_100Thin,
+  Roboto_300Light,
+  Roboto_400Regular,
+  Roboto_400Regular_Italic,
+  Roboto_500Medium,
+  Roboto_500Medium_Italic,
+  Roboto_700Bold,
+  Roboto_700Bold_Italic,
+  Roboto_900Black,
+} from '@expo-google-fonts/roboto';
 
 import { theme } from './src/theme';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -98,7 +110,7 @@ const AppContent: React.FC<AppContentProps> = ({
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: '500',
+          fontFamily: 'Roboto_500Medium',
           marginBottom: 4,
         },
         tabBarItemStyle: {
@@ -186,11 +198,27 @@ const AppContent: React.FC<AppContentProps> = ({
 };
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Roboto_100Thin,
+    Roboto_300Light,
+    Roboto_400Regular,
+    Roboto_400Regular_Italic,
+    Roboto_500Medium,
+    Roboto_500Medium_Italic,
+    Roboto_700Bold,
+    Roboto_700Bold_Italic,
+    Roboto_900Black,
+  });
+
   const [appState, setAppState] = useState<AppState>('tabs');
 
   const handleNavigateToEntry = () => setAppState('entry');
   const handleNavigateToSettlement = () => setAppState('settlement');
   const handleNavigateToTabs = () => setAppState('tabs');
+
+  if (!fontsLoaded) {
+    return null; // or a loading screen
+  }
 
   return (
     <AppProvider

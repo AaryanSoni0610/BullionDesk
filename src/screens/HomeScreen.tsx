@@ -4,6 +4,7 @@ import { Surface, Text, List, FAB, Card, Chip, Button, ActivityIndicator } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
+import { formatTransactionAmount, formatRelativeDate } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer } from '../types';
@@ -66,16 +67,6 @@ export const HomeScreen: React.FC = () => {
     loadRecentTransactions(true);
   }, []);
 
-  const formatAmount = (transaction: Transaction) => {
-    const amount = transaction.total;
-    // For money transactions, the sign might be inverted in storage
-    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
-    const displayAmount = isMoneyTransaction ? -amount : amount;
-    const isPositive = displayAmount > 0;
-    const sign = isPositive ? '+' : '-';
-    return `${sign}₹${Math.abs(displayAmount).toLocaleString()}`;
-  };
-
   const getAmountColor = (transaction: Transaction) => {
     const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
     const displayAmount = isMoneyTransaction ? -transaction.total : transaction.total;
@@ -101,25 +92,6 @@ export const HomeScreen: React.FC = () => {
       return { label: 'Partial', color: theme.colors.primary };
     } else {
       return { label: 'Pending', color: theme.colors.warning };
-    }
-  };
-
-  const formatTransactionDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffInDays === 0) {
-      return 'Today';
-    } else if (diffInDays === 1) {
-      return 'Yesterday';
-    } else if (diffInDays < 7) {
-      return `${diffInDays} days ago`;
-    } else {
-      return date.toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'short'
-      });
     }
   };
 
@@ -183,7 +155,7 @@ export const HomeScreen: React.FC = () => {
                 {transaction.customerName}
               </Text>
               <Text variant="bodyMedium" style={styles.transactionDate}>
-                {formatTransactionDate(transaction.date)}
+                {formatRelativeDate(transaction.date)}
               </Text>
             </View>
             {!isMoneyOnlyTransaction && (
@@ -208,7 +180,7 @@ export const HomeScreen: React.FC = () => {
               variant="titleMedium" 
               style={[styles.totalAmount, { color: getAmountColor(transaction) }]}
             >
-              {formatAmount(transaction)}
+              {formatTransactionAmount(transaction)}
             </Text>
           </View>
 
@@ -367,7 +339,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   appBar: {
     backgroundColor: theme.colors.surface,
@@ -395,6 +367,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     textAlign: 'center',
+    fontFamily: 'Roboto_400Regular',
     marginTop: theme.spacing.md,
     marginBottom: theme.spacing.sm,
     color: theme.colors.onSurface,
@@ -419,7 +392,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   amountText: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     alignSelf: 'center',
   },
   transactionCard: {
@@ -438,7 +411,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   customerName: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     color: theme.colors.onSurface,
   },
   transactionDate: {
@@ -469,7 +442,7 @@ const styles = StyleSheet.create({
   },
   paymentLabel: {
     color: theme.colors.onSurface,
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   settlementRow: {
     flexDirection: 'row',
@@ -477,11 +450,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   settlementStatus: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   balanceText: {
     color: theme.colors.onSurfaceVariant,
-    fontStyle: 'italic',
+    fontFamily: 'Roboto_400Regular_Italic',
   },
   fab: {
     position: 'absolute',
@@ -531,7 +504,7 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
   },
   totalAmount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   statusChip: {
     height: 32,
@@ -539,10 +512,10 @@ const styles = StyleSheet.create({
   },
   statusChipText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   balanceInfo: {
-    fontStyle: 'italic',
+    fontFamily: 'Roboto_400Regular_Italic',
   },
   
   // Loading Skeleton Styles
@@ -570,7 +543,6 @@ const styles = StyleSheet.create({
   
   // Empty/Error State Styles
   emptyButton: {
-    marginTop: theme.spacing.lg,
-    borderRadius: 12,
+    marginTop: theme.spacing.md,
   },
 });

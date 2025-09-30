@@ -13,7 +13,9 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
+import { formatWeight, formatCurrency } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer } from '../types';
 
@@ -304,17 +306,6 @@ export const LedgerScreen: React.FC = () => {
     return entries;
   };
 
-  const formatCurrency = (amount: number) => {
-    const isNegative = amount < 0;
-    const formattedAmount = `₹${Math.abs(amount).toLocaleString()}`;
-    return isNegative ? `-${formattedAmount}` : formattedAmount;
-  };
-
-  const formatWeight = (weight: number, isSilver: boolean = false) => {
-    const decimals = isSilver ? 1 : 2;
-    return `${weight.toFixed(decimals)}g`;
-  };
-
   const getItemTypeDisplay = (itemType: string) => {
     const typeMap: Record<string, string> = {
       'gold999': 'Gold 999',
@@ -346,12 +337,12 @@ export const LedgerScreen: React.FC = () => {
             </Text>
           </View>
           <View style={styles.transactionCell}>
-            <Text variant="bodyMedium" style={styles.transactionAmount}>
+            <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
               {balanceAmount > 0 ? formatCurrency(balanceAmount) : '-'}
             </Text>
           </View>
           <View style={styles.transactionCell}>
-            <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
+            <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
               {debtAmount > 0 ? formatCurrency(debtAmount) : '-'}
             </Text>
           </View>
@@ -375,22 +366,8 @@ export const LedgerScreen: React.FC = () => {
           <View style={styles.transactionCell}>
             {purchaseWeight > 0 ? (
               <View>
-                <Text variant="bodyMedium" style={styles.transactionAmount}>
-                  {formatWeight(purchaseWeight, isSilverItem)}
-                </Text>
-                <Text variant="bodySmall" style={styles.itemTypeText}>
-                  {getItemTypeDisplay(entry.itemType)}
-                </Text>
-              </View>
-            ) : (
-              <Text variant="bodyMedium" style={styles.transactionAmount}>-</Text>
-            )}
-          </View>
-          <View style={styles.transactionCell}>
-            {sellWeight > 0 ? (
-              <View>
                 <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
-                  {formatWeight(sellWeight, isSilverItem)}
+                  {formatWeight(purchaseWeight, isSilverItem)}
                 </Text>
                 <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'center' }]}>
                   {getItemTypeDisplay(entry.itemType)}
@@ -398,6 +375,20 @@ export const LedgerScreen: React.FC = () => {
               </View>
             ) : (
               <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>-</Text>
+            )}
+          </View>
+          <View style={styles.transactionCell}>
+            {sellWeight > 0 ? (
+              <View>
+                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
+                  {formatWeight(sellWeight, isSilverItem)}
+                </Text>
+                <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'right' }]}>
+                  {getItemTypeDisplay(entry.itemType)}
+                </Text>
+              </View>
+            ) : (
+              <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>-</Text>
             )}
           </View>
         </View>
@@ -428,19 +419,19 @@ export const LedgerScreen: React.FC = () => {
       <View style={styles.cardIconContainer}>
         <MaterialCommunityIcons 
           name={icon as any} 
-          size={32} 
+          size={24} 
           color={iconColor} 
         />
       </View>
       <View style={styles.cardContent}>
-        <Text variant="titleLarge" style={[styles.inventoryCardTitle, { color: iconColor }]}>
+        <Text variant="titleMedium" style={[styles.inventoryCardTitle, { color: iconColor }]}>
           {title}
         </Text>
-        <Text variant="headlineMedium" style={[styles.cardValue, { color: iconColor }]}>
+        <Text variant="headlineSmall" style={[styles.cardValue, { color: iconColor }]}>
           {value}
         </Text>
         {unit && (
-          <Text variant="bodyLarge" style={[styles.cardUnit, { color: iconColor }]}>
+          <Text variant="bodyMedium" style={[styles.cardUnit, { color: iconColor }]}>
             {unit}
           </Text>
         )}
@@ -452,11 +443,13 @@ export const LedgerScreen: React.FC = () => {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Text variant="headlineMedium" style={styles.title}>
-            Ledger
-          </Text>
-        </View>
+        <Surface style={styles.appTitleBar} elevation={1}>
+          <View style={styles.appTitleContent}>
+            <Text variant="titleLarge" style={styles.appTitle}>
+              Ledger
+            </Text>
+          </View>
+        </Surface>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text variant="bodyLarge" style={styles.loadingText}>
@@ -470,11 +463,13 @@ export const LedgerScreen: React.FC = () => {
   if (!inventoryData) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Text variant="headlineMedium" style={styles.title}>
-            Ledger
-          </Text>
-        </View>
+        <Surface style={styles.appTitleBar} elevation={1}>
+          <View style={styles.appTitleContent}>
+            <Text variant="titleLarge" style={styles.appTitle}>
+              Ledger
+            </Text>
+          </View>
+        </Surface>
         <View style={styles.errorContainer}>
           <Text variant="titleLarge" style={styles.errorTitle}>
             Error loading data
@@ -489,11 +484,13 @@ export const LedgerScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text variant="headlineMedium" style={styles.title}>
-          Ledger
-        </Text>
-      </View>
+      <Surface style={styles.appTitleBar} elevation={1}>
+        <View style={styles.appTitleContent}>
+          <Text variant="titleLarge" style={styles.appTitle}>
+            Ledger
+          </Text>
+        </View>
+      </Surface>
 
       <ScrollView 
         style={styles.content}
@@ -543,7 +540,6 @@ export const LedgerScreen: React.FC = () => {
           <InventoryCard
             title="Gold"
             value={formatWeight(inventoryData.goldInventory.total)}
-            unit="g"
             icon="gold"
             backgroundColor="#FFF8E1"
             iconColor="#E65100"
@@ -555,7 +551,6 @@ export const LedgerScreen: React.FC = () => {
           <InventoryCard
             title="Silver"
             value={formatWeight(inventoryData.silverInventory.total, true)}
-            unit="g"
             icon="circle-outline"
             backgroundColor="#ECEFF1"
             iconColor="#455A64"
@@ -575,34 +570,37 @@ export const LedgerScreen: React.FC = () => {
           />
         </ScrollView>
 
-        {/* Transaction Table */}
-        <View style={styles.transactionTable}>
-          {/* Table Header */}
-          <View style={styles.transactionHeader}>
-            <Text variant="bodyMedium" style={styles.transactionHeaderText}>
-              Customer
-            </Text>
-            {selectedInventory === 'money' ? (
-              <>
-                <Text variant="bodyMedium" style={styles.transactionHeaderText}>
-                  Balance
-                </Text>
-                <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-                  Debt
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text variant="bodyMedium" style={styles.transactionHeaderText}>
-                  Purchase
-                </Text>
-                <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-                  Sell
-                </Text>
-              </>
-            )}
-          </View>
-          
+        {/* Transaction Table Header - Fixed */}
+        <View style={styles.transactionHeader}>
+          <Text variant="bodyMedium" style={styles.transactionHeaderText}>
+            Customer
+          </Text>
+          {selectedInventory === 'money' ? (
+            <>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
+                Credit
+              </Text>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
+                Debit
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
+                Purchase
+              </Text>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
+                Sell
+              </Text>
+            </>
+          )}
+        </View>
+
+        {/* Transaction Table - Scrollable Content */}
+        <ScrollView 
+          style={styles.transactionTable}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Transaction Rows */}
           {getFilteredEntries().length > 0 ? (
             getFilteredEntries().map((entryData, index) => (
@@ -610,12 +608,16 @@ export const LedgerScreen: React.FC = () => {
             ))
           ) : (
             <View style={styles.emptyState}>
-              <Text variant="bodyMedium" style={styles.emptyStateText}>
+              <Icon name="book-open-outline" size={72} color={theme.colors.onSurfaceVariant} />
+              <Text variant="headlineSmall" style={styles.emptyStateText}>
+                No transactions found
+              </Text>
+              <Text variant="bodyLarge" style={styles.emptyStateSubtext}>
                 No transactions found for {selectedInventory} in the selected period.
               </Text>
             </View>
           )}
-        </View>
+        </ScrollView>
       </ScrollView>
     </SafeAreaView>
   );
@@ -626,6 +628,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  appTitleBar: {
+    backgroundColor: theme.colors.surface,
+    paddingVertical: theme.spacing.md,
+  },
+  appTitleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+  },
+  appTitle: {
+    color: theme.colors.primary,
+    fontFamily: 'Roboto_700Bold',
+  },
   header: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -634,7 +649,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.onSurface,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   content: {
     flex: 1,
@@ -650,7 +665,7 @@ const styles = StyleSheet.create({
     marginVertical: theme.spacing.md,
   },
   inventoryScrollContent: {
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
     gap: 8,
   },
   inventoryCardSelected: {
@@ -672,19 +687,21 @@ const styles = StyleSheet.create({
     marginRight: theme.spacing.sm,
   },
   transactionTable: {
-    marginTop: theme.spacing.md,
+    flexGrow: 1, // Grow to fill available space without conflicting with parent ScrollView
+    marginBottom: theme.spacing.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: 8,
   },
   transactionHeader: {
     flexDirection: 'row',
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.surfaceVariant,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
   },
   transactionHeaderText: {
     flex: 1,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     color: theme.colors.onSurfaceVariant,
   },
   transactionRow: {
@@ -699,7 +716,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   customerName: {
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
     color: theme.colors.onSurface,
   },
   transactionDate: {
@@ -707,7 +724,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   transactionAmount: {
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
     color: theme.colors.onSurface,
   },
   itemTypeText: {
@@ -719,12 +736,19 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
   },
   emptyState: {
+    flex: 1,
     padding: theme.spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center', // Vertically center the empty state in the scrollview
   },
   emptyStateText: {
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
+  },
+  emptyStateSubtext: {
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: theme.spacing.sm,
   },
   loadingContainer: {
     flex: 1,
@@ -755,7 +779,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: theme.colors.onSurface,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     marginBottom: theme.spacing.md,
   },
   summaryGrid: {
@@ -766,7 +790,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryNumber: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   summaryLabel: {
     color: theme.colors.onSurfaceVariant,
@@ -781,7 +805,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cashAmount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   cashLabel: {
     color: theme.colors.onSurfaceVariant,
@@ -795,7 +819,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   amount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   salesPurchaseLabel: {
     color: theme.colors.onSurfaceVariant,
@@ -805,7 +829,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   balanceAmount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   balanceLabel: {
     color: theme.colors.onSurfaceVariant,
@@ -824,7 +848,7 @@ const styles = StyleSheet.create({
   },
   inventoryWeight: {
     color: theme.colors.onSurface,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   inventoryLabel: {
     color: theme.colors.onSurfaceVariant,
@@ -842,7 +866,7 @@ const styles = StyleSheet.create({
   dateText: {
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   dashboardGrid: {
     marginBottom: theme.spacing.lg,
@@ -862,7 +886,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   inventoryCard: {
-    height: 120,
+    height: 100,
     borderRadius: 12,
     padding: theme.spacing.md,
     marginBottom: 8,
@@ -875,8 +899,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     flex: 1,
-    marginHorizontal: 4,
-    minWidth: 150,
+    marginHorizontal: 2,
+    minWidth: 140,
   },
   cardIconContainer: {
     position: 'absolute',
@@ -887,14 +911,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
   },
   inventoryCardTitle: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     marginBottom: theme.spacing.xs,
   },
   cardValue: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     textAlign: 'center',
   },
   cardUnit: {

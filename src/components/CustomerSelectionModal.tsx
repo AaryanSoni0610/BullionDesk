@@ -469,11 +469,12 @@ const styles = StyleSheet.create({
   },
   customerName: {
     fontSize: 16,
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   customerDescription: {
     fontSize: 12,
     lineHeight: 16,
+    fontFamily: 'Roboto_400Regular',
   },
   avatar: {
     marginRight: theme.spacing.sm,

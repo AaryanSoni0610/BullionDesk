@@ -15,6 +15,7 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../theme';
+import { formatWeight } from '../utils/formatting';
 import { Customer, TransactionEntry } from '../types';
 
 interface SettlementSummaryScreenProps {
@@ -134,12 +135,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
     if (entry.itemType === 'rani') {
       const pureGold = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
-      return `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${pureGold.toFixed(3)}g`;
+      return `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureGold, false)}`;
     }
 
     if (entry.itemType === 'rupu') {
       const pureWeight = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
-      return `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${pureWeight.toFixed(3)}g`;
+      return `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureWeight, true)}`;
     }
 
     return `Weight: ${entry.weight}g, Price: ₹${entry.price?.toLocaleString()}/${entry.itemType.startsWith('gold') ? '10g' : 'kg'}`;
@@ -156,7 +157,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         netMoneyFlow += Math.abs(entry.subtotal);
         giveItems.push({ 
           item: getItemDisplayName(entry), 
-          amount: `${entry.weight}g` 
+          amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
         });
       } else if (entry.type === 'purchase') {
         // Special case for rupu purchase with silver return and net weight < 0: inward flow
@@ -165,14 +166,14 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           netMoneyFlow += Math.abs(entry.subtotal);
           takeItems.push({ 
             item: getItemDisplayName(entry), 
-            amount: `${entry.weight}g` 
+            amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
           });
         } else {
           // Normal purchase: gives money (-), takes goods
           netMoneyFlow -= Math.abs(entry.subtotal);
           takeItems.push({ 
             item: getItemDisplayName(entry), 
-            amount: `${entry.weight}g` 
+            amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
           });
         }
       } else if (entry.type === 'money') {
@@ -612,7 +613,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   customerHeader: {
     backgroundColor: theme.colors.surface,
@@ -667,11 +668,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   entryTitle: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     marginBottom: theme.spacing.xs,
   },
   entryType: {
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   actionButtons: {
     flexDirection: 'row',
@@ -691,7 +692,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
   },
   entrySubtotal: {
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   summaryCard: {
     marginBottom: theme.spacing.md,
@@ -700,7 +701,7 @@ const styles = StyleSheet.create({
   summaryTitle: {
     textAlign: 'left',
     marginBottom: theme.spacing.md,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   customerHeaderRow: {
     flexDirection: 'row',
@@ -729,7 +730,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   sectionTitle: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     marginLeft: theme.spacing.xs,
   },
   iconContainer: {
@@ -758,7 +759,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   totalAmount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   totalDivider: {
     marginVertical: theme.spacing.md,
@@ -775,7 +776,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   balanceAmount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     fontSize: 18,
   },
   saveButton: {

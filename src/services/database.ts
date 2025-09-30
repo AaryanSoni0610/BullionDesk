@@ -13,7 +13,9 @@ export class DatabaseService {
   static async getAllCustomers(): Promise<Customer[]> {
     try {
       const customersJson = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-      return customersJson ? JSON.parse(customersJson) : [];
+      const customers: Customer[] = customersJson ? JSON.parse(customersJson) : [];
+      // Ensure all customer names are trimmed
+      return customers.map(customer => ({ ...customer, name: customer.name.trim() }));
     } catch (error) {
       console.error('Error getting customers:', error);
       return [];
@@ -25,10 +27,13 @@ export class DatabaseService {
       const customers = await this.getAllCustomers();
       const existingIndex = customers.findIndex(c => c.id === customer.id);
       
+      // Ensure customer name is trimmed
+      const trimmedCustomer = { ...customer, name: customer.name.trim() };
+      
       if (existingIndex >= 0) {
-        customers[existingIndex] = customer;
+        customers[existingIndex] = trimmedCustomer;
       } else {
-        customers.push(customer);
+        customers.push(trimmedCustomer);
       }
       
       await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
@@ -110,7 +115,7 @@ export class DatabaseService {
       const transaction: Transaction = {
         id: transactionId,
         customerId: customer.id,
-        customerName: customer.name,
+        customerName: customer.name.trim(),
         date: new Date().toISOString(),
         entries: entries,
         discount: 0,

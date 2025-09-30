@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
+import { formatWeight, formatMoney, formatPureGold, formatPureSilver } from '../utils/formatting';
 import { Customer, TransactionEntry, ItemType } from '../types';
 
 interface EntryScreenProps {
@@ -143,83 +144,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   const itemOptions = getItemOptions();
 
-  // Money formatting function - rounds to nearest 10 with specific rules
-  const formatMoney = (value: string): string => {
-    if (!value || value.trim() === '') return value;
-    
-    const num = parseFloat(value);
-    if (isNaN(num) || num < 0) return value;
-    
-    // If there's any fractional part > 0, round up to next integer
-    let integerPart = Math.floor(num);
-    const fractionalPart = num - integerPart;
-    
-    if (fractionalPart > 0) {
-      integerPart += 1;
-    }
-    
-    // Now round the integer part to nearest 10
-    const lastDigit = integerPart % 10;
-    let formattedAmount;
-    
-    if (lastDigit < 6) {
-      // Round down to nearest 10
-      formattedAmount = Math.floor(integerPart / 10) * 10;
-    } else {
-      // Round up to nearest 10
-      formattedAmount = Math.floor(integerPart / 10) * 10 + 10;
-    }
-    
-    return formattedAmount.toString();
-  };
-
-  // Pure gold formatting function for rani - 3 digits after decimal, last digit always zero
-  const formatPureGold = (value: number): string => {
-    if (isNaN(value)) return '0.000';
-    
-    // Get 3 decimal places
-    const rounded = Math.round(value * 1000) / 1000;
-    const str = rounded.toFixed(3);
-    const parts = str.split('.');
-    const decimals = parts[1] || '000';
-    
-    // Get the last (third) decimal digit
-    const lastDigit = parseInt(decimals.charAt(2) || '0');
-    
-    let newDecimals;
-    if (lastDigit >= 8) {
-      // Add 0.010 if last digit >= 8
-      const newValue = rounded + 0.010;
-      const newStr = newValue.toFixed(3);
-      const newParts = newStr.split('.');
-      newDecimals = (newParts[1] || '000').substring(0, 2) + '0';
-      return newParts[0] + '.' + newDecimals;
-    } else {
-      // Make last digit zero
-      newDecimals = decimals.substring(0, 2) + '0';
-      return parts[0] + '.' + newDecimals;
-    }
-  };
-
-  // Pure silver formatting function for rupu - complex rounding rules
-  const formatPureSilver = (value: number): number => {
-    if (isNaN(value)) return 0;
-    
-    const integerPart = Math.floor(value);
-    const fractionalPart = value - integerPart;
-    
-    if (fractionalPart >= 0.899) {
-      // Make fractional 0 and add +1g
-      return integerPart + 1;
-    } else if (fractionalPart > 0.399 && fractionalPart < 0.900) {
-      // Make fractional .500
-      return integerPart + 0.5;
-    } else {
-      // Make fractional 0
-      return integerPart;
-    }
-  };
-
   const calculateSubtotal = (): number => {
     if (transactionType === 'money') {
       const formatted = formatMoney(moneyAmount);
@@ -241,16 +165,18 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       const extraNum = parseFloat(extraPerKg) || 0;
       const pureWeight = (weightNum * touchNum) / 100;
       const formattedPureSilver = formatPureSilver(pureWeight);
-      const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
+      const formattedBonus = formatPureSilver((formattedPureSilver * extraNum) / 1000);
+      const totalPureWithExtra = formattedPureSilver + formattedBonus;
+      const formattedTotalPureWithExtra = formatPureSilver(totalPureWithExtra);
       
       if (rupuReturnType === 'money') {
         // Money return: subtotal = (pure weight + extra) * price per kg / 1000 (outward flow)
-        rawSubtotal = (totalPureWithExtra * priceNum) / 1000;
+        rawSubtotal = (formattedTotalPureWithExtra * priceNum) / 1000;
       } else {
         // Silver return: net weight = (pure silver + extra) - (silver98 + silver)
         const silver98Num = parseFloat(silver98Weight) || 0;
         const silverNum = parseFloat(silverWeight) || 0;
-        const rawNetWeight = totalPureWithExtra - (silver98Num + silverNum);
+        const rawNetWeight = formattedTotalPureWithExtra - (silver98Num + silverNum);
         const netWeight = formatPureSilver(rawNetWeight);
         rawSubtotal = (netWeight * priceNum) / 1000;
       }
@@ -263,7 +189,20 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     // Apply money formatting to all non-money transaction subtotals
     const formatted = formatMoney(Math.abs(rawSubtotal).toString());
     const formattedAmount = parseFloat(formatted);
-    return rawSubtotal >= 0 ? formattedAmount : -formattedAmount;
+    
+    // Determine sign based on actual cash flow direction
+    let signedAmount: number;
+    
+    if (itemType === 'rupu' && rupuReturnType !== 'money') {
+      // For rupu silver returns, sign is determined by net weight direction
+      // Negative net weight = inward flow (positive cash), positive net weight = outward flow (negative cash)
+      signedAmount = rawSubtotal >= 0 ? -formattedAmount : formattedAmount;
+    } else {
+      // For all other transactions: purchases = negative (outward), sales = positive (inward)
+      signedAmount = transactionType === 'purchase' ? -formattedAmount : formattedAmount;
+    }
+    
+    return signedAmount;
   };
 
   const subtotal = calculateSubtotal();
@@ -323,9 +262,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           const pureWeight = (parseFloat(weight) * touchNum) / 100;
           const formattedPureSilver = formatPureSilver(pureWeight);
           const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
+          const formattedTotalPureWithExtra = formatPureSilver(totalPureWithExtra);
           const silver98Num = parseFloat(silver98Weight) || 0;
           const silverNum = parseFloat(silverWeight) || 0;
-          const rawNetWeight = totalPureWithExtra - (silver98Num + silverNum);
+          const rawNetWeight = formattedTotalPureWithExtra - (silver98Num + silverNum);
           return formatPureSilver(rawNetWeight);
         })() : undefined,
         subtotal,
@@ -462,6 +402,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       const formattedPureSilver = formatPureSilver(pureWeight);
       const extraWeight = parseFloat(extraPerKg) || 0;
       const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraWeight) / 1000;
+      const formattedTotalPureWithExtra = formatPureSilver(totalPureWithExtra);
       
       return (
         <>
@@ -497,6 +438,14 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             keyboardType="numeric"
             style={styles.input}
           />
+
+          <View style={styles.calculationDisplay}>
+            <Text variant="bodySmall">Pure Silver: {formatWeight(formattedPureSilver, true)}</Text>
+            {extraWeight > 0 && (
+              <Text variant="bodySmall">Bonus: {formatWeight((formattedPureSilver * extraWeight) / 1000, true)}</Text>
+            )}
+            <Text variant="bodySmall">Total Weight: {formatWeight(formattedTotalPureWithExtra, true)}</Text>
+          </View>
           
           {/* Return Type Selection */}
           <View style={styles.segmentedButtons}>
@@ -511,12 +460,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           </View>
           
           {rupuReturnType === 'money' ? (
-            <View style={styles.calculationDisplay}>
-              <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
-              {extraWeight > 0 && (
-                <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
-              )}
-            </View>
+            <></>
           ) : (
             <>
               <TextInput
@@ -536,19 +480,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                 style={styles.input}
               />
               <View style={styles.calculationDisplay}>
-                <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
-                {extraWeight > 0 && (
-                  <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000).toFixed(3)}g</Text>
-                )}
-                <Text variant="bodySmall">Silver 98: {parseFloat(silver98Weight) || 0}g</Text>
-                <Text variant="bodySmall">Silver: {parseFloat(silverWeight) || 0}g</Text>
                 <Text variant="bodySmall">Net Weight: {(() => {
                   const silver98Num = parseFloat(silver98Weight) || 0;
                   const silverNum = parseFloat(silverWeight) || 0;
-                  const rawNet = totalPureWithExtra - (silver98Num + silverNum);
+                  const rawNet = formattedTotalPureWithExtra - (silver98Num + silverNum);
                   const net = formatPureSilver(rawNet);
-                  return net.toFixed(3);
-                })()}g</Text>
+                  return formatWeight(net, true);
+                })()}</Text>
               </View>
             </>
           )}
@@ -676,6 +614,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         {/* Dynamic Input Fields */}
         {renderDynamicFields()}
 
+        {/* Divider before subtotal */}
+        <Divider style={styles.subtotalDivider} />
+
         {/* Subtotal Display */}
         <Surface style={styles.subtotalContainer} elevation={1}>
           <View style={styles.subtotalContent}>
@@ -751,7 +692,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   customerHeader: {
     backgroundColor: theme.colors.surface,
@@ -816,7 +757,7 @@ const styles = StyleSheet.create({
   restrictionText: {
     color: theme.colors.onPrimaryContainer,
     textAlign: 'center',
-    fontStyle: 'italic',
+    fontFamily: 'Roboto_400Regular_Italic',
   },
   calculationDisplay: {
     backgroundColor: theme.colors.surfaceVariant,
@@ -828,7 +769,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceVariant,
     borderRadius: 12,
     marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.xxl,
+  },
+  subtotalDivider: {
+    marginVertical: theme.spacing.sm,
   },
   subtotalContent: {
     flexDirection: 'row',
@@ -837,7 +781,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
   },
   subtotalAmount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   actionButtons: {
     backgroundColor: theme.colors.surface,
@@ -852,7 +796,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   
-  // Part 5 Enhanced Styles - Validation & Error Handling
   inputError: {
     borderColor: theme.colors.error,
     borderWidth: 2,

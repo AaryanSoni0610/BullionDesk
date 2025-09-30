@@ -81,26 +81,29 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const handleCreateCustomer = async (name: string) => {
     setCustomerModalVisible(false);
+
+    // Create new customer
+    const newCustomer: Customer = {
+      id: Date.now().toString(),
+      name,
+      balance: 0,
+    };
+
+    // Navigate immediately to avoid lag
+    navigateToEntry(newCustomer);
+
+    // Save customer in background
     try {
-      // Create new customer
-      const newCustomer: Customer = {
-        id: Date.now().toString(),
-        name,
-        balance: 0,
-      };
-      
-      // Save customer to database
       const saved = await DatabaseService.saveCustomer(newCustomer);
       if (saved) {
         console.log('New customer created:', newCustomer);
-        navigateToEntry(newCustomer);
       } else {
-        setSnackbarMessage('Failed to create customer');
+        setSnackbarMessage('Failed to save customer data');
         setSnackbarVisible(true);
       }
     } catch (error) {
       console.error('Error creating customer:', error);
-      setSnackbarMessage('Error creating customer');
+      setSnackbarMessage('Error saving customer data');
       setSnackbarVisible(true);
     }
   };

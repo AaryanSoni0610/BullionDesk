@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
+import { formatTransactionAmount, formatFullDate } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction } from '../types';
 
@@ -187,31 +188,10 @@ export const HistoryScreen: React.FC = () => {
     }
   }, [selectedFilter, transactions.length]);
 
-  const formatAmount = (transaction: Transaction) => {
-    const amount = transaction.total;
-    // For money transactions, the sign might be inverted in storage
-    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
-    const displayAmount = isMoneyTransaction ? -amount : amount;
-    const isPositive = displayAmount > 0;
-    const sign = isPositive ? '+' : '-';
-    return `${sign}₹${Math.abs(displayAmount).toLocaleString()}`;
-  };
-
   const getAmountColor = (transaction: Transaction) => {
     const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
     const displayAmount = isMoneyTransaction ? -transaction.total : transaction.total;
     return displayAmount > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   // Enhanced Transaction Card Component
@@ -229,7 +209,7 @@ export const HistoryScreen: React.FC = () => {
                 {highlightSearchText(transaction.customerName, searchQuery)}
               </Text>
               <Text variant="bodySmall" style={styles.transactionDate}>
-                {formatDate(transaction.date)}
+                {formatFullDate(transaction.date)}
               </Text>
             </View>
             <View style={styles.rightSection}>
@@ -237,7 +217,7 @@ export const HistoryScreen: React.FC = () => {
                 variant="titleMedium" 
                 style={[styles.amount, { color: getAmountColor(transaction) }]}
               >
-                {formatAmount(transaction)}
+                {formatTransactionAmount(transaction)}
               </Text>
               {!isMoneyOnlyTransaction && (
                 <Chip 
@@ -291,11 +271,13 @@ export const HistoryScreen: React.FC = () => {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Text variant="headlineMedium" style={styles.title}>
-            History
-          </Text>
-        </View>
+        <Surface style={styles.appTitleBar} elevation={1}>
+          <View style={styles.appTitleContent}>
+            <Text variant="titleLarge" style={styles.appTitle}>
+              History
+            </Text>
+          </View>
+        </Surface>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text variant="bodyLarge" style={styles.loadingText}>
@@ -308,9 +290,9 @@ export const HistoryScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Surface style={styles.header} elevation={1}>
-        <View style={styles.headerContent}>
-          <Text variant="headlineMedium" style={styles.title}>
+      <Surface style={styles.appTitleBar} elevation={1}>
+        <View style={styles.appTitleContent}>
+          <Text variant="titleLarge" style={styles.appTitle}>
             History
           </Text>
         </View>
@@ -433,6 +415,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  appTitleBar: {
+    backgroundColor: theme.colors.surface,
+    paddingVertical: theme.spacing.md,
+  },
+  appTitleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+  },
+  appTitle: {
+    color: theme.colors.primary,
+    fontFamily: 'Roboto_700Bold',
+  },
   header: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -441,7 +436,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.onSurface,
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
   },
   content: {
     flex: 1,
@@ -517,14 +512,14 @@ const styles = StyleSheet.create({
   },
   customerName: {
     color: theme.colors.onSurface,
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   transactionDate: {
     color: theme.colors.onSurfaceVariant,
     marginTop: 2,
   },
   amount: {
-    fontWeight: 'bold',
+    fontFamily: 'Roboto_700Bold',
     textAlign: 'right',
   },
   receivedAmount: {
@@ -556,7 +551,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     color: theme.colors.onSurfaceVariant,
-    fontStyle: 'italic',
+    fontFamily: 'Roboto_400Regular_Italic',
   },
   
   // Enhanced Transaction Card Styles
@@ -582,7 +577,7 @@ const styles = StyleSheet.create({
   },
   transactionTypeText: {
     color: theme.colors.onSurface,
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   itemsSummary: {
     color: theme.colors.onSurfaceVariant,
@@ -595,7 +590,7 @@ const styles = StyleSheet.create({
   },
   statusChipText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: 'Roboto_700Bold',
     lineHeight: 14,
   },
   expandedContent: {
@@ -607,7 +602,7 @@ const styles = StyleSheet.create({
   },
   expandedSectionTitle: {
     color: theme.colors.onSurface,
-    fontWeight: '600',
+    fontFamily: 'Roboto_700Bold',
     marginBottom: theme.spacing.xs,
   },
   entryRow: {
@@ -633,7 +628,7 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.xs,
   },
   transactionBalance: {
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
     fontSize: 11,
   },
 
@@ -641,20 +636,20 @@ const styles = StyleSheet.create({
   // Payment and Additional Styles
   paymentLabel: {
     color: theme.colors.onSurfaceVariant,
-    fontWeight: '500',
+    fontFamily: 'Roboto_500Medium',
   },
   paymentValue: {
     color: theme.colors.onSurface,
-    fontWeight: '600',
+    fontFamily: 'Roboto_700Bold',
   },
   totalAmount: {
     color: theme.colors.primary,
-    fontWeight: '700',
+    fontFamily: 'Roboto_700Bold',
     fontSize: 16,
   },
   remainingAmount: {
     color: theme.colors.error,
-    fontWeight: '600',
+    fontFamily: 'Roboto_700Bold',
   },
   balanceAmount: {
     color: theme.colors.onSurfaceVariant,

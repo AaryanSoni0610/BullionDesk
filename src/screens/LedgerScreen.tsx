@@ -18,6 +18,7 @@ import { theme } from '../theme';
 import { formatWeight, formatCurrency } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer } from '../types';
+import { useAppContext } from '../context/AppContext';
 
 interface InventoryData {
   totalTransactions: number;
@@ -75,6 +76,7 @@ export const LedgerScreen: React.FC = () => {
   const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
+  const { navigateToSettings } = useAppContext();
 
   useEffect(() => {
     loadInventoryData();
@@ -489,6 +491,12 @@ export const LedgerScreen: React.FC = () => {
           <Text variant="titleLarge" style={styles.appTitle}>
             Ledger
           </Text>
+          <IconButton
+            icon="cog-outline"
+            size={24}
+            onPress={navigateToSettings}
+            style={styles.settingsButton}
+          />
         </View>
       </Surface>
 
@@ -635,11 +643,15 @@ const styles = StyleSheet.create({
   appTitleContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md,
   },
   appTitle: {
     color: theme.colors.primary,
     fontFamily: 'Roboto_700Bold',
+  },
+  settingsButton: {
+    margin: 0,
   },
   header: {
     paddingHorizontal: theme.spacing.md,
@@ -743,6 +755,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Roboto_400Regular',
     textAlign: 'center',
   },
   emptyStateSubtext: {

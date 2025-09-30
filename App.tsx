@@ -24,6 +24,7 @@ import { theme } from './src/theme';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { LedgerScreen } from './src/screens/LedgerScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 import { EntryScreen } from './src/screens/EntryScreen';
 import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
@@ -33,13 +34,14 @@ import { DatabaseService } from './src/services/database';
 
 const Tab = createBottomTabNavigator();
 
-type AppState = 'tabs' | 'entry' | 'settlement';
+type AppState = 'tabs' | 'entry' | 'settlement' | 'settings';
 
 // Main App Component with Context
 interface AppContentProps {
   appState: AppState;
   onNavigateToEntry: () => void;
   onNavigateToSettlement: () => void;
+  onNavigateToSettings: () => void;
   onNavigateToTabs: () => void;
 }
 
@@ -47,6 +49,7 @@ const AppContent: React.FC<AppContentProps> = ({
   appState,
   onNavigateToEntry,
   onNavigateToSettlement,
+  onNavigateToSettings,
   onNavigateToTabs,
 }) => {
   const {
@@ -167,7 +170,9 @@ const AppContent: React.FC<AppContentProps> = ({
             />
           )}
 
-
+          {appState === 'settings' && (
+            <SettingsScreen />
+          )}
 
           {/* Customer Selection Modal */}
           <CustomerSelectionModal
@@ -214,6 +219,7 @@ export default function App() {
 
   const handleNavigateToEntry = () => setAppState('entry');
   const handleNavigateToSettlement = () => setAppState('settlement');
+  const handleNavigateToSettings = () => setAppState('settings');
   const handleNavigateToTabs = () => setAppState('tabs');
 
   if (!fontsLoaded) {
@@ -224,12 +230,14 @@ export default function App() {
     <AppProvider
       onNavigateToEntry={handleNavigateToEntry}
       onNavigateToSettlement={handleNavigateToSettlement}
+      onNavigateToSettings={handleNavigateToSettings}
       onNavigateToTabs={handleNavigateToTabs}
     >
       <AppContent 
         appState={appState}
         onNavigateToEntry={handleNavigateToEntry}
         onNavigateToSettlement={handleNavigateToSettlement}
+        onNavigateToSettings={handleNavigateToSettings}
         onNavigateToTabs={handleNavigateToTabs}
       />
     </AppProvider>

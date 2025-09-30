@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Image, ScrollView, RefreshControl, FlatList } from 'react-native';
-import { Surface, Text, List, FAB, Card, Chip, Button, ActivityIndicator } from 'react-native-paper';
+import { Surface, Text, List, FAB, Card, Chip, Button, ActivityIndicator, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
@@ -15,7 +15,7 @@ export const HomeScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { setCustomerModalVisible } = useAppContext();
+  const { setCustomerModalVisible, navigateToSettings } = useAppContext();
 
   useEffect(() => {
     loadRecentTransactions();
@@ -259,6 +259,12 @@ export const HomeScreen: React.FC = () => {
           <Text variant="titleLarge" style={styles.appTitle}>
             BullionDesk
           </Text>
+          <IconButton
+            icon="cog-outline"
+            size={24}
+            onPress={navigateToSettings}
+            style={styles.settingsButton}
+          />
         </View>
       </Surface>
 
@@ -330,6 +336,7 @@ const styles = StyleSheet.create({
   appTitleContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md,
   },
   appIcon: {
@@ -340,6 +347,9 @@ const styles = StyleSheet.create({
   appTitle: {
     color: theme.colors.primary,
     fontFamily: 'Roboto_700Bold',
+  },
+  settingsButton: {
+    margin: 0,
   },
   appBar: {
     backgroundColor: theme.colors.surface,

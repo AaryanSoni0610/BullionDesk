@@ -14,7 +14,8 @@ import {
   Chip,
   Divider,
   Button,
-  ActivityIndicator
+  ActivityIndicator,
+  IconButton
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
@@ -22,6 +23,7 @@ import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction } from '../types';
+import { useAppContext } from '../context/AppContext';
 
 
 
@@ -34,6 +36,7 @@ export const HistoryScreen: React.FC = () => {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('today');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const { navigateToSettings } = useAppContext();
   
 
   useEffect(() => {
@@ -276,6 +279,12 @@ export const HistoryScreen: React.FC = () => {
             <Text variant="titleLarge" style={styles.appTitle}>
               History
             </Text>
+            <IconButton
+              icon="cog-outline"
+              size={24}
+              onPress={navigateToSettings}
+              style={styles.settingsButton}
+            />
           </View>
         </Surface>
         <View style={styles.loadingContainer}>
@@ -295,6 +304,12 @@ export const HistoryScreen: React.FC = () => {
           <Text variant="titleLarge" style={styles.appTitle}>
             History
           </Text>
+          <IconButton
+            icon="cog-outline"
+            size={24}
+            onPress={navigateToSettings}
+            style={styles.settingsButton}
+          />
         </View>
       </Surface>
 
@@ -422,11 +437,15 @@ const styles = StyleSheet.create({
   appTitleContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md,
   },
   appTitle: {
     color: theme.colors.primary,
     fontFamily: 'Roboto_700Bold',
+  },
+  settingsButton: {
+    margin: 0,
   },
   header: {
     paddingHorizontal: theme.spacing.md,
@@ -478,6 +497,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: theme.colors.onSurface,
+    fontFamily: 'Roboto_400Regular',
     textAlign: 'center',
     marginTop: theme.spacing.md,
     marginBottom: theme.spacing.sm,

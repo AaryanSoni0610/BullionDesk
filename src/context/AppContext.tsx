@@ -24,6 +24,7 @@ interface AppContextType {
   // Navigation
   navigateToEntry: (customer: Customer) => void;
   navigateToSettlement: () => void;
+  navigateToSettings: () => void;
   navigateToTabs: () => void;
   
   // Transaction Management
@@ -41,6 +42,7 @@ interface AppProviderProps {
   children: ReactNode;
   onNavigateToEntry: () => void;
   onNavigateToSettlement: () => void;
+  onNavigateToSettings: () => void;
   onNavigateToTabs: () => void;
 }
 
@@ -48,7 +50,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   children, 
   onNavigateToEntry,
   onNavigateToSettlement,
-  onNavigateToTabs
+  onNavigateToSettings,
+  onNavigateToTabs,
 }) => {
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
@@ -65,6 +68,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const navigateToSettlement = () => {
     onNavigateToSettlement();
+  };
+
+  const navigateToSettings = () => {
+    onNavigateToSettings();
   };
 
   const navigateToTabs = () => {
@@ -189,6 +196,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setSnackbarMessage,
     navigateToEntry,
     navigateToSettlement,
+    navigateToSettings,
     navigateToTabs,
     handleSelectCustomer,
     handleCreateCustomer,

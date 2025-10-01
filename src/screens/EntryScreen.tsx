@@ -11,7 +11,7 @@ import {
   IconButton,
   HelperText,
   Snackbar,
-  Switch,
+  RadioButton,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -392,8 +392,12 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           
           {/* Metal Only Toggle */}
           <View style={styles.metalOnlyContainer}>
-            <Text variant="bodyLarge">Metal Only</Text>
-            <Switch value={metalOnly} onValueChange={setMetalOnly} />
+            <RadioButton
+              value="metal-only"
+              status={metalOnly ? 'checked' : 'unchecked'}
+              onPress={() => setMetalOnly(!metalOnly)}
+            />
+            <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
           </View>
           
           {!metalOnly && (
@@ -456,8 +460,12 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           
           {/* Metal Only Toggle */}
           <View style={styles.metalOnlyContainer}>
-            <Text variant="bodyLarge">Metal Only</Text>
-            <Switch value={metalOnly} onValueChange={setMetalOnly} />
+            <RadioButton
+              value="metal-only"
+              status={metalOnly ? 'checked' : 'unchecked'}
+              onPress={() => setMetalOnly(!metalOnly)}
+            />
+            <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
           </View>
           
           {!metalOnly && (
@@ -534,8 +542,12 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         
         {/* Metal Only Toggle */}
         <View style={styles.metalOnlyContainer}>
-          <Text variant="bodyLarge">Metal Only</Text>
-          <Switch value={metalOnly} onValueChange={setMetalOnly} />
+          <RadioButton
+            value="metal-only"
+            status={metalOnly ? 'checked' : 'unchecked'}
+            onPress={() => setMetalOnly(!metalOnly)}
+          />
+          <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
         </View>
         
         {!metalOnly && (
@@ -802,12 +814,11 @@ const styles = StyleSheet.create({
   },
   metalOnlyContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: theme.colors.surfaceVariant,
-    padding: theme.spacing.md,
-    borderRadius: 8,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  metalOnlyText: {
+    marginLeft: theme.spacing.xs,
   },
   subtotalContainer: {
     backgroundColor: theme.colors.surfaceVariant,

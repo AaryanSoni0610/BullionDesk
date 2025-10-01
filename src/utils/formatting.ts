@@ -101,8 +101,8 @@ export const formatTransactionAmount = (transaction: any): string => {
   const amount = transaction.amountPaid || 0;
   // Determine if money was received (SELL) or given (PURCHASE) based on transaction.total sign
   const isReceived = transaction.total > 0;
-  const label = isReceived ? 'Received' : 'Given';
-  return amount > 0 ? `${label}: ₹${amount.toLocaleString()}` : '₹0';
+  const label = isReceived ? '+' : '-';
+  return amount > 0 ? `${label}₹${amount.toLocaleString()}` : '₹0';
 };
 
 /**

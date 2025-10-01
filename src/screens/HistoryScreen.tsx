@@ -36,7 +36,7 @@ export const HistoryScreen: React.FC = () => {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('today');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { navigateToSettings } = useAppContext();
+  const { navigateToSettings, loadTransactionForEdit } = useAppContext();
   
 
   useEffect(() => {
@@ -227,12 +227,27 @@ export const HistoryScreen: React.FC = () => {
         const isDebt = transaction.total > 0;
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+      } else {
+        transactionBalanceColor = theme.colors.primary; // Blue for settled
       }
     }
     
     return (
       <Card style={styles.transactionCard} mode="outlined">
         <Card.Content>
+          
+          {/* Edit Button Row - Only for metal-only transactions */}
+          {isMetalOnly && (
+            <View style={styles.editButtonRow}>
+              <TouchableOpacity 
+                style={styles.editButton}
+                onPress={() => loadTransactionForEdit(transaction.id)}
+              >
+                <Icon name="pencil" size={16} color={theme.colors.primary} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Header Row */}
           <View style={styles.cardHeader}>
             <View style={styles.customerInfo}>
@@ -264,12 +279,23 @@ export const HistoryScreen: React.FC = () => {
                   {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
                 </Text>
                 <Text variant="bodySmall" style={styles.entryDetails}>
-                  {entry.weight && `${entry.weight}g`}
+                  {entry.weight && `${(() => {
+                    const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                    const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : Math.floor(entry.weight || 0);
+                    return formattedWeight;
+                  })()}g`}
+                  {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
                 </Text>
               </View>
             ))}
-            {/* Balance/Debt Row - Always show for transactions */}
+            {/* Payment/Balance Row */}
             <View style={styles.paymentRow}>
+              {!isMetalOnly && transaction.amountPaid > 0 && (
+                <Text variant="bodySmall" style={styles.paymentLabel}>
+                  {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+                </Text>
+              )}
+              {isMetalOnly && <View style={{ flex: 1 }} />}
               <Text variant="bodySmall" style={[styles.transactionBalance, 
                 { color: transactionBalanceColor }
               ]}>
@@ -537,6 +563,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rightSection: {
+    flex: 1,
     alignItems: 'flex-end',
     justifyContent: 'flex-start',
     gap: theme.spacing.xs,
@@ -684,5 +711,25 @@ const styles = StyleSheet.create({
   },
   balanceAmount: {
     color: theme.colors.onSurfaceVariant,
+  },
+  editButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.xs,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs / 2,
+    backgroundColor: theme.colors.primaryContainer,
+    borderRadius: 16,
+  },
+  editButtonText: {
+    color: theme.colors.primary,
+    fontFamily: 'Roboto_500Medium',
+    fontSize: 12,
   },
 });

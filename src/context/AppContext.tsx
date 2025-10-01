@@ -34,6 +34,7 @@ interface AppContextType {
   handleEditEntry: (entryId: string) => void;
   handleDeleteEntry: (entryId: string) => void;
   handleSaveTransaction: (receivedAmount?: number) => Promise<void>;
+  loadTransactionForEdit: (transactionId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -177,6 +178,39 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   };
 
+  const loadTransactionForEdit = async (transactionId: string) => {
+    try {
+      // Get all transactions and find the one we want to edit
+      const transactions = await DatabaseService.getAllTransactions();
+      const transaction = transactions.find(t => t.id === transactionId);
+      
+      if (!transaction) {
+        setSnackbarMessage('Transaction not found');
+        setSnackbarVisible(true);
+        return;
+      }
+
+      // Get the customer
+      const customer = await DatabaseService.getCustomerById(transaction.customerId);
+      if (!customer) {
+        setSnackbarMessage('Customer not found');
+        setSnackbarVisible(true);
+        return;
+      }
+
+      // Set the current customer and entries
+      setCurrentCustomer(customer);
+      setCurrentEntries(transaction.entries);
+      
+      // Navigate to settlement screen to show transaction details
+      onNavigateToSettlement();
+    } catch (error) {
+      console.error('Error loading transaction for edit:', error);
+      setSnackbarMessage('Error loading transaction');
+      setSnackbarVisible(true);
+    }
+  };
+
   const contextValue: AppContextType = {
     currentCustomer,
     setCurrentCustomer,
@@ -200,6 +234,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     handleEditEntry,
     handleDeleteEntry,
     handleSaveTransaction,
+    loadTransactionForEdit,
   };
 
   return (

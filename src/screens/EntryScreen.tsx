@@ -11,6 +11,7 @@ import {
   IconButton,
   HelperText,
   Snackbar,
+  Switch,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -40,6 +41,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
   const hasMoneyEntries = otherEntries.some(entry => entry.type === 'money');
   const hasSellPurchaseEntries = otherEntries.some(entry => entry.type === 'sell' || entry.type === 'purchase');
+  const hasMetalOnlyEntries = otherEntries.some(entry => entry.metalOnly === true);
   
   // Handle back button navigation
   const handleBack = () => {
@@ -55,6 +57,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (hasMoneyEntries) {
       // If money entries exist, only allow money
       return ['money'];
+    } else if (hasMetalOnlyEntries) {
+      // If metal-only entries exist, only allow metal-only (no new entries)
+      return [];
     } else if (hasSellPurchaseEntries) {
       // If sell/purchase entries exist, only allow sell/purchase
       return ['sell', 'purchase'];
@@ -68,6 +73,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [transactionType, setTransactionType] = useState<'purchase' | 'sell' | 'money'>('sell');
   const [itemType, setItemType] = useState<ItemType>('gold999');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [metalOnly, setMetalOnly] = useState(false);
   
   // Input fields
   const [weight, setWeight] = useState('');
@@ -102,6 +108,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setRupuReturnType(editingEntry.rupuReturnType || 'money');
       setSilver98Weight(editingEntry.silver98Weight?.toString() || '');
       setSilverWeight(editingEntry.silverWeight?.toString() || '');
+      setMetalOnly(editingEntry.metalOnly || false);
     }
   }, [editingEntry]);
   
@@ -144,6 +151,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const itemOptions = getItemOptions();
 
   const calculateSubtotal = (): number => {
+    // Metal-only transactions have no subtotal (no money involved)
+    if (metalOnly) {
+      return 0;
+    }
+    
     if (transactionType === 'money') {
       const formatted = formatMoney(moneyAmount);
       const amount = parseFloat(formatted) || 0;
@@ -159,7 +171,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (itemType === 'rani') {
       const touchNum = parseFloat(touch) || 0;
       const pureGold = (weightNum * touchNum) / 100;
-      const formattedPureGold = parseFloat(formatPureGold(pureGold));
+      const formattedPureGold = formatPureGold(pureGold);
       rawSubtotal = (formattedPureGold * priceNum) / 10; // Gold price is per 10g
     } else if (itemType === 'rupu') {
       const touchNum = parseFloat(touch) || 0;
@@ -216,7 +228,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       return moneyAmount.trim() !== '';
     }
     
-    const hasRequiredFields = weight.trim() !== '' && price.trim() !== '';
+    // For metal-only transactions, price is not required
+    const hasRequiredFields = metalOnly 
+      ? weight.trim() !== '' 
+      : weight.trim() !== '' && price.trim() !== '';
     
     if (itemType === 'rani' || itemType === 'rupu') {
       const hasTouch = touch.trim() !== '';
@@ -244,11 +259,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         type: transactionType,
         itemType: transactionType === 'money' ? 'gold999' : itemType,
         weight: weight.trim() ? parseFloat(weight) : undefined,
-        price: price.trim() ? parseFloat(price) : undefined,
+        price: metalOnly ? undefined : (price.trim() ? parseFloat(price) : undefined),
         touch: touch.trim() ? parseFloat(touch) : undefined,
         extraPerKg: extraPerKg.trim() ? parseFloat(extraPerKg) : undefined,
         pureWeight: itemType === 'rani' && weight.trim() && touch.trim() ? 
-          parseFloat(formatPureGold((parseFloat(weight) * parseFloat(touch)) / 100)) : 
+          formatPureGold((parseFloat(weight) * parseFloat(touch)) / 100) : 
           itemType === 'rupu' && weight.trim() && touch.trim() ?
           formatPureSilver((parseFloat(weight) * parseFloat(touch)) / 100) : 
           undefined,
@@ -269,6 +284,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           const rawNetWeight = formattedTotalPureWithExtra - (silver98Num + silverNum);
           return formatPureSilver(rawNetWeight);
         })() : undefined,
+        metalOnly: transactionType !== 'money' ? metalOnly : undefined,
         subtotal,
       };
 
@@ -368,21 +384,30 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           </View>
           <TextInput
             label="Pure Gold Equivalent"
-            value={`${formattedPureGold}g`}
+            value={`${formattedPureGold.toFixed(3)}g`}
             mode="outlined"
             editable={false}
             style={styles.input}
           />
-          <View>
-            <TextInput
-              label="Price (₹/10g)"
-              value={price}
-              onChangeText={setPrice}
-              mode="outlined"
-              keyboardType="numeric"
-              style={styles.input}
-            />
+          
+          {/* Metal Only Toggle */}
+          <View style={styles.metalOnlyContainer}>
+            <Text variant="bodyLarge">Metal Only</Text>
+            <Switch value={metalOnly} onValueChange={setMetalOnly} />
           </View>
+          
+          {!metalOnly && (
+            <View>
+              <TextInput
+                label="Price (₹/10g)"
+                value={price}
+                onChangeText={setPrice}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.input}
+              />
+            </View>
+          )}
         </>
       );
     }
@@ -420,38 +445,47 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             keyboardType="numeric"
             style={styles.input}
           />
-          <TextInput
-            label="Price per Kg (₹)"
-            value={price}
-            onChangeText={setPrice}
-            mode="outlined"
-            keyboardType="numeric"
-            style={styles.input}
-          />
 
           <View style={styles.calculationDisplay}>
-            <Text variant="bodySmall">Pure Silver: {formatWeight(formattedPureSilver, true)}</Text>
+            <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
             {extraWeight > 0 && (
-              <Text variant="bodySmall">Bonus: {formatWeight((formattedPureSilver * extraWeight) / 1000, true)}</Text>
+              <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000)}g</Text>
             )}
-            <Text variant="bodySmall">Total Weight: {formatWeight(formattedTotalPureWithExtra, true)}</Text>
+            <Text variant="bodySmall">Total Weight: {formattedTotalPureWithExtra}g</Text>
           </View>
+          
+          {/* Metal Only Toggle */}
+          <View style={styles.metalOnlyContainer}>
+            <Text variant="bodyLarge">Metal Only</Text>
+            <Switch value={metalOnly} onValueChange={setMetalOnly} />
+          </View>
+          
+          {!metalOnly && (
+            <TextInput
+              label="Price per Kg (₹)"
+              value={price}
+              onChangeText={setPrice}
+              mode="outlined"
+              keyboardType="numeric"
+              style={styles.input}
+            />
+          )}
           
           {/* Return Type Selection */}
-          <View style={styles.segmentedButtons}>
-            <SegmentedButtons
-              value={rupuReturnType}
-              onValueChange={setRupuReturnType as any}
-              buttons={[
-                { value: 'money', label: 'Money Return' },
-                { value: 'silver', label: 'Silver Return' },
-              ]}
-            />
-          </View>
+          {!metalOnly && (
+            <View style={styles.segmentedButtons}>
+              <SegmentedButtons
+                value={rupuReturnType}
+                onValueChange={setRupuReturnType as any}
+                buttons={[
+                  { value: 'money', label: 'Money Return' },
+                  { value: 'silver', label: 'Silver Return' },
+                ]}
+              />
+            </View>
+          )}
           
-          {rupuReturnType === 'money' ? (
-            <></>
-          ) : (
+          {!metalOnly && rupuReturnType === 'silver' && (
             <>
               <TextInput
                 label="Silver 98 (g)"
@@ -475,7 +509,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                   const silverNum = parseFloat(silverWeight) || 0;
                   const rawNet = formattedTotalPureWithExtra - (silver98Num + silverNum);
                   const net = formatPureSilver(rawNet);
-                  return formatWeight(net, true);
+                  return `${net}g`;
                 })()}</Text>
               </View>
             </>
@@ -497,14 +531,23 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           keyboardType="numeric"
           style={styles.input}
         />
-        <TextInput
-          label={`Price (₹/${unit})`}
-          value={price}
-          onChangeText={setPrice}
-          mode="outlined"
-          keyboardType="numeric"
-          style={styles.input}
-        />
+        
+        {/* Metal Only Toggle */}
+        <View style={styles.metalOnlyContainer}>
+          <Text variant="bodyLarge">Metal Only</Text>
+          <Switch value={metalOnly} onValueChange={setMetalOnly} />
+        </View>
+        
+        {!metalOnly && (
+          <TextInput
+            label={`Price (₹/${unit})`}
+            value={price}
+            onChangeText={setPrice}
+            mode="outlined"
+            keyboardType="numeric"
+            style={styles.input}
+          />
+        )}
       </>
     );
   };
@@ -604,23 +647,25 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         {/* Dynamic Input Fields */}
         {renderDynamicFields()}
 
-        {/* Divider before subtotal */}
-        <Divider style={styles.subtotalDivider} />
+        {/* Divider before subtotal - only show for non-metal-only */}
+        {!metalOnly && <Divider style={styles.subtotalDivider} />}
 
-        {/* Subtotal Display */}
-        <Surface style={styles.subtotalContainer} elevation={1}>
-          <View style={styles.subtotalContent}>
-            <Text variant="titleMedium">Subtotal:</Text>
-            <Text 
-              variant="titleMedium" 
-              style={styles.subtotalAmount}
-            >
-              {subtotal >= 0 ? '+' : '-'}₹{
-                parseFloat(formatMoney(Math.abs(subtotal).toString())).toLocaleString()
-              }
-            </Text>
-          </View>
-        </Surface>
+        {/* Subtotal Display - only show for non-metal-only */}
+        {!metalOnly && (
+          <Surface style={styles.subtotalContainer} elevation={1}>
+            <View style={styles.subtotalContent}>
+              <Text variant="titleMedium">Subtotal:</Text>
+              <Text 
+                variant="titleMedium" 
+                style={styles.subtotalAmount}
+              >
+                {subtotal >= 0 ? '+' : '-'}₹{
+                  parseFloat(formatMoney(Math.abs(subtotal).toString())).toLocaleString()
+                }
+              </Text>
+            </View>
+          </Surface>
+        )}
       </ScrollView>
 
       {/* Action Buttons */}
@@ -750,6 +795,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto_400Regular_Italic',
   },
   calculationDisplay: {
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: theme.spacing.md,
+    borderRadius: 8,
+    marginBottom: theme.spacing.md,
+  },
+  metalOnlyContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: theme.colors.surfaceVariant,
     padding: theme.spacing.md,
     borderRadius: 8,

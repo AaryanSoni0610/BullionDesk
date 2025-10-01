@@ -67,6 +67,29 @@ export class DatabaseService {
     }
   }
 
+  static async updateCustomerMetalBalance(
+    customerId: string,
+    itemType: string,
+    amount: number
+  ): Promise<boolean> {
+    try {
+      const customer = await this.getCustomerById(customerId);
+      if (!customer) return false;
+
+      if (!customer.metalBalances) {
+        customer.metalBalances = {};
+      }
+
+      const currentBalance = customer.metalBalances[itemType as keyof typeof customer.metalBalances] || 0;
+      customer.metalBalances[itemType as keyof typeof customer.metalBalances] = currentBalance + amount;
+
+      return await this.saveCustomer(customer);
+    } catch (error) {
+      console.error('Error updating customer metal balance:', error);
+      return false;
+    }
+  }
+
   // Transaction operations
   static async getAllTransactions(): Promise<Transaction[]> {
     try {
@@ -141,16 +164,58 @@ export class DatabaseService {
       transactions.push(transaction);
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
-      // Update customer balance and last transaction (MERCHANT's perspective)
-      // Negative balance (-) = Customer owes merchant (customer has DEBT)
-      // Positive balance (+) = Merchant owes customer (customer has CREDIT/BALANCE)
-      // Zero balance (0) = Fully settled
-      // New balance = old balance + transaction balance change
+      // Check if any entry is metal-only
+      const isMetalOnly = entries.some(entry => entry.metalOnly === true);
+
+      // Update customer balance based on transaction type
       const updatedCustomer: Customer = {
         ...customer,
-        balance: customer.balance + finalBalance,
+        balance: isMetalOnly ? customer.balance : customer.balance + finalBalance,
         lastTransaction: new Date().toISOString(),
+        metalBalances: customer.metalBalances || {},
       };
+
+      // Update metal balances for metal-only transactions
+      if (isMetalOnly) {
+        entries.forEach(entry => {
+          if (entry.metalOnly && entry.type !== 'money') {
+            const itemType = entry.itemType;
+            let metalAmount = 0;
+
+            // Determine metal balance change based on entry type and item
+            if (entry.itemType === 'rani') {
+              // Rani: use pure gold equivalent
+              metalAmount = entry.pureWeight || 0;
+              // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+            } else if (entry.itemType === 'rupu') {
+              // Rupu: use pure silver equivalent
+              if (entry.rupuReturnType === 'silver' && entry.netWeight !== undefined) {
+                // For silver return, use net weight to determine direction
+                metalAmount = entry.netWeight;
+                // Net weight already has correct sign
+              } else {
+                // For money return or no return type
+                metalAmount = entry.pureWeight || 0;
+                // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
+                metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+              }
+            } else {
+              // Regular metals: use actual weight
+              metalAmount = entry.weight || 0;
+              // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+            }
+
+            // Update the metal balance
+            if (!updatedCustomer.metalBalances) {
+              updatedCustomer.metalBalances = {};
+            }
+            const currentBalance = updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] || 0;
+            updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] = currentBalance + metalAmount;
+          }
+        });
+      }
 
       const customerSaved = await this.saveCustomer(updatedCustomer);
       if (!customerSaved) {

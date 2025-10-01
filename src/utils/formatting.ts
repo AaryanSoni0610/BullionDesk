@@ -61,56 +61,34 @@ export const formatMoney = (value: string): string => {
 /**
  * Pure gold formatting function for rani - 3 digits after decimal, last digit always zero
  * @param value - The gold weight value
- * @returns Formatted gold weight string
+ * @returns Formatted gold weight number
  */
-export const formatPureGold = (value: number): string => {
-  if (isNaN(value)) return '0.000';
+export const formatPureGold = (value: number): number => {
+  if (isNaN(value)) return 0;
 
-  // Get 3 decimal places
+  // Get 3 decimal places and set last digit to zero
   const rounded = Math.round(value * 1000) / 1000;
   const str = rounded.toFixed(3);
   const parts = str.split('.');
   const decimals = parts[1] || '000';
-
-  // Get the last (third) decimal digit
-  const lastDigit = parseInt(decimals.charAt(2) || '0');
-
-  let newDecimals;
-  if (lastDigit >= 8) {
-    // Add 0.010 if last digit >= 8
-    const newValue = rounded + 0.010;
-    const newStr = newValue.toFixed(3);
-    const newParts = newStr.split('.');
-    newDecimals = (newParts[1] || '000').substring(0, 2) + '0';
-    return newParts[0] + '.' + newDecimals;
-  } else {
-    // Make last digit zero
-    newDecimals = decimals.substring(0, 2) + '0';
-    return parts[0] + '.' + newDecimals;
-  }
+  
+  // Make last digit zero
+  const newDecimals = decimals.substring(0, 2) + '0';
+  const result = parts[0] + '.' + newDecimals;
+  
+  return parseFloat(result);
 };
 
 /**
- * Pure silver formatting function for rupu - complex rounding rules
+ * Pure silver formatting function for rupu - remove all decimal points
  * @param value - The silver weight value
- * @returns Formatted silver weight number
+ * @returns Formatted silver weight number (integer)
  */
 export const formatPureSilver = (value: number): number => {
   if (isNaN(value)) return 0;
 
-  const integerPart = Math.floor(value);
-  const fractionalPart = value - integerPart;
-
-  if (fractionalPart >= 0.899) {
-    // Make fractional 0 and add +1g
-    return integerPart + 1;
-  } else if (fractionalPart > 0.399 && fractionalPart < 0.900) {
-    // Make fractional .500
-    return integerPart + 0.5;
-  } else {
-    // Make fractional 0
-    return integerPart;
-  }
+  // Simply floor to integer, removing all fractional parts
+  return Math.floor(value);
 };
 
 /**

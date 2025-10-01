@@ -3,6 +3,15 @@ export interface Customer {
   name: string;
   lastTransaction?: string;
   balance: number; // Positive = customer has credit, Negative = customer owes debt
+  metalBalances?: {
+    gold999?: number; // Positive = merchant owes customer, Negative = customer owes merchant
+    gold995?: number;
+    rani?: number; // Stores pure gold equivalent
+    silver?: number;
+    silver98?: number;
+    silver96?: number;
+    rupu?: number; // Stores pure silver equivalent
+  };
   avatar?: string;
 }
 
@@ -36,6 +45,7 @@ export interface TransactionEntry {
   silver98Weight?: number; // For Rupu silver return
   silverWeight?: number; // For Rupu silver return
   netWeight?: number; // For Rupu silver return calculation
+  metalOnly?: boolean; // For metal-only transactions (no money involved)
   subtotal: number;
 }
 

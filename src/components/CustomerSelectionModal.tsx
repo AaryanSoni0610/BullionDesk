@@ -210,6 +210,37 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
   };
 
+  const formatMetalBalances = (metalBalances?: Customer['metalBalances']) => {
+    if (!metalBalances) return '';
+    
+    const metalItems: string[] = [];
+    const metalTypeNames: Record<string, string> = {
+      gold999: 'Au999',
+      gold995: 'Au995',
+      rani: 'Rani',
+      silver: 'Ag',
+      silver98: 'Ag98',
+      silver96: 'Ag96',
+      rupu: 'Rupu',
+    };
+    
+    Object.entries(metalBalances).forEach(([type, balance]) => {
+      if (balance && Math.abs(balance) > 0.001) {
+        const isGold = type.includes('gold') || type === 'rani';
+        const displayName = metalTypeNames[type] || type;
+        const formattedBalance = isGold ? balance.toFixed(3) : Math.floor(balance);
+        const sign = balance > 0 ? '+' : '';
+        metalItems.push(`${displayName}${sign}${formattedBalance}g`);
+      }
+    });
+    
+    if (metalItems.length === 0) return '';
+    
+    const joinedString = metalItems.join(', ');
+    // Truncate if too long
+    return joinedString.length > 40 ? joinedString.substring(0, 37) + '...' : joinedString;
+  };
+
   const getBalanceColor = (balance: number) => {
     if (balance > 0) return theme.colors.primary; // Blue - Balance (merchant owes customer)
     if (balance < 0) return theme.colors.debtColor; // Orange - Debt (customer owes merchant)
@@ -226,38 +257,55 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
 
   const showRecentCustomers = searchQuery.trim() === '' && recentCustomers.length > 0;
 
-  const renderCustomerItem = ({ item }: { item: Customer }) => (
-    <List.Item
-      title={item.name}
-      description={() => (
-        <View>
-          <Text variant="bodySmall" style={styles.customerDescription}>
-            {formatLastTransaction(item.lastTransaction)}
-          </Text>
-          <Text 
-            variant="bodySmall" 
-            style={[
-              styles.customerDescription,
-              { color: getBalanceColor(item.balance) }
-            ]}
-          >
-            {formatBalance(item.balance)}
-          </Text>
-        </View>
-      )}
-      left={() => (
-        <Avatar.Text
-          size={40}
-          label={getInitials(item.name)}
-          style={styles.avatar}
-          labelStyle={styles.avatarLabel}
-        />
-      )}
-      onPress={() => handleSelectCustomer(item)}
-      style={styles.customerItem}
-      titleStyle={styles.customerName}
-    />
-  );
+  const renderCustomerItem = ({ item }: { item: Customer }) => {
+    const metalBalanceText = formatMetalBalances(item.metalBalances);
+    
+    return (
+      <List.Item
+        title={item.name}
+        description={() => (
+          <View>
+            <Text variant="bodySmall" style={styles.customerDescription}>
+              {formatLastTransaction(item.lastTransaction)}
+            </Text>
+            <Text 
+              variant="bodySmall" 
+              style={[
+                styles.customerDescription,
+                { color: getBalanceColor(item.balance) }
+              ]}
+            >
+              {formatBalance(item.balance)}
+            </Text>
+            {metalBalanceText && (
+              <Text 
+                variant="bodySmall" 
+                style={[
+                  styles.customerDescription,
+                  { color: theme.colors.secondary, fontFamily: 'Roboto_500Medium' }
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {metalBalanceText}
+              </Text>
+            )}
+          </View>
+        )}
+        left={() => (
+          <Avatar.Text
+            size={40}
+            label={getInitials(item.name)}
+            style={styles.avatar}
+            labelStyle={styles.avatarLabel}
+          />
+        )}
+        onPress={() => handleSelectCustomer(item)}
+        style={styles.customerItem}
+        titleStyle={styles.customerName}
+      />
+    );
+  };
 
   return (
     <Portal>

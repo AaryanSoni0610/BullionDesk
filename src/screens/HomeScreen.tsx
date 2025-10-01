@@ -73,18 +73,6 @@ export const HomeScreen: React.FC = () => {
     return isReceived ? theme.colors.sellColor : theme.colors.primary;
   };
 
-  const getBalanceColor = (balance: number) => {
-    if (balance > 0) return theme.colors.primary; // Blue - Balance (merchant owes customer)
-    if (balance < 0) return theme.colors.debtColor; // Orange - Debt (customer owes merchant)
-    return theme.colors.success; // Green - Settled
-  };
-
-  const getBalanceLabel = (balance: number) => {
-    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`; // Merchant owes customer
-    if (balance < 0) return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
-    return 'Settled';
-  };
-
   const getPrimaryItems = (transaction: Transaction) => {
     const sellItems: string[] = [];
     const purchaseItems: string[] = [];
@@ -92,7 +80,10 @@ export const HomeScreen: React.FC = () => {
     transaction.entries.forEach(entry => {
       if (entry.type !== 'money') {
         const displayName = getItemDisplayName(entry);
-        const itemText = entry.weight ? `${displayName} ${entry.weight.toFixed(1)}g` : displayName;
+        // Use 3 decimal places for gold items, 1 for others
+        const isGoldItem = ['gold999', 'gold995', 'rani'].includes(entry.itemType);
+        const decimals = isGoldItem ? 3 : 1;
+        const itemText = entry.weight ? `${displayName} ${entry.weight.toFixed(decimals)}g` : displayName;
         
         if (entry.type === 'sell') {
           sellItems.push(itemText);
@@ -130,7 +121,6 @@ export const HomeScreen: React.FC = () => {
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const primaryItems = getPrimaryItems(transaction);
-    const isMoneyOnlyTransaction = transaction.entries.length > 0 && transaction.entries.every(entry => entry.type === 'money');
     
     // Calculate transaction-specific remaining balance
     const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;

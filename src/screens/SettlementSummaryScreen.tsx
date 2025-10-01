@@ -147,42 +147,63 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     let netMoneyFlow = 0; // Net money from merchant perspective: positive = merchant takes money, negative = merchant gives money
     const giveItems: { item: string; amount: string }[] = []; // What merchant gives to customer
     const takeItems: { item: string; amount: string }[] = []; // What merchant takes from customer
+    
+    // Check if this is a metal-only transaction
+    const isMetalOnly = entries.some(entry => entry.metalOnly === true);
 
     entries.forEach(entry => {
-      if (entry.type === 'sell') {
-        // Merchant sells: takes money (+), gives goods
-        netMoneyFlow += Math.abs(entry.subtotal);
-        giveItems.push({ 
-          item: getItemDisplayName(entry), 
-          amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
-        });
-      } else if (entry.type === 'purchase') {
-        // Special case for rupu purchase with silver return and net weight < 0: inward flow
-        if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver' && (entry.netWeight || 0) < 0) {
-          // Inward flow: merchant receives money
-          netMoneyFlow += Math.abs(entry.subtotal);
-          takeItems.push({ 
+      // For metal-only entries, don't add to netMoneyFlow
+      if (entry.metalOnly) {
+        if (entry.type === 'sell') {
+          // Merchant gives metal to customer (metal debt - customer owes merchant metal)
+          giveItems.push({ 
             item: getItemDisplayName(entry), 
             amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
           });
-        } else {
-          // Normal purchase: gives money (-), takes goods
-          netMoneyFlow -= Math.abs(entry.subtotal);
+        } else if (entry.type === 'purchase') {
+          // Merchant takes metal from customer (metal balance - merchant owes customer metal)
           takeItems.push({ 
             item: getItemDisplayName(entry), 
             amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
           });
         }
-      } else if (entry.type === 'money') {
-        // Money transaction: add to net money flow based on moneyType
-        if (entry.moneyType === 'debt') {
-          // Debt = customer owes merchant = inward flow (merchant receives)
+      } else {
+        // Regular money transactions
+        if (entry.type === 'sell') {
+          // Merchant sells: takes money (+), gives goods
           netMoneyFlow += Math.abs(entry.subtotal);
-        } else {
-          // Balance = merchant owes customer = outward flow (merchant gives)
-          netMoneyFlow -= Math.abs(entry.subtotal);
+          giveItems.push({ 
+            item: getItemDisplayName(entry), 
+            amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
+          });
+        } else if (entry.type === 'purchase') {
+          // Special case for rupu purchase with silver return and net weight < 0: inward flow
+          if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver' && (entry.netWeight || 0) < 0) {
+            // Inward flow: merchant receives money
+            netMoneyFlow += Math.abs(entry.subtotal);
+            takeItems.push({ 
+              item: getItemDisplayName(entry), 
+              amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
+            });
+          } else {
+            // Normal purchase: gives money (-), takes goods
+            netMoneyFlow -= Math.abs(entry.subtotal);
+            takeItems.push({ 
+              item: getItemDisplayName(entry), 
+              amount: formatWeight(entry.weight || 0, entry.itemType?.includes('silver') || entry.itemType === 'rupu') 
+            });
+          }
+        } else if (entry.type === 'money') {
+          // Money transaction: add to net money flow based on moneyType
+          if (entry.moneyType === 'debt') {
+            // Debt = customer owes merchant = inward flow (merchant receives)
+            netMoneyFlow += Math.abs(entry.subtotal);
+          } else {
+            // Balance = merchant owes customer = outward flow (merchant gives)
+            netMoneyFlow -= Math.abs(entry.subtotal);
+          }
+          // Don't add money entries to give/take items to avoid redundancy
         }
-        // Don't add money entries to give/take items to avoid redundancy
       }
     });
 
@@ -193,11 +214,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       totalTake: netMoneyFlow > 0 ? netMoneyFlow : 0, 
       netAmount, 
       giveItems, 
-      takeItems 
+      takeItems,
+      isMetalOnly 
     };
   };
 
-  const { totalGive, totalTake, netAmount, giveItems, takeItems } = calculateTotals();
+  const { totalGive, totalTake, netAmount, giveItems, takeItems, isMetalOnly } = calculateTotals();
   const received = parseFloat(receivedAmount) || 0;
   const discountExtraAmount = parseFloat(discountExtra) || 0;
   
@@ -370,13 +392,13 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                     • {item.item}: {item.amount}
                   </Text>
                 ))}
-                {/* Show net money if negative (merchant owes customer) */}
-                {netAmount < 0 && (
+                {/* Show net money if negative (merchant owes customer) - only for non-metal-only */}
+                {!isMetalOnly && netAmount < 0 && (
                   <Text variant="bodyMedium" style={styles.summaryItem}>
                     • Money: ₹{Math.abs(netAmount).toLocaleString()}
                   </Text>
                 )}
-                {giveItems.length === 0 && netAmount >= 0 && (
+                {giveItems.length === 0 && (isMetalOnly || netAmount >= 0) && (
                   <Text variant="bodyMedium" style={styles.summaryItem}>• Nothing</Text>
                 )}
               </View>
@@ -404,13 +426,13 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                     • {item.item}: {item.amount}
                   </Text>
                 ))}
-                {/* Show net money if positive (customer owes merchant) */}
-                {netAmount > 0 && (
+                {/* Show net money if positive (customer owes merchant) - only for non-metal-only */}
+                {!isMetalOnly && netAmount > 0 && (
                   <Text variant="bodyMedium" style={styles.summaryItem}>
                     • Money: ₹{netAmount.toLocaleString()}
                   </Text>
                 )}
-                {takeItems.length === 0 && netAmount <= 0 && (
+                {takeItems.length === 0 && (isMetalOnly || netAmount <= 0) && (
                   <Text variant="bodyMedium" style={styles.summaryItem}>• Nothing</Text>
                 )}
               </View>
@@ -421,8 +443,8 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         {/* Horizontal Line */}
         <Divider style={styles.sectionDivider} />
 
-        {/* Total Card - hide when all entries are money */}
-        {entries.some(entry => entry.type !== 'money') && (
+        {/* Total Card - hide for metal-only transactions */}
+        {!isMetalOnly && entries.some(entry => entry.type !== 'money') && (
           <>
             <Card style={styles.totalCard} mode="contained">
               <Card.Content>

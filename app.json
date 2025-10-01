@@ -18,7 +18,8 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png"
-      }
+      },
+      "package": "com.sonitech.bulliondesk"
     },
     "web": {
       "favicon": "./assets/favicon.png"

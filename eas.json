@@ -3,35 +3,15 @@
     "version": ">= 5.16.0"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "ios": {
-        "resourceClass": "m-medium"
-      },
+    "debug": {
       "android": {
-        "resourceClass": "medium"
-      }
-    },
-    "preview": {
-      "distribution": "internal",
-      "ios": {
-        "resourceClass": "m-medium"
-      },
-      "android": {
-        "resourceClass": "medium"
+        "buildType": "apk"
       }
     },
     "production": {
-      "ios": {
-        "resourceClass": "m-medium"
-      },
       "android": {
-        "resourceClass": "medium"
+        "buildType": "app-bundle"
       }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }

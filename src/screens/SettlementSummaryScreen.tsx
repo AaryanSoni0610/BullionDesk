@@ -132,15 +132,28 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
     if (entry.itemType === 'rani') {
       const pureGold = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
-      return `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureGold, false)}`;
+      const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureGold, false)}`;
+      if (entry.price !== undefined) {
+        return `${details}, Price: ₹${entry.price.toLocaleString()}/10g`;
+      }
+      return details;
     }
 
     if (entry.itemType === 'rupu') {
       const pureWeight = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
-      return `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureWeight, true)}`;
+      const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureWeight, true)}`;
+      if (entry.price !== undefined) {
+        return `${details}, Price: ₹${entry.price.toLocaleString()}/kg`;
+      }
+      return details;
     }
 
-    return `Weight: ${entry.weight}g, Price: ₹${entry.price?.toLocaleString()}/${entry.itemType.startsWith('gold') ? '10g' : 'kg'}`;
+    // Regular metals
+    const details = `Weight: ${entry.weight}g`;
+    if (entry.price !== undefined) {
+      return `${details}, Price: ₹${entry.price.toLocaleString()}/${entry.itemType.startsWith('gold') ? '10g' : 'kg'}`;
+    }
+    return details;
   };
 
   const calculateTotals = () => {

@@ -210,17 +210,22 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
   };
 
-  const formatMetalBalances = (metalBalances?: Customer['metalBalances']) => {
-    if (!metalBalances) return '';
+  const formatMetalBalances = (customer: Customer) => {
+    const metalBalances = customer.metalBalances;
+    if (!metalBalances) {
+      return formatBalance(customer.balance);
+    }
     
-    const metalItems: string[] = [];
+    const balanceItems: string[] = []; // Merchant owes customer (positive)
+    const debtItems: string[] = []; // Customer owes merchant (negative)
+    
     const metalTypeNames: Record<string, string> = {
-      gold999: 'Au999',
-      gold995: 'Au995',
+      gold999: 'Gold 999',
+      gold995: 'Gold 995',
       rani: 'Rani',
-      silver: 'Ag',
-      silver98: 'Ag98',
-      silver96: 'Ag96',
+      silver: 'Silver',
+      silver98: 'Silver 98',
+      silver96: 'Silver 96',
       rupu: 'Rupu',
     };
     
@@ -228,17 +233,44 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       if (balance && Math.abs(balance) > 0.001) {
         const isGold = type.includes('gold') || type === 'rani';
         const displayName = metalTypeNames[type] || type;
-        const formattedBalance = isGold ? balance.toFixed(3) : Math.floor(balance);
-        const sign = balance > 0 ? '+' : '';
-        metalItems.push(`${displayName}${sign}${formattedBalance}g`);
+        const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
+        
+        if (balance > 0) {
+          balanceItems.push(`${displayName} ${formattedBalance}g`);
+        } else {
+          debtItems.push(`${displayName} ${formattedBalance}g`);
+        }
       }
     });
     
-    if (metalItems.length === 0) return '';
+    // Check if both money and metal balances are zero
+    const hasMoneyBalance = customer.balance !== 0;
+    const hasMetalBalance = balanceItems.length > 0 || debtItems.length > 0;
     
-    const joinedString = metalItems.join(', ');
-    // Truncate if too long
-    return joinedString.length > 40 ? joinedString.substring(0, 37) + '...' : joinedString;
+    if (!hasMoneyBalance && !hasMetalBalance) {
+      return 'Settled';
+    }
+    
+    const parts: string[] = [];
+    
+    // Add money balance/debt first
+    if (customer.balance > 0) {
+      parts.push(`Balance: ₹${customer.balance.toLocaleString()}`);
+    } else if (customer.balance < 0) {
+      parts.push(`Debt: ₹${Math.abs(customer.balance).toLocaleString()}`);
+    }
+    
+    // Add metal balance
+    if (balanceItems.length > 0) {
+      parts.push(`Balance: ${balanceItems.join(', ')}`);
+    }
+    
+    // Add metal debt
+    if (debtItems.length > 0) {
+      parts.push(`Debt: ${debtItems.join(', ')}`);
+    }
+    
+    return parts.join('; ');
   };
 
   const getBalanceColor = (balance: number) => {
@@ -258,7 +290,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   const showRecentCustomers = searchQuery.trim() === '' && recentCustomers.length > 0;
 
   const renderCustomerItem = ({ item }: { item: Customer }) => {
-    const metalBalanceText = formatMetalBalances(item.metalBalances);
+    const balanceText = formatMetalBalances(item);
     
     return (
       <List.Item
@@ -270,26 +302,10 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
             </Text>
             <Text 
               variant="bodySmall" 
-              style={[
-                styles.customerDescription,
-                { color: getBalanceColor(item.balance) }
-              ]}
+              style={styles.customerDescription}
             >
-              {formatBalance(item.balance)}
+              {balanceText}
             </Text>
-            {metalBalanceText && (
-              <Text 
-                variant="bodySmall" 
-                style={[
-                  styles.customerDescription,
-                  { color: theme.colors.secondary, fontFamily: 'Roboto_500Medium' }
-                ]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {metalBalanceText}
-              </Text>
-            )}
           </View>
         )}
         left={() => (

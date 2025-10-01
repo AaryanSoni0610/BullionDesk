@@ -121,16 +121,46 @@ export const HomeScreen: React.FC = () => {
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const primaryItems = getPrimaryItems(transaction);
+    const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
     
     // Calculate transaction-specific remaining balance
-    const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
-    const hasRemainingBalance = transactionRemaining > 0;
-    const transactionBalanceLabel = hasRemainingBalance
-      ? `${transaction.total > 0 ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`
-      : 'Settled';
-    const transactionBalanceColor = hasRemainingBalance
-      ? (transaction.total > 0 ? theme.colors.debtColor : theme.colors.primary)
-      : theme.colors.success;
+    let transactionBalanceLabel = 'Settled';
+    let transactionBalanceColor = theme.colors.primary; // Blue for settled
+    
+    if (isMetalOnly) {
+      // For metal-only transactions, show the metal items
+      const metalItems: string[] = [];
+      transaction.entries.forEach(entry => {
+        if (entry.metalOnly) {
+          const itemName = getItemDisplayName(entry);
+          const weight = entry.weight || 0;
+          const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+          const formattedWeight = isGold ? weight.toFixed(3) : Math.floor(weight);
+          const label = entry.type === 'sell' ? 'Debt' : 'Balance';
+          metalItems.push(`${label}: ${itemName} ${formattedWeight}g`);
+        }
+      });
+      if (metalItems.length > 0) {
+        transactionBalanceLabel = metalItems.join(', ');
+        // Check if it's debt or balance for color
+        const isDebt = metalItems.some(item => item.startsWith('Debt'));
+        const isBalance = metalItems.some(item => item.startsWith('Balance'));
+        if (isDebt) {
+          transactionBalanceColor = theme.colors.debtColor; // Orange for debt
+        } else if (isBalance) {
+          transactionBalanceColor = theme.colors.success; // Green for balance
+        }
+      }
+    } else {
+      // For money transactions, show money balance
+      const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
+      const hasRemainingBalance = transactionRemaining > 0;
+      if (hasRemainingBalance) {
+        const isDebt = transaction.total > 0;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+        transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+      }
+    }
 
     return (
       <Card style={styles.transactionCard} mode="contained">
@@ -154,12 +184,14 @@ export const HomeScreen: React.FC = () => {
                 {primaryItems}
               </Text>
             </View>
-            <Text 
-              variant="titleMedium" 
-              style={[styles.totalAmount, { color: getAmountColor(transaction) }]}
-            >
-              {formatTransactionAmount(transaction)}
-            </Text>
+            {!isMetalOnly && (
+              <Text 
+                variant="titleMedium" 
+                style={[styles.totalAmount, { color: getAmountColor(transaction) }]}
+              >
+                {formatTransactionAmount(transaction)}
+              </Text>
+            )}
           </View>
 
           {/* Row 3: Transaction-specific Balance Information */}

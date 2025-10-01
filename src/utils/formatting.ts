@@ -115,17 +115,16 @@ export const formatPureSilver = (value: number): number => {
 
 /**
  * Formats transaction amount with proper sign handling for display
+ * Shows actual money received/given (amountPaid) instead of total
  * @param transaction - The transaction object
- * @returns Formatted amount string with sign and currency symbol
+ * @returns Formatted amount string with label and currency symbol
  */
 export const formatTransactionAmount = (transaction: any): string => {
-  const amount = transaction.total;
-  // For money transactions, the sign might be inverted in storage
-  const isMoneyTransaction = transaction.entries.some((entry: any) => entry.type === 'money');
-  const displayAmount = isMoneyTransaction ? -amount : amount;
-  const isPositive = displayAmount > 0;
-  const sign = isPositive ? '+' : '-';
-  return `${sign}₹${Math.abs(displayAmount).toLocaleString()}`;
+  const amount = transaction.amountPaid || 0;
+  // Determine if money was received (SELL) or given (PURCHASE) based on transaction.total sign
+  const isReceived = transaction.total > 0;
+  const label = isReceived ? 'Received' : 'Given';
+  return amount > 0 ? `${label}: ₹${amount.toLocaleString()}` : '₹0';
 };
 
 /**

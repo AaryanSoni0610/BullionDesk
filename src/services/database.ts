@@ -101,12 +101,22 @@ export class DatabaseService {
 
       // Calculate totals
       const { netAmount, subtotal } = this.calculateTransactionTotals(entries);
-      // Final balance calculation:
-      // If netAmount > 0: customer owes merchant, so finalBalance = netAmount - receivedAmount
-      // If netAmount < 0: merchant owes customer, so finalBalance = netAmount + receivedAmount
-      const finalBalance = netAmount > 0 
-        ? netAmount - receivedAmount  // Customer owes: positive = still owes, negative = overpaid
-        : netAmount + receivedAmount; // Merchant owes: negative = still owes, positive = overpaid
+      // Final balance calculation (from MERCHANT's perspective):
+      // Negative balance = Customer owes merchant (DEBT)
+      // Positive balance = Merchant owes customer (CREDIT/BALANCE)
+      // 
+      // netAmount sign convention:
+      //   Positive = SELL (money flows TO merchant, customer owes)
+      //   Negative = PURCHASE (money flows FROM merchant, merchant owes)
+      // 
+      // Formula depends on transaction direction:
+      //   SELL (netAmount > 0): finalBalance = receivedAmount - netAmount
+      //     Example: receive ₹50k from ₹100k sale → 50k - 100k = -50k (customer debt)
+      //   PURCHASE (netAmount < 0): finalBalance = |netAmount| - receivedAmount
+      //     Example: pay ₹70k for ₹140k purchase → 140k - 70k = +70k (merchant debt)
+      const finalBalance = netAmount >= 0 
+        ? receivedAmount - netAmount           // SELL: customer payment reduces customer debt
+        : Math.abs(netAmount) - receivedAmount; // PURCHASE: merchant payment reduces merchant debt
 
       // Generate transaction ID
       const transactionId = `txn_${Date.now()}`;
@@ -131,13 +141,14 @@ export class DatabaseService {
       transactions.push(transaction);
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
-      // Update customer balance and last transaction
-      // Current balance: positive = customer has credit, negative = customer owes us
-      // finalBalance: positive = customer owes for this transaction, negative = customer gets credit from this transaction
-      // New balance = old balance + credit from transaction = old balance - finalBalance
+      // Update customer balance and last transaction (MERCHANT's perspective)
+      // Negative balance (-) = Customer owes merchant (customer has DEBT)
+      // Positive balance (+) = Merchant owes customer (customer has CREDIT/BALANCE)
+      // Zero balance (0) = Fully settled
+      // New balance = old balance + transaction balance change
       const updatedCustomer: Customer = {
         ...customer,
-        balance: customer.balance - finalBalance,
+        balance: customer.balance + finalBalance,
         lastTransaction: new Date().toISOString(),
       };
 
@@ -145,6 +156,89 @@ export class DatabaseService {
       if (!customerSaved) {
         console.warn('Transaction saved but customer update failed');
       }
+
+      // Calculate current inventory for logging
+      const allTransactions = await this.getAllTransactions();
+      const baseInventory = await this.getBaseInventory();
+      const currentInventory = {
+        gold999: baseInventory.gold999,
+        gold995: baseInventory.gold995,
+        rani: baseInventory.rani,
+        silver: baseInventory.silver,
+        silver98: baseInventory.silver98,
+        silver96: baseInventory.silver96,
+        rupu: baseInventory.rupu,
+        money: baseInventory.money,
+      };
+
+      // Update inventory based on all transactions
+      allTransactions.forEach(trans => {
+        trans.entries.forEach(entry => {
+          if (entry.type === 'sell') {
+            if (entry.itemType === 'rani') {
+              currentInventory.rani -= entry.weight || 0;
+              currentInventory.gold999 -= entry.actualGoldGiven || 0;
+            } else if (entry.weight) {
+              const weight = entry.pureWeight || entry.weight;
+              if (entry.itemType in currentInventory) {
+                currentInventory[entry.itemType as keyof typeof currentInventory] -= weight;
+              }
+            }
+          } else if (entry.type === 'purchase') {
+            if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
+              currentInventory.rupu += entry.weight || 0;
+              currentInventory.silver98 -= entry.silver98Weight || 0;
+              currentInventory.silver -= entry.silverWeight || 0;
+            } else if (entry.weight) {
+              const weight = entry.pureWeight || entry.weight;
+              if (entry.itemType in currentInventory) {
+                currentInventory[entry.itemType as keyof typeof currentInventory] += weight;
+              }
+            }
+          }
+        });
+        // Update money inventory
+        if (trans.total >= 0) {
+          currentInventory.money += trans.amountPaid;
+        } else {
+          currentInventory.money -= trans.amountPaid;
+        }
+      });
+
+      // Log inventory impact for debugging
+      console.log('\n=== Transaction Saved - Inventory Impact ===');
+      entries.forEach(entry => {
+        console.log(`Entry: ${entry.type} ${entry.itemType}`);
+        if (entry.type === 'sell') {
+          if (entry.weight) {
+            console.log(`  ${entry.itemType} out: ${entry.pureWeight || entry.weight}g`);
+          }
+        } else if (entry.type === 'purchase') {
+          if (entry.itemType === 'rani') {
+            console.log(`  Rani in: ${entry.weight}g (inward flow)`);
+            console.log(`  Gold999 out: ${entry.actualGoldGiven || 0}g (return to customer)`);
+          } else if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
+            console.log(`  Rupu in: ${entry.weight}g (inward flow)`);
+            console.log(`  Silver98 out: ${entry.silver98Weight || 0}g (return to customer)`);
+            console.log(`  Silver out: ${entry.silverWeight || 0}g (return to customer)`);
+          } else if (entry.weight) {
+            console.log(`  ${entry.itemType} in: ${entry.pureWeight || entry.weight}g (inward flow)`);
+          }
+        }
+        console.log(`  Subtotal: ₹${entry.subtotal}`);
+      });
+      console.log(`Money flow: ${transaction.total >= 0 ? 'IN' : 'OUT'} ₹${transaction.amountPaid}`);
+      console.log(`Customer balance: ${customer.balance} → ${updatedCustomer.balance}`);
+      console.log('\n--- Current Inventory ---');
+      console.log(`Gold 999: ${currentInventory.gold999.toFixed(3)}g`);
+      console.log(`Gold 995: ${currentInventory.gold995.toFixed(3)}g`);
+      console.log(`Rani: ${currentInventory.rani.toFixed(3)}g`);
+      console.log(`Silver: ${currentInventory.silver.toFixed(1)}g`);
+      console.log(`Silver 98: ${currentInventory.silver98.toFixed(1)}g`);
+      console.log(`Silver 96: ${currentInventory.silver96.toFixed(1)}g`);
+      console.log(`Rupu: ${currentInventory.rupu.toFixed(1)}g`);
+      console.log(`Money: ₹${currentInventory.money.toLocaleString()}`);
+      console.log('==========================================\n');
 
       // Update last transaction ID
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transactionId);
@@ -190,20 +284,10 @@ export class DatabaseService {
     let netMoneyFlow = 0; // Net money from merchant perspective
 
     entries.forEach(entry => {
-      if (entry.type === 'sell') {
-        // Merchant sells: takes money (+)
-        netMoneyFlow += Math.abs(entry.subtotal);
-      } else if (entry.type === 'purchase') {
-        // Merchant purchases: gives money (-)
-        netMoneyFlow -= Math.abs(entry.subtotal);
-      } else if (entry.type === 'money') {
-        // Money transactions: debt = customer owes (+), balance = merchant owes (-)
-        if (entry.moneyType === 'debt') {
-          netMoneyFlow += Math.abs(entry.subtotal);
-        } else {
-          netMoneyFlow -= Math.abs(entry.subtotal);
-        }
-      }
+      // Keep the sign from entry.subtotal as it already has correct direction:
+      // Positive subtotal = SELL (merchant expects to receive money)
+      // Negative subtotal = PURCHASE (merchant expects to pay money)
+      netMoneyFlow += entry.subtotal;
     });
 
     const subtotal = entries.reduce((sum, entry) => sum + Math.abs(entry.subtotal), 0);
@@ -211,7 +295,7 @@ export class DatabaseService {
     return { 
       totalGive: netMoneyFlow < 0 ? Math.abs(netMoneyFlow) : 0, 
       totalTake: netMoneyFlow > 0 ? netMoneyFlow : 0, 
-      netAmount: netMoneyFlow, // Positive = customer owes merchant, Negative = merchant owes customer
+      netAmount: netMoneyFlow, // Positive = merchant expects to receive (SELL), Negative = merchant expects to pay (PURCHASE)
       subtotal 
     };
   }
@@ -329,6 +413,23 @@ export class DatabaseService {
       return true;
     } catch (error) {
       console.error('Error setting base inventory:', error);
+      return false;
+    }
+  }
+
+  // Clear all data (preserves base inventory)
+  static async clearAllData(): Promise<boolean> {
+    try {
+      await AsyncStorage.multiRemove([
+        STORAGE_KEYS.CUSTOMERS,
+        STORAGE_KEYS.TRANSACTIONS,
+        STORAGE_KEYS.LAST_TRANSACTION_ID,
+        // Note: BASE_INVENTORY is preserved - inventory will reset to base values
+      ]);
+      console.log('All data cleared successfully (base inventory preserved)');
+      return true;
+    } catch (error) {
+      console.error('Error clearing all data:', error);
       return false;
     }
   }

@@ -68,31 +68,21 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   const getAmountColor = (transaction: Transaction) => {
-    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
-    const displayAmount = isMoneyTransaction ? -transaction.total : transaction.total;
-    return displayAmount > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
+    // Blue for Given (purchase), Green for Received (sell)
+    const isReceived = transaction.total > 0;
+    return isReceived ? theme.colors.sellColor : theme.colors.primary;
   };
 
   const getBalanceColor = (balance: number) => {
-    if (balance > 0) return theme.colors.sellColor; // Green - customer owes merchant
-    if (balance < 0) return theme.colors.purchaseColor; // Red - merchant owes customer
-    return theme.colors.onSurfaceVariant; // Grey - settled
+    if (balance > 0) return theme.colors.primary; // Blue - Balance (merchant owes customer)
+    if (balance < 0) return theme.colors.debtColor; // Orange - Debt (customer owes merchant)
+    return theme.colors.success; // Green - Settled
   };
 
   const getBalanceLabel = (balance: number) => {
-    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`;
-    if (balance < 0) return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
-    return 'Balance: ₹0';
-  };
-
-  const getSettlementStatus = (transaction: Transaction) => {
-    if (transaction.status === 'completed' && transaction.amountPaid >= Math.abs(transaction.total)) {
-      return { label: 'Settled', color: theme.colors.success };
-    } else if (transaction.amountPaid > 0) {
-      return { label: 'Partial', color: theme.colors.primary };
-    } else {
-      return { label: 'Pending', color: theme.colors.warning };
-    }
+    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`; // Merchant owes customer
+    if (balance < 0) return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
+    return 'Settled';
   };
 
   const getPrimaryItems = (transaction: Transaction) => {
@@ -139,16 +129,23 @@ export const HomeScreen: React.FC = () => {
 
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
-    const status = getSettlementStatus(transaction);
     const primaryItems = getPrimaryItems(transaction);
-    const customer = customers.get(transaction.customerId);
-    const customerBalance = customer?.balance || 0;
     const isMoneyOnlyTransaction = transaction.entries.length > 0 && transaction.entries.every(entry => entry.type === 'money');
+    
+    // Calculate transaction-specific remaining balance
+    const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
+    const hasRemainingBalance = transactionRemaining > 0;
+    const transactionBalanceLabel = hasRemainingBalance
+      ? `${transaction.total > 0 ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`
+      : 'Settled';
+    const transactionBalanceColor = hasRemainingBalance
+      ? (transaction.total > 0 ? theme.colors.debtColor : theme.colors.primary)
+      : theme.colors.success;
 
     return (
       <Card style={styles.transactionCard} mode="contained">
         <Card.Content style={styles.cardContent}>
-          {/* Row 1: Customer & Status */}
+          {/* Row 1: Customer */}
           <View style={styles.cardRow1}>
             <View style={styles.customerInfo}>
               <Text variant="titleMedium" style={styles.customerName}>
@@ -158,15 +155,6 @@ export const HomeScreen: React.FC = () => {
                 {formatRelativeDate(transaction.date)}
               </Text>
             </View>
-            {!isMoneyOnlyTransaction && (
-              <Chip 
-                mode="flat"
-                style={[styles.statusChip, { backgroundColor: `${status.color}20` }]}
-                textStyle={[styles.statusChipText, { color: status.color }]}
-              >
-                {status.label}
-              </Chip>
-            )}
           </View>
 
           {/* Row 2: Transaction Summary */}
@@ -184,13 +172,13 @@ export const HomeScreen: React.FC = () => {
             </Text>
           </View>
 
-          {/* Row 3: Balance Information */}
+          {/* Row 3: Transaction-specific Balance Information */}
           <View style={styles.cardRow3}>
             <Text 
               variant="bodyMedium" 
-              style={[styles.balanceInfo, { color: getBalanceColor(customerBalance) }]}
+              style={[styles.balanceInfo, { color: transactionBalanceColor }]}
             >
-              {getBalanceLabel(customerBalance)}
+              {transactionBalanceLabel}
             </Text>
           </View>
         </Card.Content>
@@ -256,9 +244,15 @@ export const HomeScreen: React.FC = () => {
       {/* App Title Bar */}
       <Surface style={styles.appTitleBar} elevation={1}>
         <View style={styles.appTitleContent}>
-          <Text variant="titleLarge" style={styles.appTitle}>
-            BullionDesk
-          </Text>
+          <View style={styles.titleSection}>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={styles.appIcon}
+            />
+            <Text variant="titleLarge" style={styles.appTitle}>
+              BullionDesk
+            </Text>
+          </View>
           <IconButton
             icon="cog-outline"
             size={24}
@@ -339,10 +333,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md,
   },
+  titleSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   appIcon: {
     width: 24,
     height: 24,
-    marginRight: theme.spacing.sm,
   },
   appTitle: {
     color: theme.colors.primary,

@@ -1,15 +1,65 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Surface, Text, Switch, Divider, List, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../theme';
 import { useAppContext } from '../context/AppContext';
+import { DatabaseService } from '../services/database';
 
 export const SettingsScreen: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [autoBackupEnabled, setAutoBackupEnabled] = React.useState(false);
   const [darkModeEnabled, setDarkModeEnabled] = React.useState(false);
+  const [isClearing, setIsClearing] = React.useState(false);
   const { navigateToTabs } = useAppContext();
+
+  const handleClearAllData = () => {
+    Alert.alert(
+      'Clear All Data',
+      'Are you sure you want to permanently delete all data? This action cannot be undone.\n\nThis will delete:\n• All customers\n• All transactions\n\nInventory will reset to base values.',
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+          onPress: () => {
+            console.log('Clear data cancelled');
+          },
+        },
+        {
+          text: 'Yes, Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            setIsClearing(true);
+            try {
+              const success = await DatabaseService.clearAllData();
+              if (success) {
+                Alert.alert(
+                  'Success',
+                  'All data has been cleared successfully.',
+                  [{ text: 'OK' }]
+                );
+              } else {
+                Alert.alert(
+                  'Error',
+                  'Failed to clear data. Please try again.',
+                  [{ text: 'OK' }]
+                );
+              }
+            } catch (error) {
+              Alert.alert(
+                'Error',
+                error instanceof Error ? error.message : 'An unknown error occurred',
+                [{ text: 'OK' }]
+              );
+            } finally {
+              setIsClearing(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -102,11 +152,10 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Clear All Data"
-            description="Permanently delete all data"
+            description={isClearing ? "Clearing data..." : "Delete all data, reset inventory to base"}
             left={props => <List.Icon {...props} icon="delete-outline" color={theme.colors.error} />}
-            onPress={() => {
-              // TODO: Implement clear data functionality with confirmation
-            }}
+            disabled={isClearing}
+            onPress={handleClearAllData}
           />
         </List.Section>
 

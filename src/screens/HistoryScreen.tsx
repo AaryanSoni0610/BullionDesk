@@ -149,16 +149,6 @@ export const HistoryScreen: React.FC = () => {
     return typeMap[entry.itemType] || entry.itemType;
   };
 
-  const getSettlementStatus = (transaction: Transaction) => {
-    if (transaction.status === 'completed' && transaction.amountPaid >= Math.abs(transaction.total)) {
-      return { label: 'Settled', color: theme.colors.success };
-    } else if (transaction.amountPaid > 0) {
-      return { label: 'Partial', color: theme.colors.primary };
-    } else {
-      return { label: 'Pending', color: theme.colors.warning };
-    }
-  };
-
   const highlightSearchText = (text: string, searchTerm: string) => {
     if (!searchTerm.trim()) return text;
     
@@ -192,14 +182,13 @@ export const HistoryScreen: React.FC = () => {
   }, [selectedFilter, transactions.length]);
 
   const getAmountColor = (transaction: Transaction) => {
-    const isMoneyTransaction = transaction.entries.some(entry => entry.type === 'money');
-    const displayAmount = isMoneyTransaction ? -transaction.total : transaction.total;
-    return displayAmount > 0 ? theme.colors.sellColor : theme.colors.purchaseColor;
+    // Blue for Given (purchase), Green for Received (sell)
+    const isReceived = transaction.total > 0;
+    return isReceived ? theme.colors.sellColor : theme.colors.primary;
   };
 
   // Enhanced Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
-    const settlementStatus = getSettlementStatus(transaction);
     const isMoneyOnlyTransaction = transaction.entries.length > 0 && transaction.entries.every(entry => entry.type === 'money');
     
     return (
@@ -222,16 +211,6 @@ export const HistoryScreen: React.FC = () => {
               >
                 {formatTransactionAmount(transaction)}
               </Text>
-              {!isMoneyOnlyTransaction && (
-                <Chip 
-                  mode="flat"
-                  style={[styles.statusChip, { backgroundColor: `${settlementStatus.color}30` }]}
-                  textStyle={[styles.statusChipText, { color: settlementStatus.color }]}
-                  compact
-                >
-                  {settlementStatus.label}
-                </Chip>
-              )}
             </View>
           </View>
 
@@ -245,7 +224,7 @@ export const HistoryScreen: React.FC = () => {
                 </Text>
                 <Text variant="bodySmall" style={styles.entryDetails}>
                   {entry.weight && `${entry.weight}g`}
-                  {entry.subtotal && ` : ₹${entry.subtotal.toLocaleString()}`}
+                  {entry.subtotal && ` : ₹${(Math.abs(entry.subtotal)).toLocaleString()}`}
                 </Text>
               </View>
             ))}
@@ -255,13 +234,13 @@ export const HistoryScreen: React.FC = () => {
                   {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
                 </Text>
                 <Text variant="bodySmall" style={[styles.transactionBalance, 
-                  { color: transaction.total - transaction.amountPaid > 0 ? theme.colors.purchaseColor : 
-                          transaction.total - transaction.amountPaid < 0 ? theme.colors.sellColor : 
-                          theme.colors.onSurfaceVariant }
+                  { color: Math.abs(transaction.total) - transaction.amountPaid > 0 
+                    ? (transaction.total > 0 ? theme.colors.debtColor : theme.colors.primary)
+                    : theme.colors.success }
                 ]}>
-                  {transaction.total - transaction.amountPaid > 0 ? `Debt: ₹${(transaction.total - transaction.amountPaid).toLocaleString()}` :
-                   transaction.total - transaction.amountPaid < 0 ? `Balance: ₹${Math.abs(transaction.total - transaction.amountPaid).toLocaleString()}` :
-                   'Balance: ₹0'}
+                  {Math.abs(transaction.total) - transaction.amountPaid > 0 
+                    ? `${transaction.total > 0 ? 'Debt' : 'Balance'}: ₹${(Math.abs(transaction.total) - transaction.amountPaid).toLocaleString()}` 
+                    : 'Settled'}
                 </Text>
               </View>
             )}

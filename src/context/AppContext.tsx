@@ -161,11 +161,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       );
 
       if (result.success) {
-        // Show success message
-        setSnackbarMessage('Transaction saved successfully!');
-        setSnackbarVisible(true);
-        
-        // Navigate back to tabs
+        // Navigate back to tabs (no snackbar message)
         onNavigateToTabs();
         console.log('Transaction saved with ID:', result.transactionId);
       } else {

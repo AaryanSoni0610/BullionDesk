@@ -205,15 +205,15 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   };
 
   const formatBalance = (balance: number) => {
-    if (balance === 0) return 'Balance: ₹0';
-    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`;
-    return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
+    if (balance === 0) return 'Settled';
+    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`; // Merchant owes customer
+    return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
   };
 
   const getBalanceColor = (balance: number) => {
-    if (balance > 0) return theme.colors.balanceColor;
-    if (balance < 0) return theme.colors.debtColor;
-    return theme.colors.onSurfaceVariant;
+    if (balance > 0) return theme.colors.primary; // Blue - Balance (merchant owes customer)
+    if (balance < 0) return theme.colors.debtColor; // Orange - Debt (customer owes merchant)
+    return theme.colors.success; // Green - Settled
   };
 
   const formatLastTransaction = (date?: string) => {
@@ -250,6 +250,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
           size={40}
           label={getInitials(item.name)}
           style={styles.avatar}
+          labelStyle={styles.avatarLabel}
         />
       )}
       onPress={() => handleSelectCustomer(item)}
@@ -478,6 +479,9 @@ const styles = StyleSheet.create({
   },
   avatar: {
     marginRight: theme.spacing.sm,
+  },
+  avatarLabel: {
+    fontFamily: 'Roboto_400Regular',
   },
   noResults: {
     textAlign: 'center',

@@ -176,8 +176,17 @@ export const LedgerScreen: React.FC = () => {
         pendingTransactions++;
       }
 
-      // Cash flow: amountPaid is cash received from customers
-      totalIn += transaction.amountPaid;
+      // Cash flow calculation based on transaction type:
+      // For SELL: amountPaid = cash received FROM customer (money IN)
+      // For PURCHASE: amountPaid = cash paid TO customer (money OUT)
+      // Check transaction.total to determine type: positive = SELL, negative = PURCHASE
+      if (transaction.total >= 0) {
+        // SELL transaction: money flows IN from customer
+        totalIn += transaction.amountPaid;
+      } else {
+        // PURCHASE transaction: money flows OUT to customer
+        totalOut += transaction.amountPaid;
+      }
 
       transaction.entries.forEach(entry => {
         if (entry.type === 'sell') {
@@ -185,19 +194,26 @@ export const LedgerScreen: React.FC = () => {
           
           // Track inventory going out
           if (entry.weight) {
-            const weight = entry.pureWeight || entry.weight;
-            switch (entry.itemType) {
-              case 'gold999':
-              case 'gold995':
-              case 'rani':
-                goldInventory[entry.itemType] -= weight;
-                break;
-              case 'silver':
-              case 'silver98':
-              case 'silver96':
-              case 'rupu':
-                silverInventory[entry.itemType] -= weight;
-                break;
+            // For rani: deduct actual rani weight from rani inventory and actual gold given from gold999
+            if (entry.itemType === 'rani') {
+              goldInventory.rani -= entry.weight; // Rani weight goes out
+              if (entry.actualGoldGiven) {
+                goldInventory.gold999 -= entry.actualGoldGiven; // Actual gold 999 given goes out
+              }
+            } else {
+              const weight = entry.pureWeight || entry.weight;
+              switch (entry.itemType) {
+                case 'gold999':
+                case 'gold995':
+                  goldInventory[entry.itemType] -= weight;
+                  break;
+                case 'silver':
+                case 'silver98':
+                case 'silver96':
+                case 'rupu':
+                  silverInventory[entry.itemType] -= weight;
+                  break;
+              }
             }
           }
         } else if (entry.type === 'purchase') {
@@ -205,29 +221,30 @@ export const LedgerScreen: React.FC = () => {
           
           // Track inventory coming in
           if (entry.weight) {
-            const weight = entry.pureWeight || entry.weight;
-            switch (entry.itemType) {
-              case 'gold999':
-              case 'gold995':
-              case 'rani':
-                goldInventory[entry.itemType] += weight;
-                break;
-              case 'silver':
-              case 'silver98':
-              case 'silver96':
-              case 'rupu':
-                silverInventory[entry.itemType] += weight;
-                break;
-            }
-          }
-          
-          // Special handling for rupu purchase with silver return
-          if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
-            if (entry.silver98Weight) {
-              silverInventory.silver98 -= entry.silver98Weight;
-            }
-            if (entry.silverWeight) {
-              silverInventory.silver -= entry.silverWeight;
+            // For rupu with silver return: add rupu, subtract silver return
+            if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
+              silverInventory.rupu += entry.weight; // Rupu weight comes in
+              if (entry.silver98Weight) {
+                silverInventory.silver98 -= entry.silver98Weight; // Silver 98 return goes out
+              }
+              if (entry.silverWeight) {
+                silverInventory.silver -= entry.silverWeight; // Silver return goes out
+              }
+            } else {
+              const weight = entry.pureWeight || entry.weight;
+              switch (entry.itemType) {
+                case 'gold999':
+                case 'gold995':
+                case 'rani':
+                  goldInventory[entry.itemType] += weight;
+                  break;
+                case 'silver':
+                case 'silver98':
+                case 'silver96':
+                case 'rupu':
+                  silverInventory[entry.itemType] += weight;
+                  break;
+              }
             }
           }
         } else if (entry.type === 'money') {
@@ -245,9 +262,9 @@ export const LedgerScreen: React.FC = () => {
 
     const netBalance = customers.reduce((sum, customer) => sum + customer.balance, 0);
     
-    // Calculate inventory totals
-    goldInventory.total = goldInventory.gold999 + goldInventory.gold995 + goldInventory.rani;
-    silverInventory.total = silverInventory.silver + silverInventory.silver98 + silverInventory.silver96 + silverInventory.rupu;
+    // Calculate inventory totals (excluding rani from gold and rupu from silver)
+    goldInventory.total = goldInventory.gold999 + goldInventory.gold995;
+    silverInventory.total = silverInventory.silver + silverInventory.silver98 + silverInventory.silver96;
 
     // Calculate actual money inventory: base money + cash in - cash out
     const actualMoneyInventory = baseInventory.money + totalIn - totalOut;
@@ -277,32 +294,91 @@ export const LedgerScreen: React.FC = () => {
 
   const getFilteredEntries = (): EntryData[] => {
     const entries: EntryData[] = [];
+    const processedTransactions = new Set<string>(); // Track processed transactions for money subledger
     
     filteredTransactions.forEach(transaction => {
       const customer = customers.find(c => c.id === transaction.customerId);
       const customerName = customer?.name || 'Unknown Customer';
       
-      transaction.entries.forEach(entry => {
-        let includeEntry = false;
-        
-        if (selectedInventory === 'money') {
-          includeEntry = true;
-        } 
-        else if (selectedInventory === 'gold') {
-          includeEntry = entry.itemType.startsWith('gold');
+      if (selectedInventory === 'money') {
+        // For money subledger: show one row per transaction (not per entry)
+        if (!processedTransactions.has(transaction.id)) {
+          processedTransactions.add(transaction.id);
+          // Use the first entry as a placeholder (we only need transaction-level data)
+          if (transaction.entries.length > 0) {
+            entries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry: transaction.entries[0] // Placeholder entry
+            });
+          }
         }
-        else if (selectedInventory === 'silver') {
-          includeEntry = entry.itemType.startsWith('silver');
-        }
+      } else {
+        // For gold/silver subledgers
+        transaction.entries.forEach(entry => {
+          let includeEntry = false;
+          
+          if (selectedInventory === 'gold') {
+            includeEntry = entry.itemType.startsWith('gold') || entry.itemType === 'rani';
+            
+            // Add rani return (actualGoldGiven) as a separate sell entry
+            if (entry.itemType === 'rani' && entry.type === 'purchase' && entry.actualGoldGiven) {
+              entries.push({
+                transactionId: transaction.id,
+                customerName,
+                entry: {
+                  ...entry,
+                  type: 'sell',
+                  itemType: 'gold999',
+                  weight: entry.actualGoldGiven,
+                  subtotal: 0 // Not shown in subledger
+                }
+              });
+            }
+          }
+          else if (selectedInventory === 'silver') {
+            includeEntry = entry.itemType.startsWith('silver') || entry.itemType === 'rupu';
+            
+            // Add rupu silver returns (silver98 + silver) as separate sell entries
+            if (entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver') {
+              if (entry.silver98Weight && entry.silver98Weight > 0) {
+                entries.push({
+                  transactionId: transaction.id,
+                  customerName,
+                  entry: {
+                    ...entry,
+                    type: 'sell',
+                    itemType: 'silver98',
+                    weight: entry.silver98Weight,
+                    subtotal: 0
+                  }
+                });
+              }
+              if (entry.silverWeight && entry.silverWeight > 0) {
+                entries.push({
+                  transactionId: transaction.id,
+                  customerName,
+                  entry: {
+                    ...entry,
+                    type: 'sell',
+                    itemType: 'silver',
+                    weight: entry.silverWeight,
+                    subtotal: 0
+                  }
+                });
+              }
+            }
+          }
 
-        if (includeEntry) {
-          entries.push({
-            transactionId: transaction.id,
-            customerName,
-            entry
-          });
-        }
-      });
+          if (includeEntry) {
+            entries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry
+            });
+          }
+        });
+      }
     });
     
     return entries;
@@ -323,13 +399,15 @@ export const LedgerScreen: React.FC = () => {
 
   // Entry Row Component
   const EntryRow: React.FC<{ entryData: EntryData }> = ({ entryData }) => {
-    const { customerName, entry } = entryData;
+    const { customerName, entry, transactionId } = entryData;
     
     if (selectedInventory === 'money') {
-      // For money: Customer, Balance, Debt
-      const isDebt = entry.moneyType === 'debt';
-      const balanceAmount = isDebt ? Math.abs(entry.subtotal) : 0;
-      const debtAmount = isDebt ? 0 : Math.abs(entry.subtotal);
+      // For money subledger: show actual received/given money from transaction
+      const transaction = filteredTransactions.find(t => t.id === transactionId);
+      const amountPaid = transaction?.amountPaid || 0;
+      const isReceived = transaction ? transaction.total >= 0 : false;
+      const receivedAmount = isReceived ? amountPaid : 0;
+      const givenAmount = isReceived ? 0 : amountPaid;
       
       return (
         <View style={styles.transactionRow}>
@@ -340,12 +418,12 @@ export const LedgerScreen: React.FC = () => {
           </View>
           <View style={styles.transactionCell}>
             <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
-              {balanceAmount > 0 ? formatCurrency(balanceAmount) : '-'}
+              {receivedAmount > 0 ? formatCurrency(receivedAmount) : '-'}
             </Text>
           </View>
           <View style={styles.transactionCell}>
             <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
-              {debtAmount > 0 ? formatCurrency(debtAmount) : '-'}
+              {givenAmount > 0 ? formatCurrency(givenAmount) : '-'}
             </Text>
           </View>
         </View>
@@ -500,13 +578,8 @@ export const LedgerScreen: React.FC = () => {
         </View>
       </Surface>
 
-      <ScrollView 
-        style={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Period Filter */}
+      <View style={styles.content}>
+        {/* Period Filter - Fixed at top */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
           <Chip
             mode={selectedPeriod === 'today' ? 'flat' : 'outlined'}
@@ -537,7 +610,7 @@ export const LedgerScreen: React.FC = () => {
           </Chip>
         </ScrollView>
 
-        {/* Inventory Dashboard - Horizontal ScrollView */}
+        {/* Inventory Dashboard - Fixed at top */}
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false} 
@@ -586,10 +659,10 @@ export const LedgerScreen: React.FC = () => {
           {selectedInventory === 'money' ? (
             <>
               <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-                Credit
+                Received
               </Text>
               <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
-                Debit
+                Given
               </Text>
             </>
           ) : (
@@ -604,10 +677,14 @@ export const LedgerScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Transaction Table - Scrollable Content */}
+        {/* Transaction Table - Scrollable Content - Takes remaining space */}
         <ScrollView 
           style={styles.transactionTable}
+          contentContainerStyle={getFilteredEntries().length === 0 ? styles.emptyStateContainer : undefined}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+          }
         >
           {/* Transaction Rows */}
           {getFilteredEntries().length > 0 ? (
@@ -618,7 +695,7 @@ export const LedgerScreen: React.FC = () => {
             <View style={styles.emptyState}>
               <Icon name="book-open-outline" size={72} color={theme.colors.onSurfaceVariant} />
               <Text variant="headlineSmall" style={styles.emptyStateText}>
-                No transactions found
+                Ledger for {selectedInventory} is empty
               </Text>
               <Text variant="bodyLarge" style={styles.emptyStateSubtext}>
                 No transactions found for {selectedInventory} in the selected period.
@@ -626,7 +703,7 @@ export const LedgerScreen: React.FC = () => {
             </View>
           )}
         </ScrollView>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
@@ -668,12 +745,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   filterContainer: {
+    flexGrow: 0,
+    flexShrink: 0,
     marginVertical: theme.spacing.md,
   },
   filterChip: {
     marginRight: theme.spacing.sm,
   },
   inventoryScrollContainer: {
+    flexGrow: 0,
+    flexShrink: 0,
     marginVertical: theme.spacing.md,
   },
   inventoryScrollContent: {
@@ -699,17 +780,19 @@ const styles = StyleSheet.create({
     marginRight: theme.spacing.sm,
   },
   transactionTable: {
-    flexGrow: 1, // Grow to fill available space without conflicting with parent ScrollView
-    marginBottom: theme.spacing.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
+    flex: 1,
+    marginBottom: theme.spacing.md,
     borderRadius: 8,
   },
   transactionHeader: {
+    flexGrow: 0,
+    flexShrink: 0,
     flexDirection: 'row',
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.surfaceVariant,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
   },
   transactionHeaderText: {
     flex: 1,
@@ -748,10 +831,14 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
   },
   emptyState: {
-    flex: 1,
     padding: theme.spacing.lg,
     alignItems: 'center',
-    justifyContent: 'center', // Vertically center the empty state in the scrollview
+    justifyContent: 'center',
+  },
+  emptyStateContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyStateText: {
     color: theme.colors.onSurfaceVariant,

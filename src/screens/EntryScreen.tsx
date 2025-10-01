@@ -74,7 +74,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [price, setPrice] = useState('');
   const [touch, setTouch] = useState('');
   const [extraPerKg, setExtraPerKg] = useState('');
-  const [actualGoldGiven, setActualGoldGiven] = useState('');
   const [moneyAmount, setMoneyAmount] = useState('');
   const [moneyType, setMoneyType] = useState<'debt' | 'balance'>('debt');
   
@@ -148,7 +147,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (transactionType === 'money') {
       const formatted = formatMoney(moneyAmount);
       const amount = parseFloat(formatted) || 0;
-      return moneyType === 'debt' ? -amount : amount;
+      // Debt = customer owes merchant = inward flow = positive
+      // Balance = merchant owes customer = outward flow = negative
+      return moneyType === 'debt' ? amount : -amount;
     }
 
     const weightNum = parseFloat(weight) || 0;
@@ -195,8 +196,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     
     if (itemType === 'rupu' && rupuReturnType !== 'money') {
       // For rupu silver returns, sign is determined by net weight direction
-      // Negative net weight = inward flow (positive cash), positive net weight = outward flow (negative cash)
-      signedAmount = rawSubtotal >= 0 ? -formattedAmount : formattedAmount;
+      // Negative net weight (rawSubtotal < 0) = inward flow (positive cash)
+      // Positive net weight (rawSubtotal > 0) = outward flow (negative cash)
+      signedAmount = rawSubtotal < 0 ? formattedAmount : -formattedAmount;
     } else {
       // For all other transactions: purchases = negative (outward), sales = positive (inward)
       signedAmount = transactionType === 'purchase' ? -formattedAmount : formattedAmount;
@@ -250,7 +252,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           itemType === 'rupu' && weight.trim() && touch.trim() ?
           formatPureSilver((parseFloat(weight) * parseFloat(touch)) / 100) : 
           undefined,
-        actualGoldGiven: actualGoldGiven.trim() ? parseFloat(actualGoldGiven) : undefined,
         moneyType: transactionType === 'money' ? moneyType : undefined,
         amount: transactionType === 'money' && moneyAmount.trim() ? parseFloat(moneyAmount) : undefined,
         rupuReturnType: itemType === 'rupu' ? rupuReturnType : undefined,
@@ -278,7 +279,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setPrice('');
       setTouch('');
       setExtraPerKg('');
-      setActualGoldGiven('');
       setMoneyAmount('');
       setRupuReturnType('money');
       setSilver98Weight('');
@@ -306,13 +306,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             buttons={[
               { 
                 value: 'debt', 
-                label: 'Add Debt', 
+                label: 'Give', 
                 icon: 'arrow-up-circle',
                 style: { backgroundColor: moneyType === 'debt' ? theme.colors.error : undefined }
               },
               { 
                 value: 'balance', 
-                label: 'Add Balance', 
+                label: 'Receive', 
                 icon: 'arrow-down-circle',
                 style: { backgroundColor: moneyType === 'balance' ? theme.colors.success : undefined }
               },
@@ -383,16 +383,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               style={styles.input}
             />
           </View>
-          {transactionType === 'sell' && (
-            <TextInput
-              label="Actual Gold Given (g)"
-              value={actualGoldGiven}
-              onChangeText={setActualGoldGiven}
-              mode="outlined"
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          )}
         </>
       );
     }
@@ -543,7 +533,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             </Button>
             <IconButton
               icon="close"
-              onPress={handleBack}
+              onPress={onBack}
               iconColor={theme.colors.onError}
               containerColor={theme.colors.error}
               style={styles.crossButton}

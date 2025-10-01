@@ -10,7 +10,6 @@ import {
   Divider,
   TextInput,
   HelperText,
-  Snackbar,
   Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,8 +40,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const [paymentError, setPaymentError] = useState('');
   const [discountExtra, setDiscountExtra] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
   const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
   
   // Enhanced payment validation
@@ -179,11 +176,11 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       } else if (entry.type === 'money') {
         // Money transaction: add to net money flow based on moneyType
         if (entry.moneyType === 'debt') {
-          // Debt means merchant owes money to customer
-          netMoneyFlow -= Math.abs(entry.subtotal);
-        } else {
-          // Balance means customer owes money to merchant
+          // Debt = customer owes merchant = inward flow (merchant receives)
           netMoneyFlow += Math.abs(entry.subtotal);
+        } else {
+          // Balance = merchant owes customer = outward flow (merchant gives)
+          netMoneyFlow -= Math.abs(entry.subtotal);
         }
         // Don't add money entries to give/take items to avoid redundancy
       }
@@ -221,8 +218,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       
       if (paymentValidationError) {
         setPaymentError(paymentValidationError);
-        setSnackbarMessage('Please fix payment amount errors');
-        setSnackbarVisible(true);
         return;
       }
     }
@@ -230,11 +225,8 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     setIsSaving(true);
     try {
       await onSaveTransaction(received);
-      setSnackbarMessage('Transaction saved successfully');
-      setSnackbarVisible(true);
     } catch (error) {
-      setSnackbarMessage('Failed to save transaction. Please try again.');
-      setSnackbarVisible(true);
+      console.error('Failed to save transaction:', error);
     } finally {
       setIsSaving(false);
     }
@@ -576,18 +568,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           onPress={onAddMoreEntry}
         />
       )}
-      
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={3000}
-        action={{
-          label: 'OK',
-          onPress: () => setSnackbarVisible(false),
-        }}
-      >
-        {snackbarMessage}
-      </Snackbar>
     </SafeAreaView>
   );
 };

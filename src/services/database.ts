@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { Customer, Transaction, TransactionEntry, LedgerEntry } from '../types';
 
 const STORAGE_KEYS = {
@@ -249,8 +250,16 @@ export class DatabaseService {
         // CREATE new transaction
         const transactionId = `txn_${Date.now()}`;
         
+        // Get device ID for conflict-free merging
+        let deviceId = await SecureStore.getItemAsync('device_id');
+        if (!deviceId) {
+          deviceId = `device_${Date.now()}`;
+          await SecureStore.setItemAsync('device_id', deviceId);
+        }
+        
         transaction = {
           id: transactionId,
+          deviceId,
           customerId: customer.id,
           customerName: customer.name.trim(),
           date: now,

@@ -3,7 +3,7 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "51.0.0",
-    "version": "0.0.9",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,7 +19,13 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon.png"
       },
-      "package": "com.sonitech.bulliondesk"
+      "package": "com.sonitech.bulliondesk",
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,7 +34,18 @@
       "typedRoutes": true
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/app-icon.png",
+          "color": "#ffffff",
+          "sounds": ["default"],
+          "androidMode": "default",
+          "androidCollapsedTitle": "BullionDesk Reminders"
+        }
+      ]
     ],
     "extra": {
       "eas": {

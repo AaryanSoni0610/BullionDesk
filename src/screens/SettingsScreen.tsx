@@ -2,16 +2,196 @@ import React from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Surface, Text, Switch, Divider, List, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import { theme } from '../theme';
 import { useAppContext } from '../context/AppContext';
 import { DatabaseService } from '../services/database';
+import { NotificationService } from '../services/notificationService';
+import { BackupService } from '../services/backupService';
 
 export const SettingsScreen: React.FC = () => {
-  const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = React.useState(false);
   const [darkModeEnabled, setDarkModeEnabled] = React.useState(false);
   const [isClearing, setIsClearing] = React.useState(false);
+  const [isCheckingNotifications, setIsCheckingNotifications] = React.useState(true);
+  const [isCheckingBackup, setIsCheckingBackup] = React.useState(true);
   const { navigateToTabs } = useAppContext();
+
+  // Check notification and backup status on mount
+  React.useEffect(() => {
+    const checkSettings = async () => {
+      try {
+        const notifEnabled = await NotificationService.isNotificationsEnabled();
+        setNotificationsEnabled(notifEnabled);
+
+        const backupEnabled = await BackupService.isAutoBackupEnabled();
+        setAutoBackupEnabled(backupEnabled);
+
+        // Don't auto-initialize directories here
+        // They will be created on demand when needed
+      } catch (error) {
+        console.error('Error checking settings:', error);
+      } finally {
+        setIsCheckingNotifications(false);
+        setIsCheckingBackup(false);
+      }
+    };
+
+    checkSettings();
+  }, []);
+
+  const handleNotificationToggle = async (value: boolean) => {
+    if (value) {
+      // Enabling notifications - request permissions
+      try {
+        const success = await NotificationService.enableNotifications();
+        if (success) {
+          setNotificationsEnabled(true);
+          Alert.alert(
+            'Notifications Enabled',
+            'You will receive daily reminders for customers with pending debt between 12:00 PM - 1:00 PM.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Permission Required',
+            'Please grant notification permissions in your device settings to receive debt reminders.',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('Error enabling notifications:', error);
+        Alert.alert(
+          'Error',
+          'Failed to enable notifications. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } else {
+      // Disabling notifications
+      Alert.alert(
+        'Disable Notifications',
+        'Are you sure you want to disable debt reminder notifications?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Disable',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await NotificationService.disableNotifications();
+                setNotificationsEnabled(false);
+              } catch (error) {
+                console.error('Error disabling notifications:', error);
+                Alert.alert(
+                  'Error',
+                  'Failed to disable notifications. Please try again.',
+                  [{ text: 'OK' }]
+                );
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const handleAutoBackupToggle = async (value: boolean) => {
+    if (value) {
+      // Enabling auto backup - check and request permission first
+      try {
+        const hasPermission = await BackupService.hasStoragePermission();
+        if (!hasPermission) {
+          const granted = await BackupService.requestStoragePermission();
+          if (!granted) {
+            Alert.alert(
+              'Permission Required',
+              'Storage permission is required for automatic backups. Please grant permission to continue.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+        }
+
+        const dirsReady = await BackupService.initializeDirectories();
+        if (!dirsReady) {
+          Alert.alert('Error', 'Failed to initialize backup directories.');
+          return;
+        }
+
+        const hasKey = await BackupService.setupEncryptionKey();
+        if (!hasKey) {
+          return; // User cancelled key setup
+        }
+
+        await BackupService.setAutoBackupEnabled(true);
+        setAutoBackupEnabled(true);
+
+        Alert.alert(
+          'Auto Backup Enabled',
+          'Your data will be automatically backed up daily.',
+          [{ text: 'OK' }]
+        );
+      } catch (error) {
+        console.error('Error enabling auto backup:', error);
+        Alert.alert('Error', 'Failed to enable auto backup. Please try again.');
+      }
+    } else {
+      // Disabling auto backup
+      Alert.alert(
+        'Disable Auto Backup',
+        'Are you sure you want to disable automatic backups?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Disable',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await BackupService.setAutoBackupEnabled(false);
+                setAutoBackupEnabled(false);
+              } catch (error) {
+                console.error('Error disabling auto backup:', error);
+                Alert.alert('Error', 'Failed to disable auto backup.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const handleExportData = async () => {
+    try {
+      await BackupService.exportData();
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      Alert.alert('Error', 'Failed to export data. Please try again.');
+    }
+  };
+
+  const handleImportData = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const file = result.assets[0];
+      await BackupService.importData(file.uri);
+    } catch (error) {
+      console.error('Error importing data:', error);
+      Alert.alert('Error', 'Failed to import data. Please try again.');
+    }
+  };
 
   const handleClearAllData = () => {
     Alert.alert(
@@ -85,12 +265,13 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Enable Notifications"
-            description="Receive notifications for new transactions"
+            description="Receive daily reminders for customers with pending debt"
             left={props => <List.Icon {...props} icon="bell-outline" />}
             right={() => (
               <Switch
                 value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
+                onValueChange={handleNotificationToggle}
+                disabled={isCheckingNotifications}
               />
             )}
           />
@@ -113,12 +294,13 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Auto Backup"
-            description="Automatically backup data to cloud"
+            description="Automatically backup data daily"
             left={props => <List.Icon {...props} icon="cloud-upload-outline" />}
             right={() => (
               <Switch
                 value={autoBackupEnabled}
-                onValueChange={setAutoBackupEnabled}
+                onValueChange={handleAutoBackupToggle}
+                disabled={isCheckingBackup}
               />
             )}
           />
@@ -132,9 +314,7 @@ export const SettingsScreen: React.FC = () => {
             title="Export Data"
             description="Export all transactions and customers"
             left={props => <List.Icon {...props} icon="file-export-outline" />}
-            onPress={() => {
-              // TODO: Implement export functionality
-            }}
+            onPress={handleExportData}
           />
 
           <Divider />
@@ -143,9 +323,7 @@ export const SettingsScreen: React.FC = () => {
             title="Import Data"
             description="Import transactions and customers from file"
             left={props => <List.Icon {...props} icon="file-import-outline" />}
-            onPress={() => {
-              // TODO: Implement import functionality
-            }}
+            onPress={handleImportData}
           />
 
           <Divider />

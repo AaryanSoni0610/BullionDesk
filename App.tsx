@@ -31,6 +31,8 @@ import { CustomerSelectionModal } from './src/components/CustomerSelectionModal'
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { Customer, TransactionEntry } from './src/types';
 import { DatabaseService } from './src/services/database';
+import { NotificationService } from './src/services/notificationService';
+import { BackupService } from './src/services/backupService';
 
 const Tab = createBottomTabNavigator();
 
@@ -224,6 +226,29 @@ export default function App() {
   });
 
   const [appState, setAppState] = useState<AppState>('tabs');
+
+  // Initialize services on app start
+  React.useEffect(() => {
+    const initializeServices = async () => {
+      // Initialize notifications
+      await NotificationService.initialize();
+
+      // Check if this is the first launch
+      const isFirstLaunch = await BackupService.isFirstLaunch();
+      if (isFirstLaunch) {
+        // Show first launch setup dialog
+        await BackupService.firstLaunchSetup();
+      } else {
+        // Not first launch - check if auto backup is needed
+        const shouldBackup = await BackupService.shouldPerformAutoBackup();
+        if (shouldBackup) {
+          await BackupService.performAutoBackup();
+        }
+      }
+    };
+
+    initializeServices();
+  }, []);
 
   const handleNavigateToEntry = () => setAppState('entry');
   const handleNavigateToSettlement = () => setAppState('settlement');

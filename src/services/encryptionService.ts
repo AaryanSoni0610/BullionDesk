@@ -1,83 +1,65 @@
 import * as Crypto from 'expo-crypto';
 import CryptoJS from 'crypto-js';
 
-interface EncryptedData {
-  encrypted: string;
-  salt: string;
-  iv: string;
-  version: string;
-  timestamp: number;
-}
-
 export class EncryptionService {
-  private static readonly VERSION = '1.0';
-  private static readonly ITERATIONS = 100000;
-
   /**
-   * Generate random hex string
+   * Encrypt zip data with AES-256-CBC
    */
-  private static async getRandomHex(length: number): Promise<string> {
-    const bytes = await Crypto.getRandomBytesAsync(length);
-    return Array.from(bytes)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  /**
-   * Derive a key from password using PBKDF2
-   */
-  private static deriveKey(password: string, salt: string): string {
-    return CryptoJS.PBKDF2(password, salt, {
-      keySize: 256 / 32,
-      iterations: this.ITERATIONS,
-      hasher: CryptoJS.algo.SHA256,
-    }).toString();
-  }
-
-  /**
-   * Encrypt data with AES-256-GCM (using CBC as GCM is not available in crypto-js)
-   */
-  static async encryptData(jsonData: any, password: string): Promise<EncryptedData> {
+  static async encryptZip(zipData: ArrayBuffer, password: string): Promise<string> {
     try {
-      // Generate random salt and IV
-      const salt = await this.getRandomHex(16);
-      const iv = await this.getRandomHex(16);
+      // Generate random salt and IV using expo-crypto
+      const saltBytes = await Crypto.getRandomBytesAsync(16);
+      const ivBytes = await Crypto.getRandomBytesAsync(16);
+      const salt = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      const iv = Array.from(ivBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-      // Derive key from password
-      const key = this.deriveKey(password, salt);
+      // Derive key from password using PBKDF2
+      const key = CryptoJS.PBKDF2(password, salt, {
+        keySize: 256 / 32,
+        iterations: 100000,
+        hasher: CryptoJS.algo.SHA256,
+      });
 
-      // Convert data to string
-      const jsonString = JSON.stringify(jsonData);
+      // Convert ArrayBuffer to WordArray
+      const wordArray = CryptoJS.lib.WordArray.create(zipData);
 
       // Encrypt using AES-256-CBC
-      const encrypted = CryptoJS.AES.encrypt(jsonString, key, {
+      const encrypted = CryptoJS.AES.encrypt(wordArray, key, {
         iv: CryptoJS.enc.Hex.parse(iv),
         mode: CryptoJS.mode.CBC,
         padding: CryptoJS.pad.Pkcs7,
       });
 
-      return {
+      // Return encrypted data with metadata
+      const result = {
         encrypted: encrypted.toString(),
         salt,
         iv,
-        version: this.VERSION,
+        version: '1.0',
         timestamp: Date.now(),
       };
+
+      return JSON.stringify(result);
     } catch (error) {
       console.error('Encryption error:', error);
-      throw new Error('Failed to encrypt data');
+      throw new Error('Failed to encrypt zip data');
     }
   }
 
   /**
-   * Decrypt data with AES-256-CBC
+   * Decrypt zip data with AES-256-CBC
    */
-  static async decryptData(encryptedData: EncryptedData, password: string): Promise<any> {
+  static async decryptZip(encryptedString: string, password: string): Promise<ArrayBuffer> {
     try {
+      const encryptedData = JSON.parse(encryptedString);
       const { encrypted, salt, iv } = encryptedData;
 
       // Derive key from password
-      const key = this.deriveKey(password, salt);
+      const key = CryptoJS.PBKDF2(password, salt, {
+        keySize: 256 / 32,
+        iterations: 100000,
+        hasher: CryptoJS.algo.SHA256,
+      });
 
       // Decrypt using AES-256-CBC
       const decrypted = CryptoJS.AES.decrypt(encrypted, key, {
@@ -86,17 +68,26 @@ export class EncryptionService {
         padding: CryptoJS.pad.Pkcs7,
       });
 
-      // Convert to UTF-8 string
-      const jsonString = decrypted.toString(CryptoJS.enc.Utf8);
-
-      if (!jsonString) {
-        throw new Error('Decryption failed - invalid key or corrupted data');
+      // Convert to ArrayBuffer
+      const wordArray = decrypted;
+      const arrayOfWords = wordArray.hasOwnProperty('words') ? wordArray.words : [];
+      const length = wordArray.hasOwnProperty('sigBytes') ? wordArray.sigBytes : arrayOfWords.length * 4;
+      const uInt8Array = new Uint8Array(length);
+      let index = 0;
+      let word: number;
+      let i: number;
+      for (i = 0; i < length; i++) {
+        word = arrayOfWords[i];
+        uInt8Array[index++] = word >> 24;
+        uInt8Array[index++] = (word >> 16) & 0xff;
+        uInt8Array[index++] = (word >> 8) & 0xff;
+        uInt8Array[index++] = word & 0xff;
       }
 
-      return JSON.parse(jsonString);
+      return uInt8Array.buffer.slice(0, length);
     } catch (error) {
       console.error('Decryption error:', error);
-      throw new Error('Failed to decrypt data. Invalid encryption key or corrupted file.');
+      throw new Error('Failed to decrypt zip data. Invalid encryption key or corrupted file.');
     }
   }
 

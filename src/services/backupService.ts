@@ -4,6 +4,7 @@ import * as Sharing from 'expo-sharing';
 import * as Device from 'expo-device';
 import * as MediaLibrary from 'expo-media-library';
 import { Alert, Platform } from 'react-native';
+import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database';
 
@@ -328,9 +329,15 @@ export class BackupService {
         records,
       };
 
-      // Encrypt data
-      console.log('📤 Encrypting data...');
-      const encrypted = await EncryptionService.encryptData(backupData, key);
+      // Create zip file
+      console.log('📤 Creating zip file...');
+      const zip = new JSZip();
+      zip.file('backup.json', JSON.stringify(backupData, null, 2));
+      const zipBlob = await zip.generateAsync({ type: 'arraybuffer' });
+
+      // Encrypt zip
+      console.log('📤 Encrypting zip...');
+      const encrypted = await EncryptionService.encryptZip(zipBlob, key);
 
       // Delete previous export file
       const exportPath = `${this.EXPORTS_DIR}/export.encrypted`;
@@ -341,7 +348,7 @@ export class BackupService {
 
       // Save encrypted file
       console.log('📤 Saving encrypted file...');
-      await FileSystem.writeAsStringAsync(exportPath, JSON.stringify(encrypted));
+      await FileSystem.writeAsStringAsync(exportPath, encrypted);
 
       await this.logAction(`Manual export completed: ${backupData.recordCount} records`);
       console.log('📤 Export completed successfully!');
@@ -414,14 +421,19 @@ export class BackupService {
       // Read encrypted file
       console.log('📥 Reading encrypted file...');
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
-      const encryptedData = JSON.parse(fileContent);
 
-      // Decrypt data
-      console.log('📥 Decrypting data...');
-      const decryptedData: BackupData = await EncryptionService.decryptData(
-        encryptedData,
-        key
-      );
+      // Decrypt zip
+      console.log('📥 Decrypting zip...');
+      const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
+
+      // Extract zip
+      console.log('📥 Extracting zip...');
+      const zip = await JSZip.loadAsync(decryptedZipBuffer);
+      const backupJson = await zip.file('backup.json')?.async('string');
+      if (!backupJson) {
+        throw new Error('Invalid backup file: missing backup.json');
+      }
+      const decryptedData: BackupData = JSON.parse(backupJson);
 
       // Get current device ID
       const currentDeviceId = await this.getDeviceId();
@@ -583,8 +595,13 @@ export class BackupService {
         records,
       };
 
-      // Encrypt data
-      const encrypted = await EncryptionService.encryptData(backupData, key);
+      // Create zip file
+      const zip = new JSZip();
+      zip.file('backup.json', JSON.stringify(backupData, null, 2));
+      const zipBlob = await zip.generateAsync({ type: 'arraybuffer' });
+
+      // Encrypt zip
+      const encrypted = await EncryptionService.encryptZip(zipBlob, key);
 
       // Create filename with date and time
       const now = new Date();
@@ -599,7 +616,7 @@ export class BackupService {
       const backupPath = `${this.AUTO_DIR}/${filename}`;
 
       // Save encrypted file
-      await FileSystem.writeAsStringAsync(backupPath, JSON.stringify(encrypted));
+      await FileSystem.writeAsStringAsync(backupPath, encrypted);
 
       // Rotate backups (keep last 2)
       await this.rotateAutoBackups();

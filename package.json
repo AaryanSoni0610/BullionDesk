@@ -1,6 +1,6 @@
 {
   "name": "bulliondesk",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -36,6 +36,7 @@
     "expo-status-bar": "~1.12.1",
     "expo-system-ui": "~3.0.7",
     "expo-task-manager": "~11.8.2",
+    "jszip": "^3.10.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "0.74.5",

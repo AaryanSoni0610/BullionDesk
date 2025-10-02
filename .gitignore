@@ -3,13 +3,12 @@
 # dependencies
 node_modules/
 
-package-lock.json
-
 # Expo
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+package-lock.json
 
 # Native
 .kotlin/

@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
   },
   appTitleBar: {
     backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
   },
   appTitleContent: {
     flexDirection: 'row',

@@ -68,7 +68,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.appTitleContent}>
           <IconButton
             icon="arrow-left"
-            size={24}
+            size={20}
             onPress={navigateToTabs}
             style={styles.backButton}
           />
@@ -201,12 +201,12 @@ const styles = StyleSheet.create({
   },
   appTitleBar: {
     backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
   },
   appTitleContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
   },
   appTitle: {
     color: theme.colors.primary,
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
   },
   sectionHeader: {
     color: theme.colors.primary,

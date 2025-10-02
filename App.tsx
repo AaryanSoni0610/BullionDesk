@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Platform, Alert } from 'react-native';
 import * as SystemUI from 'expo-system-ui';
 import { PaperProvider, FAB, Snackbar } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -33,6 +33,7 @@ import { Customer, TransactionEntry } from './src/types';
 import { DatabaseService } from './src/services/database';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
+import * as FileSystem from 'expo-file-system';
 
 const Tab = createBottomTabNavigator();
 
@@ -230,6 +231,10 @@ export default function App() {
   // Initialize services on app start
   React.useEffect(() => {
     const initializeServices = async () => {
+      // Show BASE_DIR value
+      const baseDir = `${FileSystem.documentDirectory}BullionDeskBackup`;
+      Alert.alert('BASE_DIR', baseDir);
+
       // Initialize notifications
       await NotificationService.initialize();
 

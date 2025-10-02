@@ -236,17 +236,15 @@ export const HistoryScreen: React.FC = () => {
       <Card style={styles.transactionCard} mode="outlined">
         <Card.Content>
           
-          {/* Edit Button Row - Only for metal-only transactions */}
-          {isMetalOnly && (
-            <View style={styles.editButtonRow}>
-              <TouchableOpacity 
-                style={styles.editButton}
-                onPress={() => loadTransactionForEdit(transaction.id)}
-              >
-                <Icon name="pencil" size={16} color={theme.colors.primary} />
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* Edit Button Row */}
+          <View style={styles.editButtonRow}>
+            <TouchableOpacity 
+              style={styles.editButton}
+              onPress={() => loadTransactionForEdit(transaction.id)}
+            >
+              <Icon name="pencil" size={16} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
 
           {/* Header Row */}
           <View style={styles.cardHeader}>
@@ -274,20 +272,65 @@ export const HistoryScreen: React.FC = () => {
           <View style={styles.expandedContent}>
             <Divider style={styles.expandedDivider} />
             {transaction.entries.map((entry, index) => (
-              <View key={index} style={styles.entryRow}>
-                <Text variant="bodySmall" style={styles.entryType}>
-                  {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
-                </Text>
-                <Text variant="bodySmall" style={styles.entryDetails}>
-                  {entry.weight && `${(() => {
-                    const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
-                    const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : Math.floor(entry.weight || 0);
-                    return formattedWeight;
-                  })()}g`}
-                  {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
-                </Text>
-              </View>
+              <React.Fragment key={index}>
+                <View style={styles.entryRow}>
+                  <Text variant="bodySmall" style={styles.entryType}>
+                    {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
+                  </Text>
+                  <Text variant="bodySmall" style={styles.entryDetails}>
+                    {entry.weight && `${(() => {
+                      const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                      const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                      return formattedWeight;
+                    })()}g`}
+                    {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
+                  </Text>
+                </View>
+                
+                {/* Show Rupu silver returns */}
+                {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
+                  <>
+                    {entry.silver98Weight && entry.silver98Weight > 0 && (
+                      <View style={styles.entryRow}>
+                        <Text variant="bodySmall" style={[styles.entryType]}>
+                          ↗️ Silver 98
+                        </Text>
+                        <Text variant="bodySmall" style={[styles.entryDetails]}>
+                          {Math.floor(entry.silver98Weight).toFixed(1)}g
+                        </Text>
+                      </View>
+                    )}
+                    {entry.silverWeight && entry.silverWeight > 0 && (
+                      <View style={styles.entryRow}>
+                        <Text variant="bodySmall" style={[styles.entryType]}>
+                          ↗️ Silver
+                        </Text>
+                        <Text variant="bodySmall" style={[styles.entryDetails]}>
+                          {Math.floor(entry.silverWeight).toFixed(1)}g
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
+                
+              </React.Fragment>
             ))}
+            
+            {/* Total Row - Show only for non-metal-only transactions */}
+            {!isMetalOnly && (
+              <>
+                <Divider style={styles.totalDivider} />
+                <View style={styles.totalRow}>
+                  <Text variant="bodySmall" style={styles.totalLabel}>
+                    Total
+                  </Text>
+                  <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
+                    ₹{Math.abs(transaction.total).toLocaleString()}
+                  </Text>
+                </View>
+              </>
+            )}
+            
             {/* Payment/Balance Row */}
             <View style={styles.paymentRow}>
               {!isMetalOnly && transaction.amountPaid > 0 && (
@@ -731,5 +774,22 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontFamily: 'Roboto_500Medium',
     fontSize: 12,
+  },
+  totalDivider: {
+    marginVertical: theme.spacing.xs,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.xs,
+  },
+  totalLabel: {
+    color: theme.colors.onSurface,
+    fontFamily: 'Roboto_500Medium',
+  },
+  totalValue: {
+    fontFamily: 'Roboto_700Bold',
+    fontSize: 15,
   },
 });

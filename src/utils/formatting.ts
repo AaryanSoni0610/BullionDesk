@@ -35,13 +35,7 @@ export const formatMoney = (value: string): string => {
   const num = parseFloat(value);
   if (isNaN(num) || num < 0) return value;
 
-  // If there's any fractional part > 0, round up to next integer
   let integerPart = Math.floor(num);
-  const fractionalPart = num - integerPart;
-
-  if (fractionalPart > 0) {
-    integerPart += 1;
-  }
 
   // Now round the integer part to nearest 10
   const lastDigit = integerPart % 10;
@@ -142,5 +136,21 @@ export const formatFullDate = (dateString: string): string => {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
+  });
+};
+/**
+ * Formats date with full details including seconds
+ * @param dateString - The date string
+ * @returns Formatted date string with time including seconds
+ */
+export const formatFullDateWithSeconds = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   });
 };

@@ -10,6 +10,11 @@ interface AppContextType {
   setCurrentEntries: (entries: TransactionEntry[]) => void;
   editingEntryId: string | null;
   setEditingEntryId: (id: string | null) => void;
+  editingTransactionId: string | null;
+  setEditingTransactionId: (id: string | null) => void;
+  lastGivenMoney: number;
+  transactionCreatedAt: string | null;
+  transactionLastUpdatedAt: string | null;
   
   // Modal Management
   customerModalVisible: boolean;
@@ -57,6 +62,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [lastGivenMoney, setLastGivenMoney] = useState<number>(0);
+  const [transactionCreatedAt, setTransactionCreatedAt] = useState<string | null>(null);
+  const [transactionLastUpdatedAt, setTransactionLastUpdatedAt] = useState<string | null>(null);
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
@@ -79,6 +88,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setCurrentCustomer(null);
     setCurrentEntries([]);
     setEditingEntryId(null);
+    setEditingTransactionId(null);
+    setLastGivenMoney(0);
+    setTransactionCreatedAt(null);
+    setTransactionLastUpdatedAt(null);
     onNavigateToTabs();
   };
 
@@ -150,15 +163,17 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     console.log('Saving transaction:', { 
       customer: currentCustomer, 
       entries: currentEntries,
-      receivedAmount 
+      receivedAmount,
+      editingTransactionId 
     });
 
     try {
-      // Save transaction to database
+      // Save transaction to database (update if editingTransactionId exists)
       const result = await DatabaseService.saveTransaction(
         currentCustomer, 
         currentEntries, 
-        receivedAmount
+        receivedAmount,
+        editingTransactionId || undefined
       );
 
       if (result.success) {
@@ -198,9 +213,13 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         return;
       }
 
-      // Set the current customer and entries
+      // Set the current customer, entries, transaction ID, and last given money
       setCurrentCustomer(customer);
       setCurrentEntries(transaction.entries);
+      setEditingTransactionId(transactionId);
+      setLastGivenMoney(transaction.lastGivenMoney || transaction.amountPaid || 0);
+      setTransactionCreatedAt(transaction.createdAt || transaction.date);
+      setTransactionLastUpdatedAt(transaction.lastUpdatedAt || transaction.date);
       
       // Navigate to settlement screen to show transaction details
       onNavigateToSettlement();
@@ -218,6 +237,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setCurrentEntries,
     editingEntryId,
     setEditingEntryId,
+    editingTransactionId,
+    setEditingTransactionId,
+    lastGivenMoney,
+    transactionCreatedAt,
+    transactionLastUpdatedAt,
     customerModalVisible,
     setCustomerModalVisible,
     snackbarVisible,

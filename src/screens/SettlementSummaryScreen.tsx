@@ -25,6 +25,10 @@ interface SettlementSummaryScreenProps {
   onDeleteEntry: (entryId: string) => void;
   onEditEntry: (entryId: string) => void;
   onSaveTransaction: (receivedAmount?: number) => void;
+  editingTransactionId?: string | null;
+  lastGivenMoney?: number;
+  transactionCreatedAt?: string | null;
+  transactionLastUpdatedAt?: string | null;
 }
 
 export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = ({
@@ -35,12 +39,17 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   onDeleteEntry,
   onEditEntry,
   onSaveTransaction,
+  editingTransactionId,
+  lastGivenMoney = 0,
+  transactionCreatedAt,
+  transactionLastUpdatedAt,
 }) => {
-  const [receivedAmount, setReceivedAmount] = useState('');
+  const [receivedAmount, setReceivedAmount] = useState(lastGivenMoney > 0 ? lastGivenMoney.toString() : '');
   const [paymentError, setPaymentError] = useState('');
   const [discountExtra, setDiscountExtra] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
+  const isEditing = !!editingTransactionId;
   
   // Enhanced payment validation
   const validatePaymentAmount = (value: string, maxAmount: number): string => {
@@ -236,8 +245,25 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const received = parseFloat(receivedAmount) || 0;
   const discountExtraAmount = parseFloat(discountExtra) || 0;
   
-  // Check if FAB should be shown (hide when all entries are money)
-  const shouldShowFAB = entries.some(entry => entry.type !== 'money');
+  // Safety feature: Lock entry modifications for old transactions
+  // Check if transaction is old (created more than 1 minute ago) - FOR TESTING
+  const isOldTransaction = transactionCreatedAt 
+    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (1 * 60 * 1000) // 1 minute for testing
+    : false;
+    
+  // Check if transaction is settled and last updated more than 1 minute ago - FOR TESTING
+  const isSettledAndOld = transactionLastUpdatedAt 
+    ? (Date.now() - new Date(transactionLastUpdatedAt).getTime()) > (1 * 60 * 1000) // 1 minute for testing
+    : false;
+    
+  // Check if transaction is fully settled
+  const isFullySettled = Math.abs(netAmount) <= received;
+  
+  // Determine if entry modifications are locked
+  const areEntriesLocked = isEditing && (isOldTransaction || (isFullySettled && isSettledAndOld));
+  
+  // Check if FAB should be shown (hide when all entries are money or entries are locked)
+  const shouldShowFAB = entries.some(entry => entry.type !== 'money') && !areEntriesLocked;
   const isMoneyOnlyTransaction = entries.length > 0 && entries.every(entry => entry.type === 'money');
   
   // Apply discount/extra to net amount
@@ -297,17 +323,19 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           <View style={styles.actionButtons}>
             <IconButton
               icon="pencil"
-              iconColor={theme.colors.primary}
+              iconColor={areEntriesLocked ? theme.colors.onSurfaceDisabled : theme.colors.primary}
               size={20}
               onPress={() => onEditEntry(entry.id)}
               style={styles.editButton}
+              disabled={areEntriesLocked}
             />
             <IconButton
               icon="delete"
-              iconColor={theme.colors.error}
+              iconColor={areEntriesLocked ? theme.colors.onSurfaceDisabled : theme.colors.error}
               size={20}
               onPress={() => onDeleteEntry(entry.id)}
               style={styles.deleteButton}
+              disabled={areEntriesLocked}
             />
           </View>
         </View>
@@ -591,7 +619,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           contentStyle={styles.saveButtonContent}
           buttonColor={theme.colors.success}
         >
-          {isSaving ? 'Saving...' : 'Save Transaction'}
+          {isSaving ? (isEditing ? 'Updating...' : 'Saving...') : (isEditing ? 'Update Transaction' : 'Save Transaction')}
         </Button>
       </ScrollView>
 

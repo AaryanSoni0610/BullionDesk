@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Customer, Transaction, TransactionEntry } from '../types';
+import { Customer, Transaction, TransactionEntry, LedgerEntry } from '../types';
 
 const STORAGE_KEYS = {
   CUSTOMERS: '@bulliondesk_customers',
   TRANSACTIONS: '@bulliondesk_transactions',
+  LEDGER: '@bulliondesk_ledger',
   LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
   BASE_INVENTORY: '@bulliondesk_base_inventory',
 };
@@ -90,6 +91,84 @@ export class DatabaseService {
     }
   }
 
+  // Ledger operations
+  static async getAllLedgerEntries(): Promise<LedgerEntry[]> {
+    try {
+      const ledgerJson = await AsyncStorage.getItem(STORAGE_KEYS.LEDGER);
+      const entries: LedgerEntry[] = ledgerJson ? JSON.parse(ledgerJson) : [];
+      // Sort by date (most recent first)
+      return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } catch (error) {
+      console.error('Error getting ledger entries:', error);
+      return [];
+    }
+  }
+
+  static async getLedgerEntriesByDate(startDate: Date, endDate: Date): Promise<LedgerEntry[]> {
+    try {
+      const allEntries = await this.getAllLedgerEntries();
+      return allEntries.filter(entry => {
+        const entryDate = new Date(entry.date);
+        return entryDate >= startDate && entryDate <= endDate;
+      });
+    } catch (error) {
+      console.error('Error getting ledger entries by date:', error);
+      return [];
+    }
+  }
+
+  static async getLedgerEntriesByTransactionId(transactionId: string): Promise<LedgerEntry[]> {
+    try {
+      const allEntries = await this.getAllLedgerEntries();
+      return allEntries.filter(entry => entry.transactionId === transactionId);
+    } catch (error) {
+      console.error('Error getting ledger entries by transaction ID:', error);
+      return [];
+    }
+  }
+
+  static async createLedgerEntry(
+    transaction: Transaction,
+    deltaAmount: number,
+    timestamp: string
+  ): Promise<boolean> {
+    try {
+      // Use timestamp with milliseconds for unique ID
+      const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const ledgerEntry: LedgerEntry = {
+        id: ledgerId,
+        transactionId: transaction.id,
+        customerId: transaction.customerId,
+        customerName: transaction.customerName,
+        date: timestamp,
+        amountReceived: transaction.total >= 0 ? Math.abs(deltaAmount) : 0,
+        amountGiven: transaction.total < 0 ? Math.abs(deltaAmount) : 0,
+        entries: transaction.entries,
+        createdAt: timestamp,
+      };
+
+      const ledgerEntries = await this.getAllLedgerEntries();
+      ledgerEntries.push(ledgerEntry);
+      await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(ledgerEntries));
+      
+      console.log('✅ Ledger entry created:', {
+        ledgerId,
+        transactionId: transaction.id,
+        date: timestamp,
+        deltaAmount,
+        amountReceived: ledgerEntry.amountReceived,
+        amountGiven: ledgerEntry.amountGiven,
+        totalLedgerEntries: ledgerEntries.length,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error creating ledger entry:', error);
+      return false;
+    }
+  }
+
   // Transaction operations
   static async getAllTransactions(): Promise<Transaction[]> {
     try {
@@ -114,7 +193,8 @@ export class DatabaseService {
   static async saveTransaction(
     customer: Customer,
     entries: TransactionEntry[],
-    receivedAmount: number = 0
+    receivedAmount: number = 0,
+    existingTransactionId?: string  // If provided, update existing transaction
   ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
     try {
       // Validate input
@@ -122,47 +202,93 @@ export class DatabaseService {
         return { success: false, error: 'Invalid customer or entries data' };
       }
 
+      const now = new Date().toISOString();
+      const isUpdate = !!existingTransactionId;
+
       // Calculate totals
       const { netAmount, subtotal } = this.calculateTransactionTotals(entries);
+      
       // Final balance calculation (from MERCHANT's perspective):
-      // Negative balance = Customer owes merchant (DEBT)
-      // Positive balance = Merchant owes customer (CREDIT/BALANCE)
-      // 
-      // netAmount sign convention:
-      //   Positive = SELL (money flows TO merchant, customer owes)
-      //   Negative = PURCHASE (money flows FROM merchant, merchant owes)
-      // 
-      // Formula depends on transaction direction:
-      //   SELL (netAmount > 0): finalBalance = receivedAmount - netAmount
-      //     Example: receive ₹50k from ₹100k sale → 50k - 100k = -50k (customer debt)
-      //   PURCHASE (netAmount < 0): finalBalance = |netAmount| - receivedAmount
-      //     Example: pay ₹70k for ₹140k purchase → 140k - 70k = +70k (merchant debt)
       const finalBalance = netAmount >= 0 
         ? receivedAmount - netAmount           // SELL: customer payment reduces customer debt
         : Math.abs(netAmount) - receivedAmount; // PURCHASE: merchant payment reduces merchant debt
 
-      // Generate transaction ID
-      const transactionId = `txn_${Date.now()}`;
+      let transaction: Transaction;
+      let lastToLastGivenMoney = 0;
+      let previousAmountPaid = 0;
 
-      // Create transaction object
-      const transaction: Transaction = {
-        id: transactionId,
-        customerId: customer.id,
-        customerName: customer.name.trim(),
-        date: new Date().toISOString(),
-        entries: entries,
-        discount: 0,
-        subtotal: Math.abs(subtotal),
-        total: netAmount, // Keep the sign: positive = customer owes, negative = merchant owes
-        amountPaid: receivedAmount,
-        settlementType: finalBalance === 0 ? 'full' : finalBalance > 0 ? 'partial' : 'full',
-        status: 'completed',
-      };
+      if (isUpdate) {
+        // UPDATE existing transaction
+        const transactions = await this.getAllTransactions();
+        const existingIndex = transactions.findIndex(t => t.id === existingTransactionId);
+        
+        if (existingIndex === -1) {
+          return { success: false, error: 'Transaction not found' };
+        }
 
-      // Save transaction
-      const transactions = await this.getAllTransactions();
-      transactions.push(transaction);
-      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+        const existingTransaction = transactions[existingIndex];
+        previousAmountPaid = existingTransaction.lastGivenMoney;
+        
+        // Update transaction with new values
+        transaction = {
+          ...existingTransaction,
+          entries: entries.map(e => ({ ...e, lastUpdatedAt: now })),
+          discount: 0,
+          subtotal: Math.abs(subtotal),
+          total: netAmount,
+          amountPaid: receivedAmount,
+          lastGivenMoney: receivedAmount,
+          lastToLastGivenMoney: previousAmountPaid,
+          settlementType: finalBalance === 0 ? 'full' : 'partial',
+          lastUpdatedAt: now,
+        };
+
+        transactions[existingIndex] = transaction;
+        await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+      } else {
+        // CREATE new transaction
+        const transactionId = `txn_${Date.now()}`;
+        
+        transaction = {
+          id: transactionId,
+          customerId: customer.id,
+          customerName: customer.name.trim(),
+          date: now,
+          entries: entries.map(e => ({ ...e, createdAt: now, lastUpdatedAt: now })),
+          discount: 0,
+          subtotal: Math.abs(subtotal),
+          total: netAmount,
+          amountPaid: receivedAmount,
+          lastGivenMoney: receivedAmount,
+          lastToLastGivenMoney: 0,
+          settlementType: finalBalance === 0 ? 'full' : 'partial',
+          status: 'completed',
+          createdAt: now,
+          lastUpdatedAt: now,
+        };
+
+        const transactions = await this.getAllTransactions();
+        transactions.push(transaction);
+        await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+      }
+
+      // Calculate the delta amount for ledger entry
+      const deltaAmount = receivedAmount - previousAmountPaid;
+      
+      console.log('💰 Payment delta calculation:', {
+        isUpdate,
+        receivedAmount,
+        previousAmountPaid,
+        deltaAmount,
+        willCreateLedgerEntry: deltaAmount !== 0,
+      });
+      
+      // Create ledger entry only if there's a money change
+      if (deltaAmount !== 0) {
+        await this.createLedgerEntry(transaction, deltaAmount, now);
+      } else {
+        console.log('⚠️ No ledger entry created (delta is 0)');
+      }
 
       // Check if any entry is metal-only
       const isMetalOnly = entries.some(entry => entry.metalOnly === true);
@@ -171,7 +297,7 @@ export class DatabaseService {
       const updatedCustomer: Customer = {
         ...customer,
         balance: isMetalOnly ? customer.balance : customer.balance + finalBalance,
-        lastTransaction: new Date().toISOString(),
+        lastTransaction: now,
         metalBalances: customer.metalBalances || {},
       };
 
@@ -184,18 +310,12 @@ export class DatabaseService {
 
             // Determine metal balance change based on entry type and item
             if (entry.itemType === 'rani') {
-              // Rani: use pure gold equivalent
               metalAmount = entry.pureWeight || 0;
-              // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
               metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
             } else if (entry.itemType === 'rupu') {
-              // Rupu: use pure silver equivalent
               if (entry.rupuReturnType === 'silver' && entry.netWeight !== undefined) {
-                // For silver return, use net weight to determine direction
                 metalAmount = entry.netWeight;
-                // Net weight already has correct sign
               } else {
-                // For money return or no return type
                 metalAmount = entry.pureWeight || 0;
                 // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
                 metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
@@ -306,10 +426,12 @@ export class DatabaseService {
       console.log('==========================================\n');
 
       // Update last transaction ID
-      await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transactionId);
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
 
       console.log('Transaction saved successfully:', {
-        transactionId,
+        transactionId: transaction.id,
+        isUpdate,
+        deltaAmount,
         originalCustomer: customer,
         updatedCustomer,
         entries: entries.length,
@@ -327,7 +449,7 @@ export class DatabaseService {
         }
       });
 
-      return { success: true, transactionId };
+      return { success: true, transactionId: transaction.id };
     } catch (error) {
       console.error('Error saving transaction:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

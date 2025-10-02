@@ -17,7 +17,7 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
 import { formatWeight, formatCurrency } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
-import { Transaction, Customer } from '../types';
+import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
 
 interface InventoryData {
@@ -69,6 +69,7 @@ interface InventoryCardProps {
 export const LedgerScreen: React.FC = () => {
   const [inventoryData, setInventoryData] = useState<InventoryData | null>(null);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [filteredLedgerEntries, setFilteredLedgerEntries] = useState<LedgerEntry[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -99,18 +100,31 @@ export const LedgerScreen: React.FC = () => {
         setIsLoading(true);
       }
 
-      const [transactions, customers] = await Promise.all([
+      const [transactions, customers, allLedgerEntries] = await Promise.all([
         DatabaseService.getAllTransactions(),
-        DatabaseService.getAllCustomers()
+        DatabaseService.getAllCustomers(),
+        DatabaseService.getAllLedgerEntries()
       ]);
 
       // Filter transactions by selected period
       const filteredTrans = filterTransactionsByPeriod(transactions);
+      
+      // Filter ledger entries by selected period
+      const filteredLedger = filterLedgerEntriesByPeriod(allLedgerEntries);
 
       const data = await calculateInventoryData(filteredTrans, customers);
       setInventoryData(data);
       setFilteredTransactions(filteredTrans);
+      setFilteredLedgerEntries(filteredLedger);
       setCustomers(customers);
+      
+      console.log('📊 Loaded ledger data:', {
+        totalTransactions: transactions.length,
+        filteredTransactions: filteredTrans.length,
+        totalLedgerEntries: allLedgerEntries.length,
+        filteredLedgerEntries: filteredLedger.length,
+        selectedPeriod,
+      });
     } catch (error) {
       console.error('Error loading inventory data:', error);
     } finally {
@@ -146,6 +160,36 @@ export const LedgerScreen: React.FC = () => {
         });
       default:
         return transactions;
+    }
+  };
+
+  const filterLedgerEntriesByPeriod = (entries: LedgerEntry[]) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+    switch (selectedPeriod) {
+      case 'today':
+        const endOfDay = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
+        return entries.filter(e => {
+          const entryDate = new Date(e.date);
+          return entryDate >= today && entryDate <= endOfDay;
+        });
+      case 'yesterday':
+        const endOfYesterday = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
+        return entries.filter(e => {
+          const entryDate = new Date(e.date);
+          return entryDate >= yesterday && entryDate <= endOfYesterday;
+        });
+      case 'custom':
+        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+        const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+        return entries.filter(e => {
+          const entryDate = new Date(e.date);
+          return entryDate >= selectedDate && entryDate <= endOfSelectedDay;
+        });
+      default:
+        return entries;
     }
   };
 
@@ -294,27 +338,39 @@ export const LedgerScreen: React.FC = () => {
 
   const getFilteredEntries = (): EntryData[] => {
     const entries: EntryData[] = [];
-    const processedTransactions = new Set<string>(); // Track processed transactions for money subledger
     
-    filteredTransactions.forEach(transaction => {
-      const customer = customers.find(c => c.id === transaction.customerId);
-      const customerName = customer?.name || 'Unknown Customer';
-      
-      if (selectedInventory === 'money') {
-        // For money subledger: show one row per transaction (not per entry)
-        if (!processedTransactions.has(transaction.id)) {
-          processedTransactions.add(transaction.id);
-          // Use the first entry as a placeholder (we only need transaction-level data)
-          if (transaction.entries.length > 0) {
-            entries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry: transaction.entries[0] // Placeholder entry
-            });
-          }
+    if (selectedInventory === 'money') {
+      // For money subledger: use ledger entries (one row per payment/update)
+      filteredLedgerEntries.forEach(ledgerEntry => {
+        // Only include if there's actual money movement
+        if (ledgerEntry.amountReceived > 0 || ledgerEntry.amountGiven > 0) {
+          entries.push({
+            transactionId: ledgerEntry.transactionId,
+            customerName: ledgerEntry.customerName,
+            entry: {
+              ...ledgerEntry.entries[0], // Use first entry as placeholder
+              _ledgerEntry: ledgerEntry, // Store full ledger entry for money display
+            }
+          });
         }
-      } else {
-        // For gold/silver subledgers
+      });
+      
+      console.log('💰 Money subledger entries:', {
+        filteredLedgerEntries: filteredLedgerEntries.length,
+        displayedEntries: entries.length,
+        entries: entries.map(e => ({
+          customer: e.customerName,
+          received: e.entry._ledgerEntry?.amountReceived || 0,
+          given: e.entry._ledgerEntry?.amountGiven || 0,
+        }))
+      });
+    } else {
+      // For gold/silver subledgers - use transactions
+      const processedTransactions = new Set<string>();
+      
+      filteredTransactions.forEach(transaction => {
+        const customer = customers.find(c => c.id === transaction.customerId);
+        const customerName = customer?.name || 'Unknown Customer';
         transaction.entries.forEach(entry => {
           let includeEntry = false;
           
@@ -378,8 +434,8 @@ export const LedgerScreen: React.FC = () => {
             });
           }
         });
-      }
-    });
+      });
+    }
     
     return entries;
   };
@@ -402,12 +458,10 @@ export const LedgerScreen: React.FC = () => {
     const { customerName, entry, transactionId } = entryData;
     
     if (selectedInventory === 'money') {
-      // For money subledger: show actual received/given money from transaction
-      const transaction = filteredTransactions.find(t => t.id === transactionId);
-      const amountPaid = transaction?.amountPaid || 0;
-      const isReceived = transaction ? transaction.total >= 0 : false;
-      const receivedAmount = isReceived ? amountPaid : 0;
-      const givenAmount = isReceived ? 0 : amountPaid;
+      // For money subledger: use ledger entry data
+      const ledgerEntry = entry._ledgerEntry;
+      const receivedAmount = ledgerEntry?.amountReceived || 0;
+      const givenAmount = ledgerEntry?.amountGiven || 0;
       
       return (
         <View style={styles.transactionRow}>
@@ -688,9 +742,14 @@ export const LedgerScreen: React.FC = () => {
         >
           {/* Transaction Rows */}
           {getFilteredEntries().length > 0 ? (
-            getFilteredEntries().map((entryData, index) => (
-              <EntryRow key={`${entryData.transactionId}-${entryData.entry.id}`} entryData={entryData} />
-            ))
+            getFilteredEntries().map((entryData, index) => {
+              // For money subledger, use ledger entry ID for unique key
+              const uniqueKey = selectedInventory === 'money' && entryData.entry._ledgerEntry
+                ? entryData.entry._ledgerEntry.id
+                : `${entryData.transactionId}-${entryData.entry.id}-${index}`;
+              
+              return <EntryRow key={uniqueKey} entryData={entryData} />;
+            })
           ) : (
             <View style={styles.emptyState}>
               <Icon name="book-open-outline" size={72} color={theme.colors.onSurfaceVariant} />

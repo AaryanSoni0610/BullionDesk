@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import * as Sharing from 'expo-sharing';
 import * as Device from 'expo-device';
+import * as MediaLibrary from 'expo-media-library';
 import { Alert, Platform } from 'react-native';
 import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database';
@@ -39,6 +40,10 @@ export class BackupService {
   static async requestStoragePermission(): Promise<boolean> {
     try {
       if (Platform.OS !== 'android') {
+        await SecureStore.setItemAsync(
+          SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
+          'true'
+        );
         return true;
       }
 
@@ -50,22 +55,41 @@ export class BackupService {
         return true;
       }
 
-      // For Android, expo-file-system handles permissions automatically
-      // We try to create the directory to test permissions
+      // Request media library permissions (which includes storage access)
+      const { status: existingStatus } = await MediaLibrary.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.log('Storage permission denied');
+        await SecureStore.setItemAsync(
+          SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
+          'false'
+        );
+        return false;
+      }
+
+      // Test if we can create directories
       try {
         const testDir = `${FileSystem.documentDirectory}BullionDeskBackup`;
         const dirInfo = await FileSystem.getInfoAsync(testDir);
         if (!dirInfo.exists) {
           await FileSystem.makeDirectoryAsync(testDir, { intermediates: true });
         }
+        
         // If successful, store permission granted
         await SecureStore.setItemAsync(
           SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
           'true'
         );
+        console.log('✅ Storage permission granted');
         return true;
-      } catch (permError) {
-        console.error('Storage permission error:', permError);
+      } catch (dirError) {
+        console.error('Directory creation error:', dirError);
         await SecureStore.setItemAsync(
           SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
           'false'
@@ -74,6 +98,10 @@ export class BackupService {
       }
     } catch (error) {
       console.error('Error requesting storage permission:', error);
+      await SecureStore.setItemAsync(
+        SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
+        'false'
+      );
       return false;
     }
   }
@@ -187,8 +215,13 @@ export class BackupService {
           {
             text: 'Enable Auto Backup',
             onPress: async () => {
+              console.log('🔵 User selected Enable Auto Backup');
+              
               // Request storage permission first
+              console.log('🔵 Requesting storage permission...');
               const hasPermission = await this.requestStoragePermission();
+              console.log('🔵 Storage permission result:', hasPermission);
+              
               if (!hasPermission) {
                 Alert.alert(
                   'Permission Denied',
@@ -202,7 +235,10 @@ export class BackupService {
               }
 
               // Initialize directories
+              console.log('🔵 Initializing directories...');
               const dirsReady = await this.initializeDirectories();
+              console.log('🔵 Directories ready:', dirsReady);
+              
               if (!dirsReady) {
                 Alert.alert(
                   'Setup Error',
@@ -216,7 +252,10 @@ export class BackupService {
               }
 
               // Setup encryption key
+              console.log('🔵 Setting up encryption key...');
               const hasKey = await this.setupEncryptionKey();
+              console.log('🔵 Encryption key setup result:', hasKey);
+              
               if (!hasKey) {
                 await this.setAutoBackupEnabled(false);
                 await this.markFirstLaunchDone();
@@ -225,8 +264,10 @@ export class BackupService {
               }
 
               // Enable auto backup
+              console.log('🔵 Enabling auto backup...');
               await this.setAutoBackupEnabled(true);
               await this.markFirstLaunchDone();
+              console.log('🔵 Auto backup enabled successfully');
               
               Alert.alert(
                 'Auto Backup Enabled',
@@ -261,18 +302,20 @@ export class BackupService {
   }
 
   /**
-   * Setup encryption key (first time)
+   * Setup encryption key (first time or if missing)
    */
   static async setupEncryptionKey(): Promise<boolean> {
     return new Promise((resolve) => {
-      const key = SecureStore.getItemAsync(SECURE_STORE_KEYS.ENCRYPTION_KEY);
-      
-      key.then((existingKey) => {
+      // Check if key already exists
+      SecureStore.getItemAsync(SECURE_STORE_KEYS.ENCRYPTION_KEY).then((existingKey) => {
         if (existingKey) {
+          console.log('🔑 Encryption key already exists');
           resolve(true);
           return;
         }
 
+        console.log('🔑 No encryption key found, prompting user...');
+        
         // Show key setup dialog
         Alert.prompt(
           'Set Backup Encryption Key',
@@ -281,7 +324,10 @@ export class BackupService {
             {
               text: 'Cancel',
               style: 'cancel',
-              onPress: () => resolve(false),
+              onPress: () => {
+                console.log('🔑 User cancelled key setup');
+                resolve(false);
+              },
             },
             {
               text: 'Set Key',
@@ -307,7 +353,10 @@ export class BackupService {
                     {
                       text: 'Cancel',
                       style: 'cancel',
-                      onPress: () => resolve(false),
+                      onPress: () => {
+                        console.log('🔑 User cancelled key confirmation');
+                        resolve(false);
+                      },
                     },
                     {
                       text: 'Confirm',
@@ -324,6 +373,7 @@ export class BackupService {
                             input
                           );
                           await this.logAction('Encryption key set successfully');
+                          console.log('🔑 Encryption key saved successfully');
                           Alert.alert(
                             'Success',
                             'Encryption key has been set. Please remember this key - you will need it to restore your backups.',
@@ -331,7 +381,7 @@ export class BackupService {
                           );
                           resolve(true);
                         } catch (error) {
-                          console.error('Error saving key:', error);
+                          console.error('🔑 Error saving key:', error);
                           Alert.alert('Error', 'Failed to save encryption key');
                           resolve(false);
                         }
@@ -381,9 +431,12 @@ export class BackupService {
    */
   static async exportData(): Promise<boolean> {
     try {
+      console.log('📤 Starting export...');
+      
       // Check storage permission first
       const hasPermission = await this.hasStoragePermission();
       if (!hasPermission) {
+        console.log('📤 No storage permission, requesting...');
         const granted = await this.requestStoragePermission();
         if (!granted) {
           Alert.alert(
@@ -396,15 +449,18 @@ export class BackupService {
       }
 
       // Initialize directories
+      console.log('📤 Initializing directories...');
       const dirsReady = await this.initializeDirectories();
       if (!dirsReady) {
         Alert.alert('Error', 'Failed to create backup directories.');
         return false;
       }
 
-      // Check/setup encryption key
+      // Check/setup encryption key - will prompt if not set
+      console.log('📤 Checking for encryption key...');
       const hasKey = await this.setupEncryptionKey();
       if (!hasKey) {
+        console.log('📤 User cancelled encryption key setup');
         return false;
       }
 
@@ -418,6 +474,7 @@ export class BackupService {
       Alert.alert('Exporting...', 'Please wait while we prepare your backup.');
 
       // Collect data
+      console.log('📤 Collecting database data...');
       const records = await this.collectDatabaseData();
       const deviceId = await this.getDeviceId();
 
@@ -433,6 +490,7 @@ export class BackupService {
       };
 
       // Encrypt data
+      console.log('📤 Encrypting data...');
       const encrypted = await EncryptionService.encryptData(backupData, key);
 
       // Delete previous export file
@@ -443,9 +501,11 @@ export class BackupService {
       }
 
       // Save encrypted file
+      console.log('📤 Saving encrypted file...');
       await FileSystem.writeAsStringAsync(exportPath, JSON.stringify(encrypted));
 
       await this.logAction(`Manual export completed: ${backupData.recordCount} records`);
+      console.log('📤 Export completed successfully!');
 
       // Share file
       const canShare = await Sharing.isAvailableAsync();
@@ -469,7 +529,7 @@ export class BackupService {
 
       return true;
     } catch (error) {
-      console.error('Export error:', error);
+      console.error('📤 Export error:', error);
       await this.logAction(`Export error: ${error}`);
       Alert.alert('Export Failed', 'Failed to export data. Please try again.');
       return false;
@@ -481,9 +541,12 @@ export class BackupService {
    */
   static async importData(fileUri: string): Promise<boolean> {
     try {
+      console.log('📥 Starting import...');
+      
       // Check storage permission first
       const hasPermission = await this.hasStoragePermission();
       if (!hasPermission) {
+        console.log('📥 No storage permission, requesting...');
         const granted = await this.requestStoragePermission();
         if (!granted) {
           Alert.alert(
@@ -496,7 +559,16 @@ export class BackupService {
       }
 
       // Initialize directories
+      console.log('📥 Initializing directories...');
       await this.initializeDirectories();
+
+      // Check/setup encryption key - will prompt if not set
+      console.log('📥 Checking for encryption key...');
+      const hasKey = await this.setupEncryptionKey();
+      if (!hasKey) {
+        console.log('📥 User cancelled encryption key setup');
+        return false;
+      }
 
       // Get encryption key
       const key = await this.getEncryptionKey();
@@ -508,10 +580,12 @@ export class BackupService {
       Alert.alert('Importing...', 'Please wait while we restore your backup.');
 
       // Read encrypted file
+      console.log('📥 Reading encrypted file...');
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
       const encryptedData = JSON.parse(fileContent);
 
       // Decrypt data
+      console.log('📥 Decrypting data...');
       const decryptedData: BackupData = await EncryptionService.decryptData(
         encryptedData,
         key
@@ -521,11 +595,13 @@ export class BackupService {
       const currentDeviceId = await this.getDeviceId();
 
       // Perform conflict-free merge
+      console.log('📥 Merging data...');
       await this.mergeData(decryptedData, currentDeviceId);
 
       await this.logAction(
         `Import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
       );
+      console.log('📥 Import completed successfully!');
 
       Alert.alert(
         'Import Successful',
@@ -535,7 +611,7 @@ export class BackupService {
 
       return true;
     } catch (error) {
-      console.error('Import error:', error);
+      console.error('📥 Import error:', error);
       await this.logAction(`Import error: ${error}`);
       
       if (error instanceof Error && error.message.includes('decrypt')) {
@@ -744,16 +820,17 @@ export class BackupService {
    * Enable/disable auto backup
    */
   static async setAutoBackupEnabled(enabled: boolean): Promise<void> {
-    try {
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.AUTO_BACKUP_ENABLED,
-        enabled ? 'true' : 'false'
-      );
-      await this.logAction(`Auto backup ${enabled ? 'enabled' : 'disabled'}`);
-    } catch (error) {
-      console.error('Error setting auto backup:', error);
-    }
+  try {
+    await SecureStore.setItemAsync(
+      SECURE_STORE_KEYS.AUTO_BACKUP_ENABLED,
+      enabled ? 'true' : 'false'
+    );
+    await this.logAction(`Auto backup ${enabled ? 'enabled' : 'disabled'}`);
+  } catch (error) {
+    console.error('Error setting auto backup:', error);
+    throw error; // Throw the error so it can be caught in the UI
   }
+}
 
   /**
    * Check if auto backup is enabled
@@ -798,11 +875,21 @@ export class BackupService {
    */
   private static async logAction(message: string): Promise<void> {
     try {
+      // Always log to console
+      console.log(`📝 ${message}`);
+
+      // Ensure logs directory exists before writing
+      const logsDir = this.LOGS_DIR;
+      const logsDirInfo = await FileSystem.getInfoAsync(logsDir);
+      if (!logsDirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(logsDir, { intermediates: true });
+      }
+
       const now = new Date();
       const timestamp = now.toISOString();
       const logMessage = `[${timestamp}] ${message}\n`;
 
-      const logFile = `${this.LOGS_DIR}/backup.log`;
+      const logFile = `${logsDir}/backup.log`;
       const fileInfo = await FileSystem.getInfoAsync(logFile);
 
       if (fileInfo.exists) {
@@ -811,9 +898,8 @@ export class BackupService {
       } else {
         await FileSystem.writeAsStringAsync(logFile, logMessage);
       }
-
-      console.log(`📝 ${message}`);
     } catch (error) {
+      // Silently fail if logging doesn't work, just console log
       console.error('Error logging action:', error);
     }
   }

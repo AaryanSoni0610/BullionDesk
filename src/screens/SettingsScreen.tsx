@@ -104,9 +104,16 @@ export const SettingsScreen: React.FC = () => {
     if (value) {
       // Enabling auto backup - check and request permission first
       try {
+        console.log('🟢 Auto backup toggle ON - Starting...');
+        
         const hasPermission = await BackupService.hasStoragePermission();
+        console.log('🟢 Has storage permission:', hasPermission);
+        
         if (!hasPermission) {
+          console.log('🟢 Requesting storage permission...');
           const granted = await BackupService.requestStoragePermission();
+          console.log('🟢 Permission granted:', granted);
+          
           if (!granted) {
             Alert.alert(
               'Permission Required',
@@ -117,19 +124,35 @@ export const SettingsScreen: React.FC = () => {
           }
         }
 
+        console.log('🟢 Initializing directories...');
         const dirsReady = await BackupService.initializeDirectories();
+        console.log('🟢 Directories ready:', dirsReady);
+        
         if (!dirsReady) {
           Alert.alert('Error', 'Failed to initialize backup directories.');
           return;
         }
 
+        // Setup encryption key - will prompt if not set
+        console.log('🟢 Setting up encryption key if needed...');
         const hasKey = await BackupService.setupEncryptionKey();
+        console.log('🟢 Encryption key setup result:', hasKey);
+        
         if (!hasKey) {
+          console.log('🟢 User cancelled key setup');
           return; // User cancelled key setup
         }
 
-        await BackupService.setAutoBackupEnabled(true);
-        setAutoBackupEnabled(true);
+        try {
+          console.log('🟢 Setting auto backup enabled...');
+          await BackupService.setAutoBackupEnabled(true);
+          setAutoBackupEnabled(true);
+          console.log('🟢 Auto backup enabled successfully!');
+        } catch (error) {
+          console.error('🟢 Error setting auto backup enabled:', error);
+          Alert.alert('Error', 'Failed to enable auto backup. Please try again.');
+          return;
+        }
 
         Alert.alert(
           'Auto Backup Enabled',
@@ -137,7 +160,7 @@ export const SettingsScreen: React.FC = () => {
           [{ text: 'OK' }]
         );
       } catch (error) {
-        console.error('Error enabling auto backup:', error);
+        console.error('🔴 Error enabling auto backup:', error);
         Alert.alert('Error', 'Failed to enable auto backup. Please try again.');
       }
     } else {
@@ -154,8 +177,9 @@ export const SettingsScreen: React.FC = () => {
               try {
                 await BackupService.setAutoBackupEnabled(false);
                 setAutoBackupEnabled(false);
+                console.log('🟢 Auto backup disabled');
               } catch (error) {
-                console.error('Error disabling auto backup:', error);
+                console.error('🔴 Error disabling auto backup:', error);
                 Alert.alert('Error', 'Failed to disable auto backup.');
               }
             },

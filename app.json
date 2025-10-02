@@ -3,7 +3,7 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "51.0.0",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "automatic",
@@ -41,7 +41,6 @@
         {
           "icon": "./assets/app-icon.png",
           "color": "#ffffff",
-          "sounds": ["default"],
           "androidMode": "default",
           "androidCollapsedTitle": "BullionDesk Reminders"
         }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform } from 'react-native';
 import {
   Surface,
   Text,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../theme';
 import { formatWeight, formatCurrency } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
@@ -76,8 +77,37 @@ export const LedgerScreen: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'yesterday' | 'custom'>('today');
   const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
   const [customDate, setCustomDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const { navigateToSettings } = useAppContext();
+
+  // Format date for display in DD/MM/YYYY format
+  const formatDateDisplay = (date: Date): string => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  // Handle date picker change
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    const isConfirmed = event.type === 'set';
+    setShowDatePicker(Platform.OS === 'ios' && isConfirmed); // Keep open on iOS only if confirmed
+    
+    if (isConfirmed && selectedDate) {
+      setCustomDate(selectedDate);
+      setSelectedPeriod('custom');
+    } else if (event.type === 'dismissed') {
+      // User cancelled, don't change anything
+      setShowDatePicker(false);
+    }
+  };
+
+  // Handle Select Date button press
+  const handleSelectDatePress = () => {
+    setShowDatePicker(true);
+    // Don't set selectedPeriod to 'custom' until date is actually selected
+  };
 
   useEffect(() => {
     loadInventoryData();
@@ -654,15 +684,23 @@ export const LedgerScreen: React.FC = () => {
           <Chip
             mode={selectedPeriod === 'custom' ? 'flat' : 'outlined'}
             selected={selectedPeriod === 'custom'}
-            onPress={() => {
-              // TODO: Show date picker
-              setSelectedPeriod('custom');
-            }}
+            onPress={handleSelectDatePress}
             style={styles.filterChip}
           >
-            Select Date
+            {selectedPeriod === 'custom' ? formatDateDisplay(customDate) : 'Select Date'}
           </Chip>
         </ScrollView>
+
+        {/* Date Picker */}
+        {showDatePicker && (
+          <DateTimePicker
+            value={customDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+            maximumDate={new Date()}
+          />
+        )}
 
         {/* Inventory Dashboard - Fixed at top */}
         <ScrollView 

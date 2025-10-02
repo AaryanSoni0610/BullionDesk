@@ -4,7 +4,8 @@ import {
   StyleSheet, 
   ScrollView, 
   FlatList, 
-  TouchableOpacity
+  TouchableOpacity,
+  Alert
 } from 'react-native';
 import {
   Surface,
@@ -19,6 +20,8 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
@@ -33,10 +36,110 @@ export const HistoryScreen: React.FC = () => {
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('today');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'last7days' | 'last30days' | 'custom'>('today');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { navigateToSettings, loadTransactionForEdit } = useAppContext();
+  
+  // Helper function to check if transaction can be deleted (same day only)
+  const canDeleteTransaction = (transactionDate: string): boolean => {
+    const transDate = new Date(transactionDate);
+    const today = new Date();
+    
+    // Check if transaction is on the same calendar day
+    return transDate.getDate() === today.getDate() &&
+           transDate.getMonth() === today.getMonth() &&
+           transDate.getFullYear() === today.getFullYear();
+  };
+
+  // Handle delete transaction
+  const handleDeleteTransaction = async (transaction: Transaction) => {
+    Alert.alert(
+      'Delete Transaction',
+      `Are you sure you want to delete this transaction?\n\nCustomer: ${transaction.customerName}\nDate: ${formatFullDate(transaction.date)}\n\nThis action cannot be undone and will reverse all inventory changes.`,
+      [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes, Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await DatabaseService.deleteTransaction(transaction.id);
+              
+              if (result.success) {
+                // Reload transactions
+                await loadTransactions(true);
+                Alert.alert('Success', 'Transaction deleted successfully');
+              } else {
+                Alert.alert('Error', result.error || 'Failed to delete transaction');
+              }
+            } catch (error) {
+              console.error('Error deleting transaction:', error);
+              Alert.alert('Error', 'Failed to delete transaction');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  // Handle share transaction
+  const handleShareTransaction = async (transaction: Transaction, cardRef: React.RefObject<View>) => {
+    try {
+      if (!cardRef.current) {
+        Alert.alert('Error', 'Unable to capture transaction card');
+        return;
+      }
+
+      // Capture the card as an image with better quality settings
+      const uri = await captureRef(cardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+        height: undefined, // Auto height
+        width: 400, // Fixed width matching shareableCardWrapper
+      });
+
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Error', 'Sharing is not available on this device');
+        return;
+      }
+
+      // Share the image
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: `Transaction - ${transaction.customerName}`,
+      });
+    } catch (error) {
+      console.error('Error sharing transaction:', error);
+      Alert.alert('Error', 'Failed to share transaction');
+    }
+  };
+
+  const getItemDisplayName = (entry: any): string => {
+    // For money transactions, show "Money" regardless of itemType
+    if (entry.type === 'money') {
+      return 'Money';
+    }
+    
+    const typeMap: Record<string, string> = {
+      'gold999': 'Gold 999',
+      'gold995': 'Gold 995',
+      'rani': 'Rani',
+      'silver': 'Silver',
+      'silver98': 'Silver 98',
+      'silver96': 'Silver 96',
+      'rupu': 'Rupu',
+      'money': 'Money',
+    };
+    return typeMap[entry.itemType] || entry.itemType;
+  };
   
 
   useEffect(() => {
@@ -114,39 +217,23 @@ export const HistoryScreen: React.FC = () => {
           const transDate = new Date(transaction.date);
           return transDate >= today && transDate <= endOfDay;
         });
-      case 'week':
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - today.getDay());
-        return transactionList.filter(transaction => 
-          new Date(transaction.date) >= startOfWeek
-        );
-      case 'month':
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        return transactionList.filter(transaction => 
-          new Date(transaction.date) >= startOfMonth
-        );
+      case 'last7days':
+        // Last 7 days excluding today
+        const start7Days = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return transactionList.filter(transaction => {
+          const transDate = new Date(transaction.date);
+          return transDate >= start7Days && transDate < today;
+        });
+      case 'last30days':
+        // Last 30 days excluding today
+        const start30Days = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return transactionList.filter(transaction => {
+          const transDate = new Date(transaction.date);
+          return transDate >= start30Days && transDate < today;
+        });
       default:
         return transactionList;
     }
-  };
-
-  const getItemDisplayName = (entry: any): string => {
-    // For money transactions, show "Money" regardless of itemType
-    if (entry.type === 'money') {
-      return 'Money';
-    }
-    
-    const typeMap: Record<string, string> = {
-      'gold999': 'Gold 999',
-      'gold995': 'Gold 995',
-      'rani': 'Rani',
-      'silver': 'Silver',
-      'silver98': 'Silver 98',
-      'silver96': 'Silver 96',
-      'rupu': 'Rupu',
-      'money': 'Money',
-    };
-    return typeMap[entry.itemType] || entry.itemType;
   };
 
   const highlightSearchText = (text: string, searchTerm: string) => {
@@ -189,6 +276,7 @@ export const HistoryScreen: React.FC = () => {
 
   // Enhanced Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
+    const shareableCardRef = useRef<View>(null);
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
     
     // Calculate transaction-specific remaining balance
@@ -233,121 +321,248 @@ export const HistoryScreen: React.FC = () => {
     }
     
     return (
-      <Card style={styles.transactionCard} mode="outlined">
-        <Card.Content>
-          
-          {/* Edit Button Row */}
-          <View style={styles.editButtonRow}>
-            <TouchableOpacity 
-              style={styles.editButton}
-              onPress={() => loadTransactionForEdit(transaction.id)}
-            >
-              <Icon name="pencil" size={16} color={theme.colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Header Row */}
-          <View style={styles.cardHeader}>
-            <View style={styles.customerInfo}>
-              <Text variant="titleMedium" style={styles.customerName}>
-                {highlightSearchText(transaction.customerName, searchQuery)}
-              </Text>
-              <Text variant="bodySmall" style={styles.transactionDate}>
-                {formatFullDate(transaction.date)}
-              </Text>
-            </View>
-            <View style={styles.rightSection}>
-              {!isMetalOnly && (
-                <Text 
-                  variant="titleMedium" 
-                  style={[styles.amount, { color: getAmountColor(transaction) }]}
+      <>
+        {/* Visible Card with Action Buttons */}
+        <Card style={styles.transactionCard} mode="outlined">
+          <Card.Content>
+            
+            {/* Action Buttons Row */}
+            <View style={styles.editButtonRow}>
+              {canDeleteTransaction(transaction.date) && (
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => handleDeleteTransaction(transaction)}
                 >
-                  {formatTransactionAmount(transaction)}
-                </Text>
+                  <Icon name="delete" size={16} color={theme.colors.error} />
+                </TouchableOpacity>
               )}
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.shareButton]}
+                onPress={() => handleShareTransaction(transaction, shareableCardRef)}
+              >
+                <Icon name="share-variant" size={16} color={theme.colors.success} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.editButton]}
+                onPress={() => loadTransactionForEdit(transaction.id)}
+              >
+                <Icon name="pencil" size={16} color={theme.colors.primary} />
+              </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Transaction Details - Always Visible */}
-          <View style={styles.expandedContent}>
-            <Divider style={styles.expandedDivider} />
-            {transaction.entries.map((entry, index) => (
-              <React.Fragment key={index}>
-                <View style={styles.entryRow}>
-                  <Text variant="bodySmall" style={styles.entryType}>
-                    {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
-                  </Text>
-                  <Text variant="bodySmall" style={styles.entryDetails}>
-                    {entry.weight && `${(() => {
-                      const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
-                      const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
-                      return formattedWeight;
-                    })()}g`}
-                    {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
-                  </Text>
-                </View>
-                
-                {/* Show Rupu silver returns */}
-                {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
-                  <>
-                    {entry.silver98Weight && entry.silver98Weight > 0 && (
-                      <View style={styles.entryRow}>
-                        <Text variant="bodySmall" style={[styles.entryType]}>
-                          ↗️ Silver 98
-                        </Text>
-                        <Text variant="bodySmall" style={[styles.entryDetails]}>
-                          {Math.floor(entry.silver98Weight).toFixed(1)}g
-                        </Text>
-                      </View>
-                    )}
-                    {entry.silverWeight && entry.silverWeight > 0 && (
-                      <View style={styles.entryRow}>
-                        <Text variant="bodySmall" style={[styles.entryType]}>
-                          ↗️ Silver
-                        </Text>
-                        <Text variant="bodySmall" style={[styles.entryDetails]}>
-                          {Math.floor(entry.silverWeight).toFixed(1)}g
-                        </Text>
-                      </View>
-                    )}
-                  </>
-                )}
-                
-              </React.Fragment>
-            ))}
-            
-            {/* Total Row - Show only for non-metal-only transactions */}
-            {!isMetalOnly && (
-              <>
-                <Divider style={styles.totalDivider} />
-                <View style={styles.totalRow}>
-                  <Text variant="bodySmall" style={styles.totalLabel}>
-                    Total
-                  </Text>
-                  <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
-                    ₹{Math.abs(transaction.total).toLocaleString()}
-                  </Text>
-                </View>
-              </>
-            )}
-            
-            {/* Payment/Balance Row */}
-            <View style={styles.paymentRow}>
-              {!isMetalOnly && transaction.amountPaid > 0 && (
-                <Text variant="bodySmall" style={styles.paymentLabel}>
-                  {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+            {/* Header Row */}
+            <View style={styles.cardHeader}>
+              <View style={styles.customerInfo}>
+                <Text variant="titleMedium" style={styles.customerName}>
+                  {highlightSearchText(transaction.customerName, searchQuery)}
                 </Text>
-              )}
-              {isMetalOnly && <View style={{ flex: 1 }} />}
-              <Text variant="bodySmall" style={[styles.transactionBalance, 
-                { color: transactionBalanceColor }
-              ]}>
-                {transactionBalanceLabel}
-              </Text>
+                <Text variant="bodySmall" style={styles.transactionDate}>
+                  {formatFullDate(transaction.date)}
+                </Text>
+              </View>
+              <View style={styles.rightSection}>
+                {!isMetalOnly && (
+                  <Text 
+                    variant="titleMedium" 
+                    style={[styles.amount, { color: getAmountColor(transaction) }]}
+                  >
+                    {formatTransactionAmount(transaction)}
+                  </Text>
+                )}
+              </View>
             </View>
+
+            {/* Transaction Details - Always Visible */}
+            <View style={styles.expandedContent}>
+              <Divider style={styles.expandedDivider} />
+              {transaction.entries.map((entry, index) => (
+                <React.Fragment key={index}>
+                  <View style={styles.entryRow}>
+                    <Text variant="bodySmall" style={styles.entryType}>
+                      {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.entryDetails}>
+                      {entry.weight && `${(() => {
+                        const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                        const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                        return formattedWeight;
+                      })()}g`}
+                      {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
+                    </Text>
+                  </View>
+                  
+                  {/* Show Rupu silver returns */}
+                  {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
+                    <>
+                      {entry.silver98Weight && entry.silver98Weight > 0 && (
+                        <View style={styles.entryRow}>
+                          <Text variant="bodySmall" style={[styles.entryType]}>
+                            ↗️ Silver 98
+                          </Text>
+                          <Text variant="bodySmall" style={[styles.entryDetails]}>
+                            {Math.floor(entry.silver98Weight).toFixed(1)}g
+                          </Text>
+                        </View>
+                      )}
+                      {entry.silverWeight && entry.silverWeight > 0 && (
+                        <View style={styles.entryRow}>
+                          <Text variant="bodySmall" style={[styles.entryType]}>
+                            ↗️ Silver
+                          </Text>
+                          <Text variant="bodySmall" style={[styles.entryDetails]}>
+                            {Math.floor(entry.silverWeight).toFixed(1)}g
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                  
+                </React.Fragment>
+              ))}
+              
+              {/* Total Row - Show only for non-metal-only transactions */}
+              {!isMetalOnly && (
+                <>
+                  <Divider style={styles.totalDivider} />
+                  <View style={styles.totalRow}>
+                    <Text variant="bodySmall" style={styles.totalLabel}>
+                      Total
+                    </Text>
+                    <Text variant="bodySmall" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
+                      ₹{Math.abs(transaction.total).toLocaleString()}
+                    </Text>
+                  </View>
+                </>
+              )}
+              
+              {/* Payment/Balance Row */}
+              <View style={styles.paymentRow}>
+                {!isMetalOnly && transaction.amountPaid > 0 && (
+                  <Text variant="bodySmall" style={styles.paymentLabel}>
+                    {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+                  </Text>
+                )}
+                {isMetalOnly && <View style={{ flex: 1 }} />}
+                <Text variant="bodySmall" style={[styles.transactionBalance, 
+                  { color: transactionBalanceColor }
+                ]}>
+                  {transactionBalanceLabel}
+                </Text>
+              </View>
+            </View>
+          </Card.Content>
+        </Card>
+
+        {/* Hidden Shareable Card (without action buttons) for screenshot */}
+        <View style={styles.hiddenCard} collapsable={false}>
+          <View ref={shareableCardRef} collapsable={false} style={styles.shareableCardWrapper}>
+            <Card style={styles.shareableCard} mode="outlined">
+              <Card.Content style={styles.shareableCardContent}>
+                {/* Header Row */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.customerInfo}>
+                    <Text variant="titleMedium" style={styles.customerName}>
+                      {transaction.customerName}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.transactionDate}>
+                      {formatFullDate(transaction.date)}
+                    </Text>
+                  </View>
+                  <View style={styles.rightSection}>
+                    {!isMetalOnly && (
+                      <Text 
+                        variant="titleMedium" 
+                        style={[styles.amount, { color: getAmountColor(transaction) }]}
+                      >
+                        {formatTransactionAmount(transaction)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* Transaction Details - Always Visible */}
+                <View style={styles.expandedContent}>
+                  <Divider style={styles.expandedDivider} />
+                  {transaction.entries.map((entry, index) => (
+                    <React.Fragment key={index}>
+                      <View style={styles.entryRow}>
+                        <Text variant="bodySmall" style={styles.entryType}>
+                          {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.entryDetails}>
+                          {entry.weight && `${(() => {
+                            const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                            const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                            return formattedWeight;
+                          })()}g`}
+                          {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
+                        </Text>
+                      </View>
+                      
+                      {/* Show Rupu silver returns */}
+                      {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
+                        <>
+                          {entry.silver98Weight && entry.silver98Weight > 0 && (
+                            <View style={styles.entryRow}>
+                              <Text variant="bodySmall" style={[styles.entryType]}>
+                                ↗️ Silver 98
+                              </Text>
+                              <Text variant="bodySmall" style={[styles.entryDetails]}>
+                                {Math.floor(entry.silver98Weight).toFixed(1)}g
+                              </Text>
+                            </View>
+                          )}
+                          {entry.silverWeight && entry.silverWeight > 0 && (
+                            <View style={styles.entryRow}>
+                              <Text variant="bodySmall" style={[styles.entryType]}>
+                                ↗️ Silver
+                              </Text>
+                              <Text variant="bodySmall" style={[styles.entryDetails]}>
+                                {Math.floor(entry.silverWeight).toFixed(1)}g
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      )}
+                      
+                    </React.Fragment>
+                  ))}
+                  
+                  {/* Total Row - Show only for non-metal-only transactions */}
+                  {!isMetalOnly && (
+                    <>
+                      <Divider style={styles.totalDivider} />
+                      <View style={styles.totalRow}>
+                        <Text variant="bodySmall" style={styles.totalLabel}>
+                          Total
+                        </Text>
+                        <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
+                          ₹{Math.abs(transaction.total).toLocaleString()}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                  
+                  {/* Payment/Balance Row */}
+                  <View style={styles.paymentRow}>
+                    {!isMetalOnly && transaction.amountPaid > 0 && (
+                      <Text variant="bodySmall" style={styles.paymentLabel}>
+                        {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+                      </Text>
+                    )}
+                    {isMetalOnly && <View style={{ flex: 1 }} />}
+                    <Text variant="bodySmall" style={[styles.transactionBalance, 
+                      { color: transactionBalanceColor }
+                    ]}>
+                      {transactionBalanceLabel}
+                    </Text>
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
           </View>
-        </Card.Content>
-      </Card>
+        </View>
+      </>
     );
   };
 
@@ -417,22 +632,22 @@ export const HistoryScreen: React.FC = () => {
               Today
             </Chip>
             <Chip
-              mode={selectedFilter === 'week' ? 'flat' : 'outlined'}
-              selected={selectedFilter === 'week'}
-              onPress={() => handleFilterChange('week')}
+              mode={selectedFilter === 'last7days' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'last7days'}
+              onPress={() => handleFilterChange('last7days')}
               style={styles.filterChip}
               compact
             >
-              This Week
+              Last 7 Days
             </Chip>
             <Chip
-              mode={selectedFilter === 'month' ? 'flat' : 'outlined'}
-              selected={selectedFilter === 'month'}
-              onPress={() => handleFilterChange('month')}
+              mode={selectedFilter === 'last30days' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'last30days'}
+              onPress={() => handleFilterChange('last30days')}
               style={styles.filterChip}
               compact
             >
-              This Month
+              Last 30 Days
             </Chip>
             <Chip
               mode={selectedFilter === 'all' ? 'flat' : 'outlined'}
@@ -758,17 +973,27 @@ const styles = StyleSheet.create({
   editButtonRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: theme.spacing.xs,
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.xs,
   },
-  editButton: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs / 2,
-    backgroundColor: theme.colors.primaryContainer,
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
     borderRadius: 16,
+    marginLeft: theme.spacing.xs,
+  },
+  deleteButton: {
+    backgroundColor: theme.colors.errorContainer,
+  },
+  shareButton: {
+    backgroundColor: '#C8E6C9', // Light green background (Green 100)
+  },
+  editButton: {
+    backgroundColor: theme.colors.primaryContainer,
   },
   editButtonText: {
     color: theme.colors.primary,
@@ -791,5 +1016,30 @@ const styles = StyleSheet.create({
   totalValue: {
     fontFamily: 'Roboto_700Bold',
     fontSize: 15,
+  },
+  hiddenCard: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    opacity: 0,
+  },
+  shareableCardWrapper: {
+    backgroundColor: '#FAFAFA', // Match app background
+    padding: 16,
+    width: 400, // Fixed width for consistent sharing
+  },
+  shareableCard: {
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  shareableCardContent: {
+    padding: 16,
   },
 });

@@ -246,14 +246,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const discountExtraAmount = parseFloat(discountExtra) || 0;
   
   // Safety feature: Lock entry modifications for old transactions
-  // Check if transaction is old (created more than 1 minute ago) - FOR TESTING
   const isOldTransaction = transactionCreatedAt 
-    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (1 * 60 * 1000) // 1 minute for testing
+    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (24 * 60 * 60 * 1000)
     : false;
     
-  // Check if transaction is settled and last updated more than 1 minute ago - FOR TESTING
   const isSettledAndOld = transactionLastUpdatedAt 
-    ? (Date.now() - new Date(transactionLastUpdatedAt).getTime()) > (1 * 60 * 1000) // 1 minute for testing
+    ? (Date.now() - new Date(transactionLastUpdatedAt).getTime()) > (24 * 60 * 60 * 1000)
     : false;
     
   // Check if transaction is fully settled

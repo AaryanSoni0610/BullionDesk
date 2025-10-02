@@ -620,4 +620,77 @@ export class DatabaseService {
       return false;
     }
   }
+
+  // Delete transaction and reverse inventory changes
+  static async deleteTransaction(transactionId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Get the transaction to delete
+      const transactions = await this.getAllTransactions();
+      const transaction = transactions.find(t => t.id === transactionId);
+      
+      if (!transaction) {
+        return { success: false, error: 'Transaction not found' };
+      }
+
+      // Reverse inventory changes for each entry
+      const baseInventory = await this.getBaseInventory();
+      for (const entry of transaction.entries) {
+        if (entry.type === 'money') continue; // Skip money entries
+        
+        const itemType = entry.itemType as keyof typeof baseInventory;
+        const weight = entry.weight || 0;
+        
+        // Reverse the inventory change
+        // If it was a sell (we gave metal), add it back
+        // If it was a purchase (we received metal), subtract it
+        const inventoryDelta = entry.type === 'sell' ? weight : -weight;
+        baseInventory[itemType] = (baseInventory[itemType] || 0) + inventoryDelta;
+      }
+      
+      // Update base inventory
+      await this.setBaseInventory(baseInventory);
+
+      // Reverse customer balance changes
+      const customer = await this.getCustomerById(transaction.customerId);
+      if (customer) {
+        // Reverse money balance
+        customer.balance = (customer.balance || 0) - transaction.total + transaction.amountPaid;
+        
+        // Reverse metal balances
+        for (const entry of transaction.entries) {
+          if (entry.metalOnly) {
+            const itemType = entry.itemType;
+            const weight = entry.weight || 0;
+            
+            if (!customer.metalBalances) {
+              customer.metalBalances = {} as any;
+            }
+            
+            const currentBalance = (customer.metalBalances as any)[itemType] || 0;
+            
+            // Reverse the metal balance change
+            const balanceDelta = entry.type === 'sell' ? -weight : weight;
+            (customer.metalBalances as any)[itemType] = currentBalance - balanceDelta;
+          }
+        }
+        
+        await this.saveCustomer(customer);
+      }
+
+      // Remove all ledger entries for this transaction
+      const ledgerEntries = await this.getAllLedgerEntries();
+      const filteredLedger = ledgerEntries.filter(entry => entry.transactionId !== transactionId);
+      await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(filteredLedger));
+
+      // Remove the transaction
+      const filteredTransactions = transactions.filter(t => t.id !== transactionId);
+      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filteredTransactions));
+
+      console.log('✅ Transaction deleted and inventory reversed:', transactionId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      return { success: false, error: 'Failed to delete transaction' };
+    }
+  }
 }

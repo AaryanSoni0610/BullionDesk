@@ -1,4 +1,5 @@
 import * as Crypto from 'expo-crypto';
+import CryptoJS from 'crypto-js';
 
 interface EncryptedData {
   encrypted: string;
@@ -13,75 +14,52 @@ export class EncryptionService {
   private static readonly ITERATIONS = 100000;
 
   /**
-   * Derive a key from password using PBKDF2
+   * Generate random hex string
    */
-  private static async deriveKey(
-    password: string,
-    salt: Uint8Array
-  ): Promise<CryptoKey> {
-    const enc = new TextEncoder();
-    const passwordKey = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(password),
-      'PBKDF2',
-      false,
-      ['deriveKey']
-    );
-
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: salt.buffer as ArrayBuffer,
-        iterations: this.ITERATIONS,
-        hash: 'SHA-256',
-      },
-      passwordKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+  private static async getRandomHex(length: number): Promise<string> {
+    const bytes = await Crypto.getRandomBytesAsync(length);
+    return Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 
   /**
-   * Encrypt data with AES-256-GCM
+   * Derive a key from password using PBKDF2
+   */
+  private static deriveKey(password: string, salt: string): string {
+    return CryptoJS.PBKDF2(password, salt, {
+      keySize: 256 / 32,
+      iterations: this.ITERATIONS,
+      hasher: CryptoJS.algo.SHA256,
+    }).toString();
+  }
+
+  /**
+   * Encrypt data with AES-256-GCM (using CBC as GCM is not available in crypto-js)
    */
   static async encryptData(jsonData: any, password: string): Promise<EncryptedData> {
     try {
       // Generate random salt and IV
-      const salt = new Uint8Array(
-        await Crypto.getRandomBytesAsync(16)
-      );
-      const iv = new Uint8Array(
-        await Crypto.getRandomBytesAsync(12)
-      );
+      const salt = await this.getRandomHex(16);
+      const iv = await this.getRandomHex(16);
 
       // Derive key from password
-      const key = await this.deriveKey(password, salt);
+      const key = this.deriveKey(password, salt);
 
-      // Convert data to string and then to bytes
-      const enc = new TextEncoder();
-      const data = enc.encode(JSON.stringify(jsonData));
+      // Convert data to string
+      const jsonString = JSON.stringify(jsonData);
 
-      // Encrypt
-      const encrypted = await crypto.subtle.encrypt(
-        {
-          name: 'AES-GCM',
-          iv: iv,
-        },
-        key,
-        data
-      );
-
-      // Convert to base64 for storage
-      const encryptedArray = new Uint8Array(encrypted);
-      const encryptedBase64 = this.arrayBufferToBase64(encryptedArray);
-      const saltBase64 = this.arrayBufferToBase64(salt);
-      const ivBase64 = this.arrayBufferToBase64(iv);
+      // Encrypt using AES-256-CBC
+      const encrypted = CryptoJS.AES.encrypt(jsonString, key, {
+        iv: CryptoJS.enc.Hex.parse(iv),
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7,
+      });
 
       return {
-        encrypted: encryptedBase64,
-        salt: saltBase64,
-        iv: ivBase64,
+        encrypted: encrypted.toString(),
+        salt,
+        iv,
         version: this.VERSION,
         timestamp: Date.now(),
       };
@@ -92,63 +70,34 @@ export class EncryptionService {
   }
 
   /**
-   * Decrypt data with AES-256-GCM
+   * Decrypt data with AES-256-CBC
    */
   static async decryptData(encryptedData: EncryptedData, password: string): Promise<any> {
     try {
-      // Convert base64 to Uint8Array
-      const encrypted = this.base64ToArrayBuffer(encryptedData.encrypted);
-      const salt = this.base64ToArrayBuffer(encryptedData.salt);
-      const iv = this.base64ToArrayBuffer(encryptedData.iv);
+      const { encrypted, salt, iv } = encryptedData;
 
       // Derive key from password
-      const key = await this.deriveKey(password, salt);
+      const key = this.deriveKey(password, salt);
 
-      // Decrypt
-      const decrypted = await crypto.subtle.decrypt(
-        {
-          name: 'AES-GCM',
-          iv: iv.buffer as ArrayBuffer,
-        },
-        key,
-        encrypted.buffer as ArrayBuffer
-      );
+      // Decrypt using AES-256-CBC
+      const decrypted = CryptoJS.AES.decrypt(encrypted, key, {
+        iv: CryptoJS.enc.Hex.parse(iv),
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7,
+      });
 
-      // Convert bytes back to string
-      const dec = new TextDecoder();
-      const jsonString = dec.decode(decrypted);
+      // Convert to UTF-8 string
+      const jsonString = decrypted.toString(CryptoJS.enc.Utf8);
+
+      if (!jsonString) {
+        throw new Error('Decryption failed - invalid key or corrupted data');
+      }
 
       return JSON.parse(jsonString);
     } catch (error) {
       console.error('Decryption error:', error);
       throw new Error('Failed to decrypt data. Invalid encryption key or corrupted file.');
     }
-  }
-
-  /**
-   * Convert ArrayBuffer to Base64 string
-   */
-  private static arrayBufferToBase64(buffer: Uint8Array): string {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  /**
-   * Convert Base64 string to ArrayBuffer
-   */
-  private static base64ToArrayBuffer(base64: string): Uint8Array {
-    const binary = atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
   }
 
   /**

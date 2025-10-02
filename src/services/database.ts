@@ -8,6 +8,10 @@ const STORAGE_KEYS = {
   LEDGER: '@bulliondesk_ledger',
   LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
   BASE_INVENTORY: '@bulliondesk_base_inventory',
+  AUTO_BACKUP_ENABLED: '@bulliondesk_auto_backup_enabled',
+  FIRST_LAUNCH_SETUP: '@bulliondesk_first_launch_setup',
+  STORAGE_PERMISSION_GRANTED: '@bulliondesk_storage_permission_granted',
+  LAST_BACKUP_TIME: '@bulliondesk_last_backup_time',
 };
 
 export class DatabaseService {
@@ -700,6 +704,96 @@ export class DatabaseService {
     } catch (error) {
       console.error('Error deleting transaction:', error);
       return { success: false, error: 'Failed to delete transaction' };
+    }
+  }
+
+  // Backup settings operations
+  static async getAutoBackupEnabled(): Promise<boolean> {
+    try {
+      const enabledJson = await AsyncStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED);
+      const result = enabledJson ? JSON.parse(enabledJson) : false;
+      console.log('📦 DB: getAutoBackupEnabled ->', result, '(raw:', enabledJson, ')');
+      return result;
+    } catch (error) {
+      console.error('Error getting auto backup enabled:', error);
+      return false;
+    }
+  }
+
+  static async setAutoBackupEnabled(enabled: boolean): Promise<boolean> {
+    try {
+      console.log('📦 DB: setAutoBackupEnabled ->', enabled);
+      await AsyncStorage.setItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED, JSON.stringify(enabled));
+      console.log('📦 DB: setAutoBackupEnabled - AsyncStorage write completed');
+      
+      // Verify the write
+      const verify = await AsyncStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED);
+      console.log('📦 DB: setAutoBackupEnabled - Verification read:', verify);
+      
+      return true;
+    } catch (error) {
+      console.error('Error setting auto backup enabled:', error);
+      return false;
+    }
+  }
+
+  static async getFirstLaunchSetup(): Promise<boolean> {
+    try {
+      const setupJson = await AsyncStorage.getItem(STORAGE_KEYS.FIRST_LAUNCH_SETUP);
+      return setupJson ? JSON.parse(setupJson) : false;
+    } catch (error) {
+      console.error('Error getting first launch setup:', error);
+      return false;
+    }
+  }
+
+  static async setFirstLaunchSetup(done: boolean): Promise<boolean> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.FIRST_LAUNCH_SETUP, JSON.stringify(done));
+      return true;
+    } catch (error) {
+      console.error('Error setting first launch setup:', error);
+      return false;
+    }
+  }
+
+  static async getStoragePermissionGranted(): Promise<boolean> {
+    try {
+      const grantedJson = await AsyncStorage.getItem(STORAGE_KEYS.STORAGE_PERMISSION_GRANTED);
+      return grantedJson ? JSON.parse(grantedJson) : false;
+    } catch (error) {
+      console.error('Error getting storage permission granted:', error);
+      return false;
+    }
+  }
+
+  static async setStoragePermissionGranted(granted: boolean): Promise<boolean> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.STORAGE_PERMISSION_GRANTED, JSON.stringify(granted));
+      return true;
+    } catch (error) {
+      console.error('Error setting storage permission granted:', error);
+      return false;
+    }
+  }
+
+  static async getLastBackupTime(): Promise<number | null> {
+    try {
+      const timeJson = await AsyncStorage.getItem(STORAGE_KEYS.LAST_BACKUP_TIME);
+      return timeJson ? JSON.parse(timeJson) : null;
+    } catch (error) {
+      console.error('Error getting last backup time:', error);
+      return null;
+    }
+  }
+
+  static async setLastBackupTime(time: number): Promise<boolean> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_BACKUP_TIME, JSON.stringify(time));
+      return true;
+    } catch (error) {
+      console.error('Error setting last backup time:', error);
+      return false;
     }
   }
 }

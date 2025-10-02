@@ -40,18 +40,13 @@ export class BackupService {
   static async requestStoragePermission(): Promise<boolean> {
     try {
       if (Platform.OS !== 'android') {
-        await SecureStore.setItemAsync(
-          SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
-          'true'
-        );
+        await DatabaseService.setStoragePermissionGranted(true);
         return true;
       }
 
       // Check if permission was already granted
-      const permissionGranted = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED
-      );
-      if (permissionGranted === 'true') {
+      const permissionGranted = await DatabaseService.getStoragePermissionGranted();
+      if (permissionGranted) {
         return true;
       }
 
@@ -66,10 +61,7 @@ export class BackupService {
 
       if (finalStatus !== 'granted') {
         console.log('Storage permission denied');
-        await SecureStore.setItemAsync(
-          SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
-          'false'
-        );
+        await DatabaseService.setStoragePermissionGranted(false);
         return false;
       }
 
@@ -82,26 +74,17 @@ export class BackupService {
         }
         
         // If successful, store permission granted
-        await SecureStore.setItemAsync(
-          SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
-          'true'
-        );
+        await DatabaseService.setStoragePermissionGranted(true);
         console.log('✅ Storage permission granted');
         return true;
       } catch (dirError) {
         console.error('Directory creation error:', dirError);
-        await SecureStore.setItemAsync(
-          SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
-          'false'
-        );
+        await DatabaseService.setStoragePermissionGranted(false);
         return false;
       }
     } catch (error) {
       console.error('Error requesting storage permission:', error);
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED,
-        'false'
-      );
+      await DatabaseService.setStoragePermissionGranted(false);
       return false;
     }
   }
@@ -111,10 +94,7 @@ export class BackupService {
    */
   static async hasStoragePermission(): Promise<boolean> {
     try {
-      const permission = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.STORAGE_PERMISSION_GRANTED
-      );
-      return permission === 'true';
+      return await DatabaseService.getStoragePermissionGranted();
     } catch (error) {
       return false;
     }
@@ -164,10 +144,8 @@ export class BackupService {
    */
   static async isFirstLaunch(): Promise<boolean> {
     try {
-      const firstLaunchDone = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.FIRST_LAUNCH_DONE
-      );
-      return firstLaunchDone !== 'true';
+      const firstLaunchDone = await DatabaseService.getFirstLaunchSetup();
+      return !firstLaunchDone;
     } catch (error) {
       return true;
     }
@@ -178,109 +156,42 @@ export class BackupService {
    */
   static async markFirstLaunchDone(): Promise<void> {
     try {
-      await SecureStore.setItemAsync(SECURE_STORE_KEYS.FIRST_LAUNCH_DONE, 'true');
+      const success = await DatabaseService.setFirstLaunchSetup(true);
+      if (!success) {
+        console.error('Failed to mark first launch as done');
+      }
     } catch (error) {
       console.error('Error marking first launch done:', error);
     }
   }
 
   /**
-   * First launch setup - ask user about auto backup
+   * First launch setup - just request storage permission
+   * User can enable auto backup from Settings
    */
   static async firstLaunchSetup(): Promise<void> {
-    return new Promise((resolve) => {
-      Alert.alert(
-        'Welcome to BullionDesk!',
-        'Would you like to enable automatic daily backups of your data? You can change this later in Settings.',
-        [
-          {
-            text: 'No Thanks',
-            style: 'cancel',
-            onPress: async () => {
-              await this.setAutoBackupEnabled(false);
-              await this.markFirstLaunchDone();
-              
-              // Still request storage permission for manual export/import
-              const hasPermission = await this.requestStoragePermission();
-              if (!hasPermission) {
-                Alert.alert(
-                  'Storage Permission',
-                  'Storage permission is required for backup and restore features. You can enable it later in Settings.',
-                  [{ text: 'OK' }]
-                );
-              }
-              resolve();
-            },
-          },
-          {
-            text: 'Enable Auto Backup',
-            onPress: async () => {
-              console.log('🔵 User selected Enable Auto Backup');
-              
-              // Request storage permission first
-              console.log('🔵 Requesting storage permission...');
-              const hasPermission = await this.requestStoragePermission();
-              console.log('🔵 Storage permission result:', hasPermission);
-              
-              if (!hasPermission) {
-                Alert.alert(
-                  'Permission Denied',
-                  'Storage permission is required for automatic backups. You can enable this later in Settings.',
-                  [{ text: 'OK' }]
-                );
-                await this.setAutoBackupEnabled(false);
-                await this.markFirstLaunchDone();
-                resolve();
-                return;
-              }
-
-              // Initialize directories
-              console.log('🔵 Initializing directories...');
-              const dirsReady = await this.initializeDirectories();
-              console.log('🔵 Directories ready:', dirsReady);
-              
-              if (!dirsReady) {
-                Alert.alert(
-                  'Setup Error',
-                  'Failed to create backup directories. You can try again in Settings.',
-                  [{ text: 'OK' }]
-                );
-                await this.setAutoBackupEnabled(false);
-                await this.markFirstLaunchDone();
-                resolve();
-                return;
-              }
-
-              // Setup encryption key
-              console.log('🔵 Setting up encryption key...');
-              const hasKey = await this.setupEncryptionKey();
-              console.log('🔵 Encryption key setup result:', hasKey);
-              
-              if (!hasKey) {
-                await this.setAutoBackupEnabled(false);
-                await this.markFirstLaunchDone();
-                resolve();
-                return;
-              }
-
-              // Enable auto backup
-              console.log('🔵 Enabling auto backup...');
-              await this.setAutoBackupEnabled(true);
-              await this.markFirstLaunchDone();
-              console.log('🔵 Auto backup enabled successfully');
-              
-              Alert.alert(
-                'Auto Backup Enabled',
-                'Your data will be automatically backed up daily. Backups are stored securely in your device storage.',
-                [{ text: 'OK' }]
-              );
-              resolve();
-            },
-          },
-        ],
-        { cancelable: false }
-      );
-    });
+    try {
+      console.log('🔵 First launch setup - requesting storage permission...');
+      
+      // Request storage permission for manual export/import
+      const hasPermission = await this.requestStoragePermission();
+      
+      if (hasPermission) {
+        console.log('🔵 Storage permission granted');
+        // Initialize directories
+        await this.initializeDirectories();
+      } else {
+        console.log('🔵 Storage permission denied');
+      }
+      
+      // Mark first launch as done
+      await this.markFirstLaunchDone();
+      console.log('🔵 First launch setup complete');
+    } catch (error) {
+      console.error('Error in first launch setup:', error);
+      // Mark as done anyway to avoid showing again
+      await this.markFirstLaunchDone();
+    }
   }
 
   /**
@@ -302,101 +213,35 @@ export class BackupService {
   }
 
   /**
-   * Setup encryption key (first time or if missing)
+   * Check if encryption key exists
+   */
+  static async hasEncryptionKey(): Promise<boolean> {
+    try {
+      const key = await SecureStore.getItemAsync(SECURE_STORE_KEYS.ENCRYPTION_KEY);
+      return !!key;
+    } catch (error) {
+      console.error('Error checking encryption key:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Setup encryption key (deprecated - UI should handle this now)
+   * This method now just checks if the key exists
    */
   static async setupEncryptionKey(): Promise<boolean> {
-    return new Promise((resolve) => {
-      // Check if key already exists
-      SecureStore.getItemAsync(SECURE_STORE_KEYS.ENCRYPTION_KEY).then((existingKey) => {
-        if (existingKey) {
-          console.log('🔑 Encryption key already exists');
-          resolve(true);
-          return;
-        }
-
-        console.log('🔑 No encryption key found, prompting user...');
-        
-        // Show key setup dialog
-        Alert.prompt(
-          'Set Backup Encryption Key',
-          'Choose a strong key to encrypt your backups. You\'ll need this to restore data.\n\nMinimum 8 characters required.',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-              onPress: () => {
-                console.log('🔑 User cancelled key setup');
-                resolve(false);
-              },
-            },
-            {
-              text: 'Set Key',
-              onPress: async (input) => {
-                if (!input) {
-                  Alert.alert('Error', 'Key cannot be empty');
-                  resolve(false);
-                  return;
-                }
-
-                const validation = EncryptionService.isValidKey(input);
-                if (!validation.valid) {
-                  Alert.alert('Invalid Key', validation.message || 'Key is invalid');
-                  resolve(false);
-                  return;
-                }
-
-                // Confirm key
-                Alert.prompt(
-                  'Confirm Encryption Key',
-                  'Please re-enter your encryption key to confirm:',
-                  [
-                    {
-                      text: 'Cancel',
-                      style: 'cancel',
-                      onPress: () => {
-                        console.log('🔑 User cancelled key confirmation');
-                        resolve(false);
-                      },
-                    },
-                    {
-                      text: 'Confirm',
-                      onPress: async (confirmInput) => {
-                        if (input !== confirmInput) {
-                          Alert.alert('Error', 'Keys do not match. Please try again.');
-                          resolve(false);
-                          return;
-                        }
-
-                        try {
-                          await SecureStore.setItemAsync(
-                            SECURE_STORE_KEYS.ENCRYPTION_KEY,
-                            input
-                          );
-                          await this.logAction('Encryption key set successfully');
-                          console.log('🔑 Encryption key saved successfully');
-                          Alert.alert(
-                            'Success',
-                            'Encryption key has been set. Please remember this key - you will need it to restore your backups.',
-                            [{ text: 'OK' }]
-                          );
-                          resolve(true);
-                        } catch (error) {
-                          console.error('🔑 Error saving key:', error);
-                          Alert.alert('Error', 'Failed to save encryption key');
-                          resolve(false);
-                        }
-                      },
-                    },
-                  ],
-                  'secure-text'
-                );
-              },
-            },
-          ],
-          'secure-text'
-        );
-      });
-    });
+    try {
+      const hasKey = await this.hasEncryptionKey();
+      if (hasKey) {
+        console.log('🔑 Encryption key already exists');
+      } else {
+        console.log('🔑 No encryption key found');
+      }
+      return hasKey;
+    } catch (error) {
+      console.error('Error setting up encryption key:', error);
+      return false;
+    }
   }
 
   /**
@@ -456,17 +301,11 @@ export class BackupService {
         return false;
       }
 
-      // Check/setup encryption key - will prompt if not set
-      console.log('📤 Checking for encryption key...');
-      const hasKey = await this.setupEncryptionKey();
-      if (!hasKey) {
-        console.log('📤 User cancelled encryption key setup');
-        return false;
-      }
-
+      // Get encryption key (should be set by UI before calling this)
+      console.log('📤 Getting encryption key...');
       const key = await this.getEncryptionKey();
       if (!key) {
-        Alert.alert('Error', 'Encryption key not found');
+        Alert.alert('Error', 'Encryption key not found. Please set up encryption first.');
         return false;
       }
 
@@ -562,15 +401,8 @@ export class BackupService {
       console.log('📥 Initializing directories...');
       await this.initializeDirectories();
 
-      // Check/setup encryption key - will prompt if not set
-      console.log('📥 Checking for encryption key...');
-      const hasKey = await this.setupEncryptionKey();
-      if (!hasKey) {
-        console.log('📥 User cancelled encryption key setup');
-        return false;
-      }
-
-      // Get encryption key
+      // Get encryption key (should be set by UI before calling this)
+      console.log('📥 Getting encryption key...');
       const key = await this.getEncryptionKey();
       if (!key) {
         Alert.alert('Error', 'Encryption key not found. Please set up encryption first.');
@@ -730,10 +562,8 @@ export class BackupService {
       }
 
       // Check if enabled
-      const enabled = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.AUTO_BACKUP_ENABLED
-      );
-      if (enabled !== 'true') {
+      const enabled = await DatabaseService.getAutoBackupEnabled();
+      if (!enabled) {
         await this.logAction('Auto backup skipped: Disabled');
         return false;
       }
@@ -775,10 +605,7 @@ export class BackupService {
       await this.rotateAutoBackups();
 
       // Update last backup time
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.LAST_BACKUP_TIME,
-        Date.now().toString()
-      );
+      await DatabaseService.setLastBackupTime(Date.now());
 
       await this.logAction(
         `Auto backup completed: ${backupData.recordCount} records, file: ${filename}`
@@ -821,10 +648,10 @@ export class BackupService {
    */
   static async setAutoBackupEnabled(enabled: boolean): Promise<void> {
   try {
-    await SecureStore.setItemAsync(
-      SECURE_STORE_KEYS.AUTO_BACKUP_ENABLED,
-      enabled ? 'true' : 'false'
-    );
+    const success = await DatabaseService.setAutoBackupEnabled(enabled);
+    if (!success) {
+      throw new Error('Failed to save auto backup setting');
+    }
     await this.logAction(`Auto backup ${enabled ? 'enabled' : 'disabled'}`);
   } catch (error) {
     console.error('Error setting auto backup:', error);
@@ -837,10 +664,7 @@ export class BackupService {
    */
   static async isAutoBackupEnabled(): Promise<boolean> {
     try {
-      const enabled = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.AUTO_BACKUP_ENABLED
-      );
-      return enabled === 'true';
+      return await DatabaseService.getAutoBackupEnabled();
     } catch (error) {
       console.error('Error checking auto backup status:', error);
       return false;
@@ -852,14 +676,11 @@ export class BackupService {
    */
   static async shouldPerformAutoBackup(): Promise<boolean> {
     try {
-      const lastBackupStr = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.LAST_BACKUP_TIME
-      );
-      if (!lastBackupStr) {
+      const lastBackup = await DatabaseService.getLastBackupTime();
+      if (!lastBackup) {
         return true;
       }
 
-      const lastBackup = parseInt(lastBackupStr, 10);
       const now = Date.now();
       const hoursSinceBackup = (now - lastBackup) / (1000 * 60 * 60);
 

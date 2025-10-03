@@ -726,6 +726,70 @@ export const LedgerScreen: React.FC = () => {
           />
         </ScrollView>
 
+
+        {/* Metal Inventory Chips - Only show for gold and silver subledgers */}
+        {selectedInventory !== 'money' && inventoryData && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inventoryChipsContainer}>
+            {selectedInventory === 'gold' ? (
+              <>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
+                  textStyle={{ color: '#E65100' }}
+                >
+                  Gold 999: {formatWeight(inventoryData.goldInventory.gold999)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
+                  textStyle={{ color: '#E65100' }}
+                >
+                  Gold 995: {formatWeight(inventoryData.goldInventory.gold995)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
+                  textStyle={{ color: '#E65100' }}
+                >
+                  Rani: {formatWeight(inventoryData.goldInventory.rani)}
+                </Chip>
+              </>
+            ) : selectedInventory === 'silver' ? (
+              <>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
+                  textStyle={{ color: '#455A64' }}
+                >
+                  Silver 98: {formatWeight(inventoryData.silverInventory.silver98, true)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
+                  textStyle={{ color: '#455A64' }}
+                >
+                  Silver 96: {formatWeight(inventoryData.silverInventory.silver96, true)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
+                  textStyle={{ color: '#455A64' }}
+                >
+                  Silver: {formatWeight(inventoryData.silverInventory.silver, true)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
+                  textStyle={{ color: '#455A64' }}
+                >
+                  Rupu: {formatWeight(inventoryData.silverInventory.rupu, true)}
+                </Chip>
+              </>
+            ) : null}
+          </ScrollView>
+        )}
+
+
         {/* Transaction Table Header - Fixed */}
         <View style={styles.transactionHeader}>
           <Text variant="bodyMedium" style={styles.transactionHeaderText}>
@@ -828,6 +892,11 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
     marginVertical: theme.spacing.md,
+  },
+  inventoryChipsContainer: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: theme.spacing.md,
   },
   filterChip: {
     marginRight: theme.spacing.sm,

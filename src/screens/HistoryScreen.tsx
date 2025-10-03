@@ -4,8 +4,7 @@ import {
   StyleSheet, 
   ScrollView, 
   FlatList, 
-  TouchableOpacity,
-  Alert
+  TouchableOpacity
 } from 'react-native';
 import {
   Surface,
@@ -27,6 +26,7 @@ import { formatTransactionAmount, formatFullDate } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
+import CustomAlert from '../components/CustomAlert';
 
 
 
@@ -40,6 +40,17 @@ export const HistoryScreen: React.FC = () => {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { navigateToSettings, loadTransactionForEdit } = useAppContext();
+  
+  type AlertButton = {
+    text: string;
+    onPress?: () => void;
+    style?: 'default' | 'cancel' | 'destructive';
+  };
+  
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertButtons, setAlertButtons] = useState<AlertButton[]>([]);
   
   // Helper function to check if transaction can be deleted (same day only)
   const canDeleteTransaction = (transactionDate: string): boolean => {
@@ -68,44 +79,54 @@ export const HistoryScreen: React.FC = () => {
 
   // Handle delete transaction
   const handleDeleteTransaction = async (transaction: Transaction) => {
-    Alert.alert(
-      'Delete Transaction',
-      `Are you sure you want to delete this transaction?\n\nCustomer: ${transaction.customerName}\nDate: ${formatFullDate(transaction.date)}\n\nThis action cannot be undone and will reverse all inventory changes.`,
-      [
-        {
-          text: 'No',
-          style: 'cancel',
-        },
-        {
-          text: 'Yes, Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const result = await DatabaseService.deleteTransaction(transaction.id);
-              
-              if (result.success) {
-                // Reload transactions
-                await loadTransactions(true);
-                Alert.alert('Success', 'Transaction deleted successfully');
-              } else {
-                Alert.alert('Error', result.error || 'Failed to delete transaction');
-              }
-            } catch (error) {
-              console.error('Error deleting transaction:', error);
-              Alert.alert('Error', 'Failed to delete transaction');
+    setAlertTitle('Delete Transaction');
+    setAlertMessage(`Are you sure you want to delete this transaction?\n\nCustomer: ${transaction.customerName}\nDate: ${formatFullDate(transaction.date)}\n\nThis action cannot be undone and will reverse all inventory changes.`);
+    setAlertButtons([
+      {
+        text: 'No',
+        style: 'cancel',
+      },
+      {
+        text: 'Yes, Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const result = await DatabaseService.deleteTransaction(transaction.id);
+            
+            if (result.success) {
+              // Reload transactions
+              await loadTransactions(true);
+              setAlertTitle('Success');
+              setAlertMessage('Transaction deleted successfully');
+              setAlertButtons([{ text: 'OK' }]);
+              setAlertVisible(true);
+            } else {
+              setAlertTitle('Error');
+              setAlertMessage(result.error || 'Failed to delete transaction');
+              setAlertButtons([{ text: 'OK' }]);
+              setAlertVisible(true);
             }
-          },
+          } catch (error) {
+            console.error('Error deleting transaction:', error);
+            setAlertTitle('Error');
+            setAlertMessage('Failed to delete transaction');
+            setAlertButtons([{ text: 'OK' }]);
+            setAlertVisible(true);
+          }
         },
-      ],
-      { cancelable: true }
-    );
+      },
+    ]);
+    setAlertVisible(true);
   };
 
   // Handle share transaction
   const handleShareTransaction = async (transaction: Transaction, cardRef: React.RefObject<View>) => {
     try {
       if (!cardRef.current) {
-        Alert.alert('Error', 'Unable to capture transaction card');
+        setAlertTitle('Error');
+        setAlertMessage('Unable to capture transaction card');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
         return;
       }
 
@@ -114,14 +135,16 @@ export const HistoryScreen: React.FC = () => {
         format: 'png',
         quality: 1,
         result: 'tmpfile',
-        height: undefined, // Auto height
         width: 400, // Fixed width matching shareableCardWrapper
       });
 
       // Check if sharing is available
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
-        Alert.alert('Error', 'Sharing is not available on this device');
+        setAlertTitle('Error');
+        setAlertMessage('Sharing is not available on this device');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
         return;
       }
 
@@ -132,7 +155,10 @@ export const HistoryScreen: React.FC = () => {
       });
     } catch (error) {
       console.error('Error sharing transaction:', error);
-      Alert.alert('Error', 'Failed to share transaction');
+      setAlertTitle('Error');
+      setAlertMessage('Failed to share transaction');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
     }
   };
 
@@ -360,11 +386,10 @@ export const HistoryScreen: React.FC = () => {
                 style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
                 onPress={() => {
                   if (isSettledAndOld(transaction)) {
-                    Alert.alert(
-                      'Cannot Edit Transaction',
-                      'This transaction has been settled and is too old to edit.',
-                      [{ text: 'OK' }]
-                    );
+                    setAlertTitle('Cannot Edit Transaction');
+                    setAlertMessage('This transaction has been settled and is too old to edit.');
+                    setAlertButtons([{ text: 'OK' }]);
+                    setAlertVisible(true);
                   } else {
                     loadTransactionForEdit(transaction.id);
                   }
@@ -597,32 +622,34 @@ export const HistoryScreen: React.FC = () => {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Surface style={styles.appTitleBar} elevation={1}>
-          <View style={styles.appTitleContent}>
-            <Text variant="titleLarge" style={styles.appTitle}>
-              History
+      <>
+        <SafeAreaView style={styles.container}>
+          <Surface style={styles.appTitleBar} elevation={1}>
+            <View style={styles.appTitleContent}>
+              <Text variant="titleLarge" style={styles.appTitle}>
+                History
+              </Text>
+              <IconButton
+                icon="cog-outline"
+                size={24}
+                onPress={navigateToSettings}
+                style={styles.settingsButton}
+              />
+            </View>
+          </Surface>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text variant="bodyLarge" style={styles.loadingText}>
+              Loading transactions...
             </Text>
-            <IconButton
-              icon="cog-outline"
-              size={24}
-              onPress={navigateToSettings}
-              style={styles.settingsButton}
-            />
           </View>
-        </Surface>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text variant="bodyLarge" style={styles.loadingText}>
-            Loading transactions...
-          </Text>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+        <CustomAlert visible={alertVisible} title={alertTitle} message={alertMessage} buttons={alertButtons} onDismiss={() => setAlertVisible(false)} />
+      </>
     );
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
+  }  return (
+    <>
+      <SafeAreaView style={styles.container}>
       <Surface style={styles.appTitleBar} elevation={1}>
         <View style={styles.appTitleContent}>
           <Text variant="titleLarge" style={styles.appTitle}>
@@ -746,6 +773,8 @@ export const HistoryScreen: React.FC = () => {
         )}
       </View>
     </SafeAreaView>
+    <CustomAlert visible={alertVisible} title={alertTitle} message={alertMessage} buttons={alertButtons} onDismiss={() => setAlertVisible(false)} />
+    </>
   );
 };
 

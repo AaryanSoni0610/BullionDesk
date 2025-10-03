@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, StyleSheet, ScrollView, Image, BackHandler } from 'react-native';
 import {
   Surface,
   Text,
@@ -13,6 +13,7 @@ import {
   Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme';
 import { formatWeight } from '../utils/formatting';
 import { Customer, TransactionEntry } from '../types';
@@ -50,7 +51,23 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const [isSaving, setIsSaving] = useState(false);
   const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
   const isEditing = !!editingTransactionId;
-  
+
+  // Handle hardware back button - same as X button in titlebar
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        onBack();
+        return true; // Prevent default back behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, [onBack])
+  );
+
   // Enhanced payment validation
   const validatePaymentAmount = (value: string, maxAmount: number): string => {
     if (!value.trim()) return ''; // Allow empty for partial payments
@@ -247,7 +264,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   
   // Safety feature: Lock entry modifications for old transactions
   const isOldTransaction = transactionCreatedAt 
-    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (1 * 60 * 1000)
+    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (24 * 60 * 60 * 1000)
     : false;
   
   // Determine if entry modifications are locked

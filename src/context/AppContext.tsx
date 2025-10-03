@@ -236,10 +236,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const loadTransactionForEdit = async (transactionId: string) => {
     try {
-      // Get all transactions and find the one we want to edit
-      const transactions = await DatabaseService.getAllTransactions();
-      const transaction = transactions.find(t => t.id === transactionId);
-      
+      // Get the specific transaction by ID
+      const transaction = await DatabaseService.getTransactionById(transactionId);
+
       if (!transaction) {
         setSnackbarMessage('Transaction not found');
         setSnackbarVisible(true);
@@ -261,7 +260,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       setLastGivenMoney(transaction.lastGivenMoney || transaction.amountPaid || 0);
       setTransactionCreatedAt(transaction.createdAt || transaction.date);
       setTransactionLastUpdatedAt(transaction.lastUpdatedAt || transaction.date);
-      
+
       // Navigate to settlement screen to show transaction details
       onNavigateToSettlement();
     } catch (error) {
@@ -269,9 +268,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       setSnackbarMessage('Error loading transaction');
       setSnackbarVisible(true);
     }
-  };
-
-  const contextValue: AppContextType = {
+  };  const contextValue: AppContextType = {
     currentCustomer,
     setCurrentCustomer,
     currentEntries,

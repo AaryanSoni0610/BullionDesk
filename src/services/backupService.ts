@@ -226,7 +226,7 @@ export class BackupService {
   }
 
   /**
-   * Share an exported file
+   * Share an exported file, handling both SAF URIs and file URIs
    */
   static async shareExportedFile(fileUri: string, fileName: string): Promise<void> {
     try {
@@ -236,7 +236,49 @@ export class BackupService {
         return;
       }
 
-      await Sharing.shareAsync(fileUri, {
+      let shareUri = fileUri;
+
+      // Check if this is a SAF URI (content scheme) that needs to be copied to a file URI
+      if (fileUri.startsWith('content://')) {
+        try {
+          // Read the file content from SAF
+          const fileContent = await FileSystem.StorageAccessFramework.readAsStringAsync(fileUri, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+
+          // Create a temporary file in the app's cache directory (better for temp files)
+          const tempFileUri = `${FileSystem.cacheDirectory}${fileName}`;
+          await FileSystem.writeAsStringAsync(tempFileUri, fileContent, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+
+          shareUri = tempFileUri;
+
+          // Share the temporary file
+          await Sharing.shareAsync(shareUri, {
+            mimeType: 'application/octet-stream',
+            dialogTitle: 'Share Backup File',
+          });
+
+          // Clean up the temporary file after a delay to ensure sharing is complete
+          setTimeout(async () => {
+            try {
+              await FileSystem.deleteAsync(tempFileUri, { idempotent: true });
+            } catch (error) {
+              // Ignore cleanup errors
+              console.log('Could not clean up temp file:', error);
+            }
+          }, 30000); // 30 second delay
+          return;
+        } catch (copyError) {
+          console.error('Error copying SAF file for sharing:', copyError);
+          this.showAlert('Share Failed', 'Failed to prepare file for sharing.');
+          return;
+        }
+      }
+
+      // For regular file URIs, share directly
+      await Sharing.shareAsync(shareUri, {
         mimeType: 'application/octet-stream',
         dialogTitle: 'Share Backup File',
       });
@@ -323,13 +365,22 @@ export class BackupService {
         return { success: false };
       }
 
-      // Show progress (non-dismissible alert)
-      this.showAlert('Exporting...', 'Please wait while we prepare your backup.', []);
+      // Show initial progress
+      this.updateProgressAlert('Starting export... 0%');
 
-      // Collect data based on export type
-      const records = exportType === 'today' 
-        ? await this.collectDatabaseDataForDate(new Date())
-        : await this.collectDatabaseData();
+      // Step 1: Collect data with granular progress updates
+      this.updateProgressAlert('Loading customers... 10%');
+      const customers = await DatabaseService.getAllCustomers();
+      
+      this.updateProgressAlert('Loading transactions... 30%');
+      const transactions = await DatabaseService.getAllTransactions();
+      
+      this.updateProgressAlert('Loading ledger... 50%');
+      const ledger = await DatabaseService.getAllLedgerEntries();
+      
+      const records = { customers, transactions, ledger };
+      
+      this.updateProgressAlert('Preparing backup data... 60%');
       const deviceId = await this.getDeviceId();
 
       const backupData: BackupData = {
@@ -343,29 +394,31 @@ export class BackupService {
         records,
       };
 
+      this.updateProgressAlert('Creating zip file... 70%');
       // Create zip file
       const zip = new JSZip();
       zip.file('backup.json', JSON.stringify(backupData, null, 2));
       const zipBlob = await zip.generateAsync({ type: 'arraybuffer' });
 
+      this.updateProgressAlert('Encrypting data... 80%');
       // Encrypt zip
       const encrypted = await EncryptionService.encryptZip(zipBlob, key);
 
+      this.updateProgressAlert('Saving file... 90%');
       // Create file using SAF in root directory
       const dateStr = new Date().toISOString().split('T')[0];
-      const fileName = exportType === 'today' 
+      const fileName = exportType === 'today'
         ? `export_${dateStr}.encrypted`
-        : 'export.encrypted';
+        : `export_all_${dateStr}.encrypted`;
 
-      // Delete existing export file if it exists
+      // Delete existing export files (any file starting with "export_")
       try {
         const directoryContents = await FileSystem.StorageAccessFramework.readDirectoryAsync(safDirectoryUri);
         for (const uri of directoryContents) {
           // Extract filename from URI (SAF URIs end with :filename)
           const fileNameFromUri = uri.split(':').pop();
-          if (fileNameFromUri === fileName) {
+          if (fileNameFromUri && fileNameFromUri.startsWith('export_')) {
             await FileSystem.StorageAccessFramework.deleteAsync(uri);
-            break;
           }
         }
       } catch (error) {
@@ -423,15 +476,18 @@ export class BackupService {
         return false;
       }
 
-      this.showAlert('Importing...', 'Please wait while we restore your backup.', []);
+      this.updateImportProgressAlert('Starting import... 0%');
 
       // Read encrypted file
+      this.updateImportProgressAlert('Reading backup file... 20%');
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
 
       // Decrypt zip
+      this.updateImportProgressAlert('Decrypting data... 40%');
       const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
 
       // Extract zip
+      this.updateImportProgressAlert('Extracting files... 60%');
       const zip = await JSZip.loadAsync(decryptedZipBuffer);
       const backupJson = await zip.file('backup.json')?.async('string');
       if (!backupJson) {
@@ -440,10 +496,14 @@ export class BackupService {
       const decryptedData: BackupData = JSON.parse(backupJson);
 
       // Get current device ID
+      this.updateImportProgressAlert('Preparing data... 70%');
       const currentDeviceId = await this.getDeviceId();
 
       // Perform conflict-free merge
+      this.updateImportProgressAlert('Merging data... 90%');
       await this.mergeData(decryptedData, currentDeviceId);
+
+      this.updateImportProgressAlert('Import complete! 100%');
 
       await this.logAction(
         `Import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
@@ -487,18 +547,21 @@ export class BackupService {
         return false;
       }
 
-      this.showAlert('Importing...', 'Please wait while we restore your backup.', []);
+      this.updateImportProgressAlert('Starting import... 0%');
 
       // Read encrypted file using SAF
+      this.updateImportProgressAlert('Reading backup file... 20%');
       const fileContent = await FileSystem.StorageAccessFramework.readAsStringAsync(
         fileUri,
         { encoding: FileSystem.EncodingType.UTF8 }
       );
 
       // Decrypt zip
+      this.updateImportProgressAlert('Decrypting data... 40%');
       const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
 
       // Extract zip
+      this.updateImportProgressAlert('Extracting files... 60%');
       const zip = await JSZip.loadAsync(decryptedZipBuffer);
       const backupJson = await zip.file('backup.json')?.async('string');
       if (!backupJson) {
@@ -507,10 +570,14 @@ export class BackupService {
       const decryptedData: BackupData = JSON.parse(backupJson);
 
       // Get current device ID
+      this.updateImportProgressAlert('Preparing data... 70%');
       const currentDeviceId = await this.getDeviceId();
 
       // Perform conflict-free merge
+      this.updateImportProgressAlert('Merging data... 90%');
       await this.mergeData(decryptedData, currentDeviceId);
+
+      this.updateImportProgressAlert('Import complete! 100%');
 
       await this.logAction(
         `SAF import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
@@ -929,5 +996,19 @@ export class BackupService {
       this.showAlert('Error', 'Failed to select backup location.');
       return false;
     }
+  }
+
+  /**
+   * Update progress alert message
+   */
+  private static updateProgressAlert(message: string): void {
+    this.showAlert('Exporting...', message, []);
+  }
+
+  /**
+   * Update import progress alert message
+   */
+  private static updateImportProgressAlert(message: string): void {
+    this.showAlert('Importing...', message, []);
   }
 }

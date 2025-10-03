@@ -1,7 +1,8 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, StyleSheet, ScrollView, BackHandler } from 'react-native';
 import { Surface, Text, Switch, Divider, List, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as SecureStore from 'expo-secure-store';
 import { theme } from '../theme';
@@ -70,6 +71,22 @@ export const SettingsScreen: React.FC = () => {
 
     checkSettings();
   }, []);
+
+  // Handle hardware back button - navigate to home screen
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigateToTabs();
+        return true; // Prevent default back behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, [navigateToTabs])
+  );
 
   // Helper function to show encryption key dialog and get user input
   const promptForEncryptionKey = (mode: 'setup' | 'confirm' | 'enter'): Promise<string | null> => {
@@ -490,6 +507,14 @@ export const SettingsScreen: React.FC = () => {
             try {
               const success = await DatabaseService.clearAllData();
               if (success) {
+                // Reload data after clearing
+                const [customersData, inventoryData] = await Promise.all([
+                  DatabaseService.getAllCustomers(),
+                  DatabaseService.getBaseInventory()
+                ]);
+                setCustomers(customersData);
+                setBaseInventory(inventoryData);
+                
                 showAlert(
                   'Success',
                   'All data has been cleared successfully.',
@@ -662,7 +687,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="0.5.0"
+            description="0.6.1"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}

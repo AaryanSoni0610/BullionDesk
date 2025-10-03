@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Image, ScrollView, RefreshControl, FlatList } from 'react-native';
+import { View, StyleSheet, Image, ScrollView, RefreshControl, FlatList, BackHandler } from 'react-native';
 import { Surface, Text, List, FAB, Card, Chip, Button, ActivityIndicator, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatRelativeDate } from '../utils/formatting';
@@ -20,6 +21,21 @@ export const HomeScreen: React.FC = () => {
   useEffect(() => {
     loadRecentTransactions();
   }, []);
+
+  // Handle hardware back button - minimize app on Home screen
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        // Return true to prevent default back behavior (which would exit app)
+        // This effectively minimizes the app
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => subscription.remove();
+    }, [])
+  );
 
   const loadRecentTransactions = async (refresh = false) => {
     try {

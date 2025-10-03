@@ -4,7 +4,8 @@ import {
   StyleSheet, 
   ScrollView, 
   FlatList, 
-  TouchableOpacity
+  TouchableOpacity,
+  BackHandler
 } from 'react-native';
 import {
   Surface,
@@ -18,6 +19,7 @@ import {
   IconButton
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -39,7 +41,8 @@ export const HistoryScreen: React.FC = () => {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'last7days' | 'last30days' | 'custom'>('today');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { navigateToSettings, loadTransactionForEdit } = useAppContext();
+  const { navigateToSettings, loadTransactionForEdit, navigateToTabs } = useAppContext();
+  const navigation = useNavigation();
   
   type AlertButton = {
     text: string;
@@ -68,7 +71,7 @@ export const HistoryScreen: React.FC = () => {
     if (!transaction.lastUpdatedAt) return false;
     
     const timeSinceUpdate = Date.now() - new Date(transaction.lastUpdatedAt).getTime();
-    const isOld = timeSinceUpdate > (1 * 60 * 1000); // 1 minute
+    const isOld = timeSinceUpdate > (24 * 60 * 60 * 1000); // 24 hours
     
     // Check if transaction is fully settled (no remaining balance)
     const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
@@ -307,6 +310,23 @@ export const HistoryScreen: React.FC = () => {
       performSearch(searchQuery);
     }
   }, [selectedFilter, transactions.length]);
+
+  // Handle hardware back button - navigate to home screen
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        // Navigate to Home tab within the tab navigator
+        (navigation as any).navigate('Home');
+        return true; // Prevent default back behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, [navigation])
+  );
 
   const getAmountColor = (transaction: Transaction) => {
     // Blue for Given (purchase), Green for Received (sell)

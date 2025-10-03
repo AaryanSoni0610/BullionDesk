@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform, BackHandler } from 'react-native';
 import {
   Surface,
   Text,
@@ -12,6 +12,7 @@ import {
   IconButton
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -79,7 +80,8 @@ export const LedgerScreen: React.FC = () => {
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
-  const { navigateToSettings } = useAppContext();
+  const { navigateToSettings, navigateToTabs } = useAppContext();
+  const navigation = useNavigation();
 
   // Format date for display in DD/MM/YYYY format
   const formatDateDisplay = (date: Date): string => {
@@ -121,6 +123,23 @@ export const LedgerScreen: React.FC = () => {
     const subscription = Dimensions.addEventListener('change', updateLayout);
     return () => subscription?.remove();
   }, []);
+
+  // Handle hardware back button - navigate to home screen
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        // Navigate to Home tab within the tab navigator
+        (navigation as any).navigate('Home');
+        return true; // Prevent default back behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, [navigation])
+  );
 
   const loadInventoryData = async (refresh = false) => {
     try {
@@ -891,7 +910,7 @@ const styles = StyleSheet.create({
   filterContainer: {
     flexGrow: 0,
     flexShrink: 0,
-    marginVertical: theme.spacing.md,
+    marginTop: theme.spacing.md,
   },
   inventoryChipsContainer: {
     flexGrow: 0,

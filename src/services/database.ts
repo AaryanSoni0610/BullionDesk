@@ -13,16 +13,40 @@ const STORAGE_KEYS = {
   LAST_BACKUP_TIME: '@bulliondesk_last_backup_time',
 };
 
+// Simple in-memory cache for performance optimization
+let customersCache: Customer[] | null = null;
+let transactionsCache: Transaction[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 300000; // 5 minutes
+
 export class DatabaseService {
+  // Cache management
+  static clearCache() {
+    customersCache = null;
+    transactionsCache = null;
+    cacheTimestamp = 0;
+  }
+
   // Customer operations
   static async getAllCustomers(): Promise<Customer[]> {
     try {
+      // Check cache first
+      const now = Date.now();
+      if (customersCache !== null && (now - cacheTimestamp) < CACHE_DURATION) {
+        return [...customersCache];
+      }
+
       const customersJson = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMERS);
       const customers: Customer[] = customersJson ? JSON.parse(customersJson) : [];
+      
       // Ensure all customer names are trimmed
-      return customers.map(customer => ({ ...customer, name: customer.name.trim() }));
+      customersCache = customers.map(customer => ({ ...customer, name: customer.name.trim() }));
+      cacheTimestamp = now;
+      
+      return [...customersCache];
     } catch (error) {
       console.error('Error getting customers:', error);
+      customersCache = [];
       return [];
     }
   }
@@ -42,6 +66,10 @@ export class DatabaseService {
       }
       
       await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+      
+      // Clear cache since data has changed
+      this.clearCache();
+      
       return true;
     } catch (error) {
       console.error('Error saving customer:', error);
@@ -170,10 +198,21 @@ export class DatabaseService {
   // Transaction operations
   static async getAllTransactions(): Promise<Transaction[]> {
     try {
+      // Check cache first
+      const now = Date.now();
+      if (transactionsCache !== null && (now - cacheTimestamp) < CACHE_DURATION) {
+        return [...transactionsCache]; // Return a copy to prevent external mutations
+      }
+
       const transactionsJson = await AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      return transactionsJson ? JSON.parse(transactionsJson) : [];
+      const transactions = transactionsJson ? JSON.parse(transactionsJson) : [];
+      transactionsCache = transactions;
+      cacheTimestamp = now;
+      
+      return [...transactions];
     } catch (error) {
       console.error('Error getting transactions:', error);
+      transactionsCache = [];
       return [];
     }
   }
@@ -214,6 +253,7 @@ export class DatabaseService {
       let transaction: Transaction;
       let lastToLastGivenMoney = 0;
       let previousAmountPaid = 0;
+      let oldBalanceEffect = 0;
 
       if (isUpdate) {
         // UPDATE existing transaction
@@ -227,9 +267,19 @@ export class DatabaseService {
         const existingTransaction = transactions[existingIndex];
         previousAmountPaid = existingTransaction.lastGivenMoney;
         
+        // Calculate old transaction's balance effect (only for non-metal-only transactions)
+        const isOldMetalOnly = existingTransaction.entries.some((entry: TransactionEntry) => entry.metalOnly === true);
+        if (!isOldMetalOnly) {
+          const oldNetAmount = existingTransaction.total;
+          const oldReceivedAmount = existingTransaction.amountPaid;
+          oldBalanceEffect = oldNetAmount >= 0 
+            ? oldReceivedAmount - oldNetAmount           // SELL: customer payment reduces customer debt
+            : Math.abs(oldNetAmount) - oldReceivedAmount; // PURCHASE: merchant payment reduces merchant debt
+        }
+        
         // REVERSE old metal balances from previous transaction state
         // This is crucial when entries change from metal-only to regular transactions
-        if (existingTransaction.entries.some(entry => entry.metalOnly === true)) {
+        if (existingTransaction.entries.some((entry: TransactionEntry) => entry.metalOnly === true)) {
           
           existingTransaction.entries.forEach(oldEntry => {
             if (oldEntry.metalOnly && oldEntry.type !== 'money') {
@@ -280,6 +330,7 @@ export class DatabaseService {
 
         transactions[existingIndex] = transaction;
         await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+        this.clearCache();
       } else {
         // CREATE new transaction
         const transactionId = `txn_${Date.now()}`;
@@ -313,6 +364,7 @@ export class DatabaseService {
         const transactions = await this.getAllTransactions();
         transactions.push(transaction);
         await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+        this.clearCache();
       }
 
       // Calculate the delta amount for ledger entry
@@ -324,12 +376,19 @@ export class DatabaseService {
       }
 
       // Check if any entry is metal-only
-      const isMetalOnly = entries.some(entry => entry.metalOnly === true);
+      const isMetalOnly = entries.some((entry: TransactionEntry) => entry.metalOnly === true);
 
       // Update customer balance based on transaction type
+      let newBalance = customer.balance;
+      if (!isMetalOnly) {
+        // For regular transactions: reverse old effect and apply new effect
+        newBalance = customer.balance - oldBalanceEffect + finalBalance;
+      }
+      // For metal-only transactions: balance remains unchanged (only metal balances are affected)
+
       const updatedCustomer: Customer = {
         ...customer,
-        balance: isMetalOnly ? customer.balance : customer.balance + finalBalance,
+        balance: newBalance,
         lastTransaction: now,
         metalBalances: customer.metalBalances || {},
       };
@@ -510,6 +569,7 @@ export class DatabaseService {
       if (data.baseInventory) {
         await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(data.baseInventory));
       }
+      this.clearCache();
       return true;
     } catch (error) {
       console.error('Error importing data:', error);
@@ -611,13 +671,25 @@ export class DatabaseService {
       const transactions = await this.getAllTransactions();
       const ledgerEntries = await this.getAllLedgerEntries();
 
+      // Clear all main data storage keys
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.CUSTOMERS,
         STORAGE_KEYS.TRANSACTIONS,
         STORAGE_KEYS.LEDGER,
         STORAGE_KEYS.LAST_TRANSACTION_ID,
         // Note: BASE_INVENTORY is preserved - inventory will reset to base values
+        // Note: AUTO_BACKUP_ENABLED, STORAGE_PERMISSION_GRANTED, LAST_BACKUP_TIME are preserved
       ]);
+
+      // Clear device ID from secure store
+      try {
+        await SecureStore.deleteItemAsync('device_id');
+      } catch (error) {
+        // Ignore if device_id doesn't exist
+      }
+
+      // Clear in-memory cache
+      this.clearCache();
 
       // Verify clearing worked
       const customersAfter = await this.getAllCustomers();
@@ -690,6 +762,7 @@ export class DatabaseService {
       // Remove the transaction
       const filteredTransactions = transactions.filter(t => t.id !== transactionId);
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filteredTransactions));
+      this.clearCache();
 
       return { success: true };
     } catch (error) {

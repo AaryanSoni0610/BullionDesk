@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, StyleSheet, ScrollView, Image, BackHandler } from 'react-native';
 import {
   Surface,
   Text,
@@ -14,6 +14,7 @@ import {
   RadioButton,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { formatWeight, formatMoney, formatPureGold, formatPureSilver } from '../utils/formatting';
@@ -51,6 +52,22 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       onBack();
     }
   };
+
+  // Handle hardware back button - same as UI back button
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        handleBack();
+        return true; // Prevent default back behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, [existingEntries.length, onNavigateToSummary, onBack])
+  );
   
   // Determine available transaction types
   const getAvailableTransactionTypes = () => {

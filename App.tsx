@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Platform } from 'react-native';
 import * as SystemUI from 'expo-system-ui';
+import * as NavigationBar from 'expo-navigation-bar';
 import { PaperProvider, FAB, Snackbar } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -220,7 +221,7 @@ const AppContent: React.FC<AppContentProps> = ({
             onDismiss={() => setAlertVisible(false)}
           />
 
-          <StatusBar style="auto" />
+          <StatusBar style="dark" backgroundColor="#FAFAFA" />
         </NavigationContainer>
       </PaperProvider>
     </SafeAreaProvider>
@@ -245,6 +246,15 @@ export default function App() {
   // Initialize services on app start
   React.useEffect(() => {
     const initializeServices = async () => {
+      // Configure system UI for better notification panel visibility
+      try {
+        // Don't set system UI background to prevent notification panel issues
+        // Let the system handle the notification panel appearance naturally
+      } catch (error) {
+        // Ignore errors if system UI is not available
+        console.error('Failed to configure system UI:', error);
+      }
+
       // Initialize notifications
       await NotificationService.initialize();
 

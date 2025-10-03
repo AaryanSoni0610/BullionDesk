@@ -1,8 +1,9 @@
 import * as FileSystem from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
-import * as Sharing from 'expo-sharing';
 import * as Device from 'expo-device';
 import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Platform } from 'react-native';
 import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
@@ -13,8 +14,10 @@ const SECURE_STORE_KEYS = {
   DEVICE_ID: 'device_id',
   AUTO_BACKUP_ENABLED: 'auto_backup_enabled',
   LAST_BACKUP_TIME: 'last_backup_time',
-  FIRST_LAUNCH_DONE: 'first_launch_done',
   STORAGE_PERMISSION_GRANTED: 'storage_permission_granted',
+  SAF_DIRECTORY_URI: 'saf_directory_uri',
+  FIRST_EXPORT_OR_AUTO_BACKUP: 'first_export_or_auto_backup',
+  BACKUP_LOG_FILE_URI: 'backup_log_file_uri',
 };
 
 interface BackupData {
@@ -29,11 +32,25 @@ interface BackupData {
   };
 }
 
+type AlertFunction = (title: string, message: string, buttons?: any[]) => void;
+
 export class BackupService {
-  private static readonly BASE_DIR = `${FileSystem.documentDirectory}BullionDeskBackup`;
-  private static readonly EXPORTS_DIR = `${this.BASE_DIR}/Exports`;
-  private static readonly AUTO_DIR = `${this.BASE_DIR}/Auto`;
-  private static readonly LOGS_DIR = `${this.BASE_DIR}/logs`;
+  // Static alert function that can be overridden
+  private static alertFunction: AlertFunction = Alert.alert;
+
+  /**
+   * Set custom alert function (for using CustomAlert component)
+   */
+  static setAlertFunction(alertFunc: AlertFunction): void {
+    this.alertFunction = alertFunc;
+  }
+
+  /**
+   * Show alert using configured alert function
+   */
+  private static showAlert(title: string, message: string, buttons?: any[]): void {
+    this.alertFunction(title, message, buttons);
+  }
 
   /**
    * Request storage permissions (Android)
@@ -61,7 +78,6 @@ export class BackupService {
       }
 
       if (finalStatus !== 'granted') {
-        console.log('Storage permission denied');
         await DatabaseService.setStoragePermissionGranted(false);
         return false;
       }
@@ -76,7 +92,6 @@ export class BackupService {
         
         // If successful, store permission granted
         await DatabaseService.setStoragePermissionGranted(true);
-        console.log('✅ Storage permission granted');
         return true;
       } catch (dirError) {
         console.error('Directory creation error:', dirError);
@@ -98,100 +113,6 @@ export class BackupService {
       return await DatabaseService.getStoragePermissionGranted();
     } catch (error) {
       return false;
-    }
-  }
-
-  /**
-   * Initialize backup directory structure
-   */
-  static async initializeDirectories(): Promise<boolean> {
-    try {
-      const hasPermission = await this.hasStoragePermission();
-      if (!hasPermission) {
-        const granted = await this.requestStoragePermission();
-        if (!granted) {
-          return false;
-        }
-      }
-
-      // Check if base directory exists
-      const baseInfo = await FileSystem.getInfoAsync(this.BASE_DIR);
-      if (!baseInfo.exists) {
-        await FileSystem.makeDirectoryAsync(this.BASE_DIR, { intermediates: true });
-        await this.logAction('Created base directory');
-      }
-
-      // Create subdirectories
-      const dirs = [this.EXPORTS_DIR, this.AUTO_DIR, this.LOGS_DIR];
-      for (const dir of dirs) {
-        const dirInfo = await FileSystem.getInfoAsync(dir);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-          await this.logAction(`Created directory: ${dir}`);
-        }
-      }
-
-      console.log('✅ Backup directories initialized');
-      return true;
-    } catch (error) {
-      console.error('Error initializing directories:', error);
-      await this.logAction(`Error initializing directories: ${error}`);
-      return false;
-    }
-  }
-
-  /**
-   * Check if this is the first launch
-   */
-  static async isFirstLaunch(): Promise<boolean> {
-    try {
-      const firstLaunchDone = await DatabaseService.getFirstLaunchSetup();
-      return !firstLaunchDone;
-    } catch (error) {
-      return true;
-    }
-  }
-
-  /**
-   * Mark first launch as complete
-   */
-  static async markFirstLaunchDone(): Promise<void> {
-    try {
-      const success = await DatabaseService.setFirstLaunchSetup(true);
-      if (!success) {
-        console.error('Failed to mark first launch as done');
-      }
-    } catch (error) {
-      console.error('Error marking first launch done:', error);
-    }
-  }
-
-  /**
-   * First launch setup - just request storage permission
-   * User can enable auto backup from Settings
-   */
-  static async firstLaunchSetup(): Promise<void> {
-    try {
-      console.log('🔵 First launch setup - requesting storage permission...');
-      
-      // Request storage permission for manual export/import
-      const hasPermission = await this.requestStoragePermission();
-      
-      if (hasPermission) {
-        console.log('🔵 Storage permission granted');
-        // Initialize directories
-        await this.initializeDirectories();
-      } else {
-        console.log('🔵 Storage permission denied');
-      }
-      
-      // Mark first launch as done
-      await this.markFirstLaunchDone();
-      console.log('🔵 First launch setup complete');
-    } catch (error) {
-      console.error('Error in first launch setup:', error);
-      // Mark as done anyway to avoid showing again
-      await this.markFirstLaunchDone();
     }
   }
 
@@ -234,9 +155,7 @@ export class BackupService {
     try {
       const hasKey = await this.hasEncryptionKey();
       if (hasKey) {
-        console.log('🔑 Encryption key already exists');
       } else {
-        console.log('🔑 No encryption key found');
       }
       return hasKey;
     } catch (error) {
@@ -258,6 +177,76 @@ export class BackupService {
   }
 
   /**
+   * Get SAF directory URI from secure storage
+   */
+  static async getSAFDirectoryUri(): Promise<string | null> {
+    try {
+      return await SecureStore.getItemAsync(SECURE_STORE_KEYS.SAF_DIRECTORY_URI);
+    } catch (error) {
+      console.error('Error getting SAF directory URI:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Set SAF directory URI in secure storage
+   */
+  static async setSAFDirectoryUri(uri: string): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(SECURE_STORE_KEYS.SAF_DIRECTORY_URI, uri);
+    } catch (error) {
+      console.error('Error setting SAF directory URI:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if this is the first export or auto backup
+   */
+  static async isFirstExportOrAutoBackup(): Promise<boolean> {
+    try {
+      const flag = await SecureStore.getItemAsync(SECURE_STORE_KEYS.FIRST_EXPORT_OR_AUTO_BACKUP);
+      return flag !== 'done';
+    } catch (error) {
+      console.error('Error checking first export/auto backup flag:', error);
+      return true; // Default to true if error
+    }
+  }
+
+  /**
+   * Mark that first export or auto backup has been completed
+   */
+  static async markFirstExportOrAutoBackupDone(): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(SECURE_STORE_KEYS.FIRST_EXPORT_OR_AUTO_BACKUP, 'done');
+    } catch (error) {
+      console.error('Error setting first export/auto backup flag:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Share an exported file
+   */
+  static async shareExportedFile(fileUri: string, fileName: string): Promise<void> {
+    try {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        this.showAlert('Sharing Not Available', 'Sharing is not available on this device.');
+        return;
+      }
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/octet-stream',
+        dialogTitle: 'Share Backup File',
+      });
+    } catch (error) {
+      console.error('Error sharing file:', error);
+      this.showAlert('Share Failed', 'Failed to share the backup file.');
+    }
+  }
+
+  /**
    * Collect all data from database
    */
   private static async collectDatabaseData(): Promise<BackupData['records']> {
@@ -273,49 +262,74 @@ export class BackupService {
   }
 
   /**
-   * Manual export
+   * Collect data from database for a specific date
    */
-  static async exportData(): Promise<boolean> {
+  private static async collectDatabaseDataForDate(targetDate: Date): Promise<BackupData['records']> {
+    const customers = await DatabaseService.getAllCustomers();
+    const allTransactions = await DatabaseService.getAllTransactions();
+    const allLedger = await DatabaseService.getAllLedgerEntries();
+
+    // Filter transactions for the target date
+    const targetDateString = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const transactions = allTransactions.filter(transaction => {
+      return transaction.date === targetDateString;
+    });
+
+    // Filter ledger entries for transactions from the target date
+    const transactionIds = new Set(transactions.map(t => t.id));
+    const ledger = allLedger.filter(entry => transactionIds.has(entry.transactionId));
+
+    return {
+      customers,
+      transactions,
+      ledger,
+    };
+  }
+
+  /**
+   * Manual export to user-accessible storage using SAF
+   */
+  static async exportDataToUserStorage(exportType: 'today' | 'all' = 'all'): Promise<{ success: boolean; fileUri?: string; fileName?: string }> {
     try {
-      console.log('📤 Starting export...');
-      
-      // Check storage permission first
-      const hasPermission = await this.hasStoragePermission();
-      if (!hasPermission) {
-        console.log('📤 No storage permission, requesting...');
-        const granted = await this.requestStoragePermission();
-        if (!granted) {
-          Alert.alert(
-            'Permission Required',
-            'Storage permission is required to export data. Please grant permission to continue.',
-            [{ text: 'OK' }]
-          );
-          return false;
+
+      // Check if this is the first export/auto backup
+      const isFirstTime = await this.isFirstExportOrAutoBackup();
+      if (isFirstTime) {
+        // Request directory permissions using SAF FIRST
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+
+        if (!permissions.granted) {
+          this.showAlert('Permission Denied', 'Cannot access storage location.');
+          return { success: false };
         }
+
+        // Save the directory URI for future use
+        await this.setSAFDirectoryUri(permissions.directoryUri);
+        // Mark first export/auto backup as done
+        await this.markFirstExportOrAutoBackupDone();
       }
 
-      // Initialize directories
-      console.log('📤 Initializing directories...');
-      const dirsReady = await this.initializeDirectories();
-      if (!dirsReady) {
-        Alert.alert('Error', 'Failed to create backup directories.');
-        return false;
-      }
-
-      // Get encryption key (should be set by UI before calling this)
-      console.log('📤 Getting encryption key...');
+      // Get encryption key
       const key = await this.getEncryptionKey();
       if (!key) {
-        Alert.alert('Error', 'Encryption key not found. Please set up encryption first.');
-        return false;
+        this.showAlert('Error', 'Encryption key not found. Please set up encryption first.');
+        return { success: false };
       }
 
-      // Show progress
-      Alert.alert('Exporting...', 'Please wait while we prepare your backup.');
+      // Get saved directory URI (should exist now)
+      const safDirectoryUri = await this.getSAFDirectoryUri();
+      if (!safDirectoryUri) {
+        this.showAlert('Error', 'No backup location configured. Please try again.');
+        return { success: false };
+      }
 
-      // Collect data
-      console.log('📤 Collecting database data...');
-      const records = await this.collectDatabaseData();
+      // Show progress (non-dismissible alert)
+      this.showAlert('Exporting...', 'Please wait while we prepare your backup.', []);
+
+      // Collect data based on export type
+      const records = exportType === 'today' 
+        ? await this.collectDatabaseDataForDate(new Date())
+        : await this.collectDatabaseData();
       const deviceId = await this.getDeviceId();
 
       const backupData: BackupData = {
@@ -330,55 +344,55 @@ export class BackupService {
       };
 
       // Create zip file
-      console.log('📤 Creating zip file...');
       const zip = new JSZip();
       zip.file('backup.json', JSON.stringify(backupData, null, 2));
       const zipBlob = await zip.generateAsync({ type: 'arraybuffer' });
 
       // Encrypt zip
-      console.log('📤 Encrypting zip...');
       const encrypted = await EncryptionService.encryptZip(zipBlob, key);
 
-      // Delete previous export file
-      const exportPath = `${this.EXPORTS_DIR}/export.encrypted`;
-      const fileInfo = await FileSystem.getInfoAsync(exportPath);
-      if (fileInfo.exists) {
-        await FileSystem.deleteAsync(exportPath);
+      // Create file using SAF in root directory
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileName = exportType === 'today' 
+        ? `export_${dateStr}.encrypted`
+        : 'export.encrypted';
+
+      // Delete existing export file if it exists
+      try {
+        const directoryContents = await FileSystem.StorageAccessFramework.readDirectoryAsync(safDirectoryUri);
+        for (const uri of directoryContents) {
+          // Extract filename from URI (SAF URIs end with :filename)
+          const fileNameFromUri = uri.split(':').pop();
+          if (fileNameFromUri === fileName) {
+            await FileSystem.StorageAccessFramework.deleteAsync(uri);
+            break;
+          }
+        }
+      } catch (error) {
+        // Ignore errors when trying to delete - file might not exist
       }
 
-      // Save encrypted file
-      console.log('📤 Saving encrypted file...');
-      await FileSystem.writeAsStringAsync(exportPath, encrypted);
+      const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        safDirectoryUri,
+        fileName,
+        'application/octet-stream'
+      );
 
-      await this.logAction(`Manual export completed: ${backupData.recordCount} records`);
-      console.log('📤 Export completed successfully!');
+      // Write encrypted data using SAF
+      await FileSystem.StorageAccessFramework.writeAsStringAsync(
+        fileUri,
+        encrypted,
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
 
-      // Share file
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        Alert.alert('Export Complete', 'Your backup is ready to share.', [
-          {
-            text: 'Share',
-            onPress: async () => {
-              await Sharing.shareAsync(exportPath);
-            },
-          },
-          { text: 'Done', style: 'cancel' },
-        ]);
-      } else {
-        Alert.alert(
-          'Export Complete',
-          `Backup saved at:\n${exportPath}`,
-          [{ text: 'OK' }]
-        );
-      }
+      await this.logAction(`SAF export completed: ${backupData.recordCount} records, file: ${fileName}`);
 
-      return true;
+      return { success: true, fileUri, fileName };
     } catch (error) {
-      console.error('📤 Export error:', error);
-      await this.logAction(`Export error: ${error}`);
-      Alert.alert('Export Failed', 'Failed to export data. Please try again.');
-      return false;
+      console.error('📤 SAF export error:', error);
+      await this.logAction(`SAF export error: ${error}`);
+      this.showAlert('Export Failed', 'Failed to export data. Please try again.');
+      return { success: false };
     }
   }
 
@@ -387,15 +401,13 @@ export class BackupService {
    */
   static async importData(fileUri: string): Promise<boolean> {
     try {
-      console.log('📥 Starting import...');
       
       // Check storage permission first
       const hasPermission = await this.hasStoragePermission();
       if (!hasPermission) {
-        console.log('📥 No storage permission, requesting...');
         const granted = await this.requestStoragePermission();
         if (!granted) {
-          Alert.alert(
+          this.showAlert(
             'Permission Required',
             'Storage permission is required to import data. Please grant permission to continue.',
             [{ text: 'OK' }]
@@ -404,30 +416,22 @@ export class BackupService {
         }
       }
 
-      // Initialize directories
-      console.log('📥 Initializing directories...');
-      await this.initializeDirectories();
-
       // Get encryption key (should be set by UI before calling this)
-      console.log('📥 Getting encryption key...');
       const key = await this.getEncryptionKey();
       if (!key) {
-        Alert.alert('Error', 'Encryption key not found. Please set up encryption first.');
+        this.showAlert('Error', 'Encryption key not found. Please set up encryption first.');
         return false;
       }
 
-      Alert.alert('Importing...', 'Please wait while we restore your backup.');
+      this.showAlert('Importing...', 'Please wait while we restore your backup.', []);
 
       // Read encrypted file
-      console.log('📥 Reading encrypted file...');
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
 
       // Decrypt zip
-      console.log('📥 Decrypting zip...');
       const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
 
       // Extract zip
-      console.log('📥 Extracting zip...');
       const zip = await JSZip.loadAsync(decryptedZipBuffer);
       const backupJson = await zip.file('backup.json')?.async('string');
       if (!backupJson) {
@@ -439,15 +443,13 @@ export class BackupService {
       const currentDeviceId = await this.getDeviceId();
 
       // Perform conflict-free merge
-      console.log('📥 Merging data...');
       await this.mergeData(decryptedData, currentDeviceId);
 
       await this.logAction(
         `Import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
       );
-      console.log('📥 Import completed successfully!');
 
-      Alert.alert(
+      this.showAlert(
         'Import Successful',
         `Imported ${decryptedData.recordCount} records successfully.`,
         [{ text: 'OK' }]
@@ -459,15 +461,82 @@ export class BackupService {
       await this.logAction(`Import error: ${error}`);
       
       if (error instanceof Error && error.message.includes('decrypt')) {
-        Alert.alert(
+        this.showAlert(
           'Import Failed',
           'Invalid encryption key or corrupted backup file.',
           [{ text: 'OK' }]
         );
       } else {
-        Alert.alert('Import Failed', 'Failed to import data. Please try again.');
+        this.showAlert('Import Failed', 'Failed to import data. Please try again.');
       }
       
+      return false;
+    }
+  }
+
+  /**
+   * Import from SAF URI
+   */
+  static async importDataFromSAF(fileUri: string): Promise<boolean> {
+    try {
+
+      // Get encryption key
+      const key = await this.getEncryptionKey();
+      if (!key) {
+        this.showAlert('Error', 'Encryption key not found. Please set up encryption first.');
+        return false;
+      }
+
+      this.showAlert('Importing...', 'Please wait while we restore your backup.', []);
+
+      // Read encrypted file using SAF
+      const fileContent = await FileSystem.StorageAccessFramework.readAsStringAsync(
+        fileUri,
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
+
+      // Decrypt zip
+      const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
+
+      // Extract zip
+      const zip = await JSZip.loadAsync(decryptedZipBuffer);
+      const backupJson = await zip.file('backup.json')?.async('string');
+      if (!backupJson) {
+        throw new Error('Invalid backup file: missing backup.json');
+      }
+      const decryptedData: BackupData = JSON.parse(backupJson);
+
+      // Get current device ID
+      const currentDeviceId = await this.getDeviceId();
+
+      // Perform conflict-free merge
+      await this.mergeData(decryptedData, currentDeviceId);
+
+      await this.logAction(
+        `SAF import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
+      );
+
+      this.showAlert(
+        'Import Successful',
+        `Imported ${decryptedData.recordCount} records successfully.`,
+        [{ text: 'OK' }]
+      );
+
+      return true;
+    } catch (error) {
+      console.error('📥 SAF import error:', error);
+      await this.logAction(`SAF import error: ${error}`);
+
+      if (error instanceof Error && error.message.includes('decrypt')) {
+        this.showAlert(
+          'Import Failed',
+          'Invalid encryption key or corrupted backup file.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        this.showAlert('Import Failed', 'Failed to import data. Please try again.');
+      }
+
       return false;
     }
   }
@@ -513,23 +582,17 @@ export class BackupService {
         const sameIdExists = existingTransactions.some(
           (t) => t.id === transaction.id
         );
-        
+
         if (sameIdExists) {
           // Rename transaction ID to avoid conflict
-          transaction.id = `${transaction.id}_imported_${Date.now()}`;
+          transaction.id = `${transaction.id}_imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         }
+
+        // Save transaction directly to avoid ID conflicts
+        const allTransactions = await DatabaseService.getAllTransactions();
+        allTransactions.push(transaction);
+        await AsyncStorage.setItem('@bulliondesk_transactions', JSON.stringify(allTransactions));
         
-        // Save transaction (this will also update customer balance)
-        const entries = transaction.entries;
-        const customer = await DatabaseService.getCustomerById(transaction.customerId);
-        if (customer) {
-          await DatabaseService.saveTransaction(
-            customer,
-            entries,
-            transaction.amountPaid,
-            transaction.id
-          );
-        }
       }
     }
 
@@ -537,16 +600,68 @@ export class BackupService {
     const existingLedger = await DatabaseService.getAllLedgerEntries();
     const ledgerMap = new Map(existingLedger.map((l) => [l.id, l]));
 
-    // Note: Ledger entries are typically created with transactions,
-    // but we merge them here to preserve historical data
+    // Save ledger entries that don't exist
     for (const ledgerEntry of records.ledger) {
       if (!ledgerMap.has(ledgerEntry.id)) {
-        // Manually add ledger entry to AsyncStorage
+        // Save ledger entry directly to AsyncStorage
         const allLedger = await DatabaseService.getAllLedgerEntries();
         allLedger.push(ledgerEntry);
-        // We'll need to expose a method to save ledger directly
-        // For now, skip ledger merging as they're recreated with transactions
+        await AsyncStorage.setItem('@bulliondesk_ledger', JSON.stringify(allLedger));
       }
+    }
+
+    // Force inventory recalculation after import
+    await this.recalculateInventoryAfterImport();
+  }
+
+  /**
+   * Recalculate inventory after import to ensure consistency
+   */
+  private static async recalculateInventoryAfterImport(): Promise<void> {
+    try {
+      // Get all transactions and recalculate inventory
+      const allTransactions = await DatabaseService.getAllTransactions();
+      const baseInventory = await DatabaseService.getBaseInventory();
+
+      // Reset to base inventory
+      const currentInventory = { ...baseInventory };
+
+      // Recalculate based on all transactions
+      allTransactions.forEach(trans => {
+        trans.entries.forEach(entry => {
+          if (entry.type === 'sell') {
+            if (entry.itemType === 'rani') {
+              currentInventory.rani -= entry.weight || 0;
+              currentInventory.gold999 -= entry.actualGoldGiven || 0;
+            } else if (entry.weight) {
+              const weight = entry.pureWeight || entry.weight;
+              if (entry.itemType in currentInventory) {
+                currentInventory[entry.itemType as keyof typeof currentInventory] -= weight;
+              }
+            }
+          } else if (entry.type === 'purchase') {
+            if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
+              currentInventory.rupu += entry.weight || 0;
+              currentInventory.silver98 -= entry.silver98Weight || 0;
+              currentInventory.silver -= entry.silverWeight || 0;
+            } else if (entry.weight) {
+              const weight = entry.pureWeight || entry.weight;
+              if (entry.itemType in currentInventory) {
+                currentInventory[entry.itemType as keyof typeof currentInventory] += weight;
+              }
+            }
+          }
+        });
+        // Update money inventory
+        if (trans.total >= 0) {
+          currentInventory.money += trans.amountPaid;
+        } else {
+          currentInventory.money -= trans.amountPaid;
+        }
+      });
+
+    } catch (error) {
+      console.error('Error recalculating inventory after import:', error);
     }
   }
 
@@ -555,18 +670,6 @@ export class BackupService {
    */
   static async performAutoBackup(): Promise<boolean> {
     try {
-      // Check if storage permission is granted
-      const hasPermission = await this.hasStoragePermission();
-      if (!hasPermission) {
-        await this.logAction('Auto backup skipped: No storage permission');
-        return false;
-      }
-
-      const dirsReady = await this.initializeDirectories();
-      if (!dirsReady) {
-        return false;
-      }
-
       const key = await this.getEncryptionKey();
       if (!key) {
         await this.logAction('Auto backup skipped: No encryption key');
@@ -577,6 +680,13 @@ export class BackupService {
       const enabled = await DatabaseService.getAutoBackupEnabled();
       if (!enabled) {
         await this.logAction('Auto backup skipped: Disabled');
+        return false;
+      }
+
+      // Get saved directory URI (should exist now)
+      const safDirectoryUri = await this.getSAFDirectoryUri();
+      if (!safDirectoryUri) {
+        await this.logAction('Auto backup skipped: No external storage location configured');
         return false;
       }
 
@@ -603,29 +713,43 @@ export class BackupService {
       // Encrypt zip
       const encrypted = await EncryptionService.encryptZip(zipBlob, key);
 
-      // Create filename with date and time
-      const now = new Date();
-      const dateStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1)
-        .toString()
-        .padStart(2, '0')}`;
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}-${now
-        .getMinutes()
-        .toString()
-        .padStart(2, '0')}`;
-      const filename = `auto_backup_${dateStr} - ${timeStr}.encrypted`;
-      const backupPath = `${this.AUTO_DIR}/${filename}`;
+      // Use saved SAF directory
 
-      // Save encrypted file
-      await FileSystem.writeAsStringAsync(backupPath, encrypted);
+      const filename = 'autobackup.encrypted';
 
-      // Rotate backups (keep last 2)
-      await this.rotateAutoBackups();
+      // Delete existing auto backup file if it exists
+      try {
+        const directoryContents = await FileSystem.StorageAccessFramework.readDirectoryAsync(safDirectoryUri);
+        for (const uri of directoryContents) {
+          // Extract filename from URI (SAF URIs end with :filename)
+          const fileNameFromUri = uri.split(':').pop();
+          if (fileNameFromUri === filename) {
+            await FileSystem.StorageAccessFramework.deleteAsync(uri);
+            break;
+          }
+        }
+      } catch (error) {
+        // Ignore errors when trying to delete - file might not exist
+      }
+
+      const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        safDirectoryUri,
+        filename,
+        'application/octet-stream'
+      );
+
+      // Write encrypted data using SAF
+      await FileSystem.StorageAccessFramework.writeAsStringAsync(
+        fileUri,
+        encrypted,
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
 
       // Update last backup time
       await DatabaseService.setLastBackupTime(Date.now());
 
       await this.logAction(
-        `Auto backup completed: ${backupData.recordCount} records, file: ${filename}`
+        `Auto backup completed: ${backupData.recordCount} records, file: ${filename} (SAF)`
       );
 
       return true;
@@ -637,44 +761,41 @@ export class BackupService {
   }
 
   /**
-   * Rotate auto backups (keep last 2)
-   */
-  private static async rotateAutoBackups(): Promise<void> {
-    try {
-      const files = await FileSystem.readDirectoryAsync(this.AUTO_DIR);
-      const backupFiles = files
-        .filter((f) => f.startsWith('auto_backup_') && f.endsWith('.encrypted'))
-        .sort()
-        .reverse(); // Most recent first
-
-      // Delete old backups (keep only 2 most recent)
-      if (backupFiles.length > 2) {
-        for (let i = 2; i < backupFiles.length; i++) {
-          const filePath = `${this.AUTO_DIR}/${backupFiles[i]}`;
-          await FileSystem.deleteAsync(filePath);
-          await this.logAction(`Deleted old backup: ${backupFiles[i]}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error rotating backups:', error);
-    }
-  }
-
-  /**
    * Enable/disable auto backup
    */
   static async setAutoBackupEnabled(enabled: boolean): Promise<void> {
-  try {
-    const success = await DatabaseService.setAutoBackupEnabled(enabled);
-    if (!success) {
-      throw new Error('Failed to save auto backup setting');
+    try {
+      const success = await DatabaseService.setAutoBackupEnabled(enabled);
+      if (!success) {
+        throw new Error('Failed to save auto backup setting');
+      }
+
+      // If enabling auto backup, check if we need to set up storage
+      if (enabled) {
+        const isFirstTime = await this.isFirstExportOrAutoBackup();
+        if (isFirstTime) {
+          // First time - request directory permissions
+          const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+
+          if (permissions.granted) {
+            // Save the directory URI for future use
+            await this.setSAFDirectoryUri(permissions.directoryUri);
+            // Mark first export/auto backup as done
+            await this.markFirstExportOrAutoBackupDone();
+          } else {
+            // User denied permission, disable auto backup
+            await DatabaseService.setAutoBackupEnabled(false);
+            throw new Error('Storage permission required for auto backup');
+          }
+        }
+      }
+
+      await this.logAction(`Auto backup ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Error setting auto backup:', error);
+      throw error; // Throw the error so it can be caught in the UI
     }
-    await this.logAction(`Auto backup ${enabled ? 'enabled' : 'disabled'}`);
-  } catch (error) {
-    console.error('Error setting auto backup:', error);
-    throw error; // Throw the error so it can be caught in the UI
   }
-}
 
   /**
    * Check if auto backup is enabled
@@ -693,6 +814,13 @@ export class BackupService {
    */
   static async shouldPerformAutoBackup(): Promise<boolean> {
     try {
+      // First check if first export/auto backup setup is done
+      const isFirstTime = await this.isFirstExportOrAutoBackup();
+      if (isFirstTime) {
+        // Don't perform auto backup until user has set up export/auto backup location
+        return false;
+      }
+
       const lastBackup = await DatabaseService.getLastBackupTime();
       if (!lastBackup) {
         return true;
@@ -708,37 +836,98 @@ export class BackupService {
     }
   }
 
-  /**
-   * Log action to file
-   */
   private static async logAction(message: string): Promise<void> {
     try {
-      // Always log to console
-      console.log(`📝 ${message}`);
-
-      // Ensure logs directory exists before writing
-      const logsDir = this.LOGS_DIR;
-      const logsDirInfo = await FileSystem.getInfoAsync(logsDir);
-      if (!logsDirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(logsDir, { intermediates: true });
+      // Check if SAF directory URI is configured
+      const safDirectoryUri = await this.getSAFDirectoryUri();
+      if (!safDirectoryUri) {
+        // Don't log if no external storage is configured
+        return;
       }
 
       const now = new Date();
       const timestamp = now.toISOString();
       const logMessage = `[${timestamp}] ${message}\n`;
 
-      const logFile = `${logsDir}/backup.log`;
-      const fileInfo = await FileSystem.getInfoAsync(logFile);
+      // Get or create log file URI
+      let logFileUri = await SecureStore.getItemAsync(SECURE_STORE_KEYS.BACKUP_LOG_FILE_URI);
 
-      if (fileInfo.exists) {
-        const existingLog = await FileSystem.readAsStringAsync(logFile);
-        await FileSystem.writeAsStringAsync(logFile, existingLog + logMessage);
+      if (!logFileUri) {
+        // Create new log file in the root SAF directory
+        logFileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+          safDirectoryUri,
+          'logs',
+          'text/plain'
+        );
+        await SecureStore.setItemAsync(SECURE_STORE_KEYS.BACKUP_LOG_FILE_URI, logFileUri);
+        // Write initial content
+        await FileSystem.StorageAccessFramework.writeAsStringAsync(
+          logFileUri,
+          logMessage,
+          { encoding: FileSystem.EncodingType.UTF8 }
+        );
       } else {
-        await FileSystem.writeAsStringAsync(logFile, logMessage);
+        // Read existing content and append
+        try {
+          const existingLog = await FileSystem.StorageAccessFramework.readAsStringAsync(
+            logFileUri,
+            { encoding: FileSystem.EncodingType.UTF8 }
+          );
+          const updatedLog = existingLog + logMessage;
+          await FileSystem.StorageAccessFramework.writeAsStringAsync(
+            logFileUri,
+            updatedLog,
+            { encoding: FileSystem.EncodingType.UTF8 }
+          );
+        } catch (readError) {
+          // File might not exist anymore, recreate it
+          logFileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+            safDirectoryUri,
+            'logs',
+            'text/plain'
+          );
+          await SecureStore.setItemAsync(SECURE_STORE_KEYS.BACKUP_LOG_FILE_URI, logFileUri);
+          await FileSystem.StorageAccessFramework.writeAsStringAsync(
+            logFileUri,
+            logMessage,
+            { encoding: FileSystem.EncodingType.UTF8 }
+          );
+        }
       }
+
     } catch (error) {
       // Silently fail if logging doesn't work, just console log
       console.error('Error logging action:', error);
+    }
+  }
+
+  /**
+   * Ensure SAF directory is selected (prompt if not set)
+   */
+  static async ensureSAFDirectorySelected(): Promise<boolean> {
+    try {
+      const existingUri = await this.getSAFDirectoryUri();
+      if (existingUri) {
+        return true;
+      }
+
+      
+      // Request directory permissions using SAF
+      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+
+      if (!permissions.granted) {
+        this.showAlert('Permission Denied', 'Cannot access storage location for backups.');
+        return false;
+      }
+
+      // Save the directory URI
+      await this.setSAFDirectoryUri(permissions.directoryUri);
+      
+      return true;
+    } catch (error) {
+      console.error('Error ensuring SAF directory:', error);
+      this.showAlert('Error', 'Failed to select backup location.');
+      return false;
     }
   }
 }

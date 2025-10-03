@@ -39,7 +39,6 @@ export class NotificationService {
         }
         
         if (finalStatus !== 'granted') {
-          console.log('Notification permissions not granted');
           return false;
         }
 
@@ -211,7 +210,6 @@ export class NotificationService {
         },
       });
 
-      console.log(`Scheduled notification for ${customer.name} (${daysPending} days pending) in ${delaySeconds}s`);
     } catch (error) {
       console.error(`Error scheduling notification for customer ${customer.name}:`, error);
     }
@@ -224,7 +222,6 @@ export class NotificationService {
     try {
       const isEnabled = await this.isNotificationsEnabled();
       if (!isEnabled) {
-        console.log('Notifications are disabled, skipping check');
         return;
       }
 
@@ -234,13 +231,11 @@ export class NotificationService {
 
       // Only schedule notifications between 12:00 PM and 1:00 PM
       if (currentHour !== 12) {
-        console.log(`Current time ${currentHour}:${currentMinute} is outside notification window (12:00-13:00)`);
         return;
       }
 
       const customersWithDebt = await this.getCustomersWithPendingDebt();
       if (customersWithDebt.length === 0) {
-        console.log('No customers with pending debt found');
         return;
       }
 
@@ -254,11 +249,8 @@ export class NotificationService {
       });
 
       if (customersToNotify.length === 0) {
-        console.log('All customers have already been notified today');
         return;
       }
-
-      console.log(`Scheduling notifications for ${customersToNotify.length} customers`);
 
       // Calculate delay interval to spread notifications across the hour (3600 seconds)
       const totalSeconds = 3600; // 1 hour in seconds
@@ -278,7 +270,6 @@ export class NotificationService {
         await this.saveLastNotificationDate(customer.id, todayString);
       }
 
-      console.log(`Successfully scheduled ${customersToNotify.length} notifications`);
     } catch (error) {
       console.error('Error checking and scheduling notifications:', error);
     }
@@ -301,7 +292,6 @@ export class NotificationService {
       }, 10 * 60 * 1000); // 10 minutes
 
       await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_SCHEDULER_ACTIVE, 'true');
-      console.log('Notification scheduler started');
     } catch (error) {
       console.error('Error starting notification scheduler:', error);
     }
@@ -317,7 +307,6 @@ export class NotificationService {
         this.schedulerInterval = null;
       }
       await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_SCHEDULER_ACTIVE, 'false');
-      console.log('Notification scheduler stopped');
     } catch (error) {
       console.error('Error stopping notification scheduler:', error);
     }

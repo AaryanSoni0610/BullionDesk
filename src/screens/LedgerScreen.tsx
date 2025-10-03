@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform } from 'react-native';
 import {
   Surface,
@@ -147,14 +147,6 @@ export const LedgerScreen: React.FC = () => {
       setFilteredTransactions(filteredTrans);
       setFilteredLedgerEntries(filteredLedger);
       setCustomers(customers);
-      
-      console.log('📊 Loaded ledger data:', {
-        totalTransactions: transactions.length,
-        filteredTransactions: filteredTrans.length,
-        totalLedgerEntries: allLedgerEntries.length,
-        filteredLedgerEntries: filteredLedger.length,
-        selectedPeriod,
-      });
     } catch (error) {
       console.error('Error loading inventory data:', error);
     } finally {
@@ -366,7 +358,7 @@ export const LedgerScreen: React.FC = () => {
     loadInventoryData(true);
   };
 
-  const getFilteredEntries = (): EntryData[] => {
+  const getFilteredEntries = useMemo((): EntryData[] => {
     const entries: EntryData[] = [];
     
     if (selectedInventory === 'money') {
@@ -385,15 +377,6 @@ export const LedgerScreen: React.FC = () => {
         }
       });
       
-      console.log('💰 Money subledger entries:', {
-        filteredLedgerEntries: filteredLedgerEntries.length,
-        displayedEntries: entries.length,
-        entries: entries.map(e => ({
-          customer: e.customerName,
-          received: e.entry._ledgerEntry?.amountReceived || 0,
-          given: e.entry._ledgerEntry?.amountGiven || 0,
-        }))
-      });
     } else {
       // For gold/silver subledgers - use transactions
       const processedTransactions = new Set<string>();
@@ -468,7 +451,7 @@ export const LedgerScreen: React.FC = () => {
     }
     
     return entries;
-  };
+  }, [selectedInventory, filteredLedgerEntries, filteredTransactions, customers]);
 
   const getItemTypeDisplay = (itemType: string) => {
     const typeMap: Record<string, string> = {
@@ -772,15 +755,15 @@ export const LedgerScreen: React.FC = () => {
         {/* Transaction Table - Scrollable Content - Takes remaining space */}
         <ScrollView 
           style={styles.transactionTable}
-          contentContainerStyle={getFilteredEntries().length === 0 ? styles.emptyStateContainer : undefined}
+          contentContainerStyle={getFilteredEntries.length === 0 ? styles.emptyStateContainer : undefined}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
           }
         >
           {/* Transaction Rows */}
-          {getFilteredEntries().length > 0 ? (
-            getFilteredEntries().map((entryData, index) => {
+          {getFilteredEntries.length > 0 ? (
+            getFilteredEntries.map((entryData, index) => {
               // For money subledger, use ledger entry ID for unique key
               const uniqueKey = selectedInventory === 'money' && entryData.entry._ledgerEntry
                 ? entryData.entry._ledgerEntry.id

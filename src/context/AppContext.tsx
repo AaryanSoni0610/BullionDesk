@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { Customer, TransactionEntry } from '../types';
 import { DatabaseService } from '../services/database';
 
+interface AlertButton {
+  text: string;
+  onPress?: () => void;
+  style?: 'default' | 'cancel' | 'destructive';
+}
+
 interface AppContextType {
   // Customer and Entry Management
   currentCustomer: Customer | null;
@@ -25,6 +31,17 @@ interface AppContextType {
   setSnackbarVisible: (visible: boolean) => void;
   snackbarMessage: string;
   setSnackbarMessage: (message: string) => void;
+  
+  // Alert Management
+  alertVisible: boolean;
+  setAlertVisible: (visible: boolean) => void;
+  alertTitle: string;
+  setAlertTitle: (title: string) => void;
+  alertMessage: string;
+  setAlertMessage: (message: string) => void;
+  alertButtons: AlertButton[];
+  setAlertButtons: (buttons: AlertButton[]) => void;
+  showAlert: (title: string, message: string, buttons?: AlertButton[]) => void;
   
   // Navigation
   navigateToEntry: (customer: Customer) => void;
@@ -69,6 +86,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertButtons, setAlertButtons] = useState<AlertButton[]>([{ text: 'OK' }]);
+  const [isSavingTransaction, setIsSavingTransaction] = useState(false);
 
   const navigateToEntry = (customer: Customer) => {
     setCurrentCustomer(customer);
@@ -97,6 +119,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const handleSelectCustomer = (customer: Customer) => {
     setCustomerModalVisible(false);
+    // Clear editing transaction ID for new transactions
+    setEditingTransactionId(null);
+    setLastGivenMoney(0);
+    setTransactionCreatedAt(null);
+    setTransactionLastUpdatedAt(null);
     navigateToEntry(customer);
   };
 
@@ -110,6 +137,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       balance: 0,
     };
 
+    // Clear editing transaction ID for new transactions
+    setEditingTransactionId(null);
+    setLastGivenMoney(0);
+    setTransactionCreatedAt(null);
+    setTransactionLastUpdatedAt(null);
+
     // Navigate immediately to avoid lag
     navigateToEntry(newCustomer);
 
@@ -117,7 +150,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     try {
       const saved = await DatabaseService.saveCustomer(newCustomer);
       if (saved) {
-        console.log('New customer created:', newCustomer);
+        // Customer saved successfully
       } else {
         setSnackbarMessage('Failed to save customer data');
         setSnackbarVisible(true);
@@ -156,16 +189,16 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   };
 
   const handleSaveTransaction = async (receivedAmount: number = 0) => {
+    // Guard against concurrent saves
+    if (isSavingTransaction) {
+      return;
+    }
+
     if (!currentCustomer || currentEntries.length === 0) {
       return;
     }
 
-    console.log('Saving transaction:', { 
-      customer: currentCustomer, 
-      entries: currentEntries,
-      receivedAmount,
-      editingTransactionId 
-    });
+    setIsSavingTransaction(true);
 
     try {
       // Save transaction to database (update if editingTransactionId exists)
@@ -179,18 +212,26 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       if (result.success) {
         // Navigate back to tabs (no snackbar message)
         onNavigateToTabs();
-        console.log('Transaction saved with ID:', result.transactionId);
       } else {
+        console.error('❌ Transaction save failed:', result.error);
         // Show error message
         setSnackbarMessage(result.error || 'Failed to save transaction');
         setSnackbarVisible(true);
-        console.error('Failed to save transaction:', result.error);
       }
     } catch (error) {
-      console.error('Error saving transaction:', error);
+      console.error('❌ Exception during transaction save:', error);
       setSnackbarMessage('Error saving transaction');
       setSnackbarVisible(true);
+    } finally {
+      setIsSavingTransaction(false);
     }
+  };
+
+  const showAlert = (title: string, message: string, buttons: AlertButton[] = [{ text: 'OK' }]) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertButtons(buttons);
+    setAlertVisible(true);
   };
 
   const loadTransactionForEdit = async (transactionId: string) => {
@@ -248,6 +289,15 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setSnackbarVisible,
     snackbarMessage,
     setSnackbarMessage,
+    alertVisible,
+    setAlertVisible,
+    alertTitle,
+    setAlertTitle,
+    alertMessage,
+    setAlertMessage,
+    alertButtons,
+    setAlertButtons,
+    showAlert,
     navigateToEntry,
     navigateToSettlement,
     navigateToSettings,

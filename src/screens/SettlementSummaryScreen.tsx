@@ -247,18 +247,11 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   
   // Safety feature: Lock entry modifications for old transactions
   const isOldTransaction = transactionCreatedAt 
-    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (24 * 60 * 60 * 1000)
+    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (1 * 60 * 1000)
     : false;
-    
-  const isSettledAndOld = transactionLastUpdatedAt 
-    ? (Date.now() - new Date(transactionLastUpdatedAt).getTime()) > (24 * 60 * 60 * 1000)
-    : false;
-    
-  // Check if transaction is fully settled
-  const isFullySettled = Math.abs(netAmount) <= received;
   
   // Determine if entry modifications are locked
-  const areEntriesLocked = isEditing && (isOldTransaction || (isFullySettled && isSettledAndOld));
+  const areEntriesLocked = isEditing && isOldTransaction;
   
   // Check if FAB should be shown (hide when all entries are money or entries are locked)
   const shouldShowFAB = entries.some(entry => entry.type !== 'money') && !areEntriesLocked;

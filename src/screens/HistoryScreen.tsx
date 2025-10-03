@@ -52,6 +52,20 @@ export const HistoryScreen: React.FC = () => {
            transDate.getFullYear() === today.getFullYear();
   };
 
+  // Helper function to check if transaction is settled and old (cannot be edited)
+  const isSettledAndOld = (transaction: Transaction): boolean => {
+    if (!transaction.lastUpdatedAt) return false;
+    
+    const timeSinceUpdate = Date.now() - new Date(transaction.lastUpdatedAt).getTime();
+    const isOld = timeSinceUpdate > (1 * 60 * 1000); // 1 minute
+    
+    // Check if transaction is fully settled (no remaining balance)
+    const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
+    const isSettled = remainingBalance <= 0;
+    
+    return isSettled && isOld;
+  };
+
   // Handle delete transaction
   const handleDeleteTransaction = async (transaction: Transaction) => {
     Alert.alert(
@@ -343,10 +357,25 @@ export const HistoryScreen: React.FC = () => {
                 <Icon name="share-variant" size={16} color={theme.colors.success} />
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.actionButton, styles.editButton]}
-                onPress={() => loadTransactionForEdit(transaction.id)}
+                style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
+                onPress={() => {
+                  if (isSettledAndOld(transaction)) {
+                    Alert.alert(
+                      'Cannot Edit Transaction',
+                      'This transaction has been settled and is too old to edit.',
+                      [{ text: 'OK' }]
+                    );
+                  } else {
+                    loadTransactionForEdit(transaction.id);
+                  }
+                }}
+                disabled={isSettledAndOld(transaction)}
               >
-                <Icon name="pencil" size={16} color={theme.colors.primary} />
+                <Icon 
+                  name="pencil" 
+                  size={16} 
+                  color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
+                />
               </TouchableOpacity>
             </View>
 
@@ -994,6 +1023,10 @@ const styles = StyleSheet.create({
   },
   editButton: {
     backgroundColor: theme.colors.primaryContainer,
+  },
+  disabledButton: {
+    backgroundColor: theme.colors.surfaceDisabled,
+    opacity: 0.5,
   },
   editButtonText: {
     color: theme.colors.primary,

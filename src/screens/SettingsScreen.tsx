@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { Surface, Text, Switch, Divider, List, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
@@ -11,11 +11,11 @@ import { NotificationService } from '../services/notificationService';
 import { BackupService } from '../services/backupService';
 import { EncryptionService } from '../services/encryptionService';
 import { EncryptionKeyDialog } from '../components/EncryptionKeyDialog';
+import { InventoryInputDialog } from '../components/InventoryInputDialog';
 
 export const SettingsScreen: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = React.useState(false);
-  const [darkModeEnabled, setDarkModeEnabled] = React.useState(false);
   const [isClearing, setIsClearing] = React.useState(false);
   const [isCheckingNotifications, setIsCheckingNotifications] = React.useState(true);
   const [isCheckingBackup, setIsCheckingBackup] = React.useState(true);
@@ -23,22 +23,39 @@ export const SettingsScreen: React.FC = () => {
   const [keyDialogMode, setKeyDialogMode] = React.useState<'setup' | 'confirm' | 'enter'>('setup');
   const [tempKey, setTempKey] = React.useState<string>('');
   const [keyDialogCallback, setKeyDialogCallback] = React.useState<((key: string | null) => void) | null>(null);
-  const { navigateToTabs } = useAppContext();
+  const [customers, setCustomers] = React.useState<any[]>([]);
+  const [baseInventory, setBaseInventory] = React.useState<any>(null);
+  const [isLoadingCustomers, setIsLoadingCustomers] = React.useState(true);
+  const [isLoadingInventory, setIsLoadingInventory] = React.useState(true);
+  const [showInventoryDialog, setShowInventoryDialog] = React.useState(false);
+  const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
+  const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
+  const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
+  const { navigateToTabs, showAlert } = useAppContext();
 
   // Check notification and backup status on mount
   React.useEffect(() => {
+    // Configure BackupService to use CustomAlert
+    BackupService.setAlertFunction(showAlert);
+    
     const checkSettings = async () => {
       try {
-        console.log('⚙️ SettingsScreen: Checking initial settings...');
         
         const notifEnabled = await NotificationService.isNotificationsEnabled();
-        console.log('⚙️ SettingsScreen: Notifications enabled:', notifEnabled);
         setNotificationsEnabled(notifEnabled);
 
         const backupEnabled = await BackupService.isAutoBackupEnabled();
-        console.log('⚙️ SettingsScreen: Auto backup enabled:', backupEnabled);
         setAutoBackupEnabled(backupEnabled);
 
+        // Load customers and base inventory
+        const [customersData, inventoryData] = await Promise.all([
+          DatabaseService.getAllCustomers(),
+          DatabaseService.getBaseInventory()
+        ]);
+        
+        setCustomers(customersData);
+        setBaseInventory(inventoryData);
+        
         // Don't auto-initialize directories here
         // They will be created on demand when needed
       } catch (error) {
@@ -46,6 +63,8 @@ export const SettingsScreen: React.FC = () => {
       } finally {
         setIsCheckingNotifications(false);
         setIsCheckingBackup(false);
+        setIsLoadingCustomers(false);
+        setIsLoadingInventory(false);
       }
     };
 
@@ -77,58 +96,145 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleSetBaseInventory = () => {
+    // Start with gold inventory
+    setInventoryDialogStep('gold');
+    setInventoryInputs([
+      {
+        key: 'gold999',
+        label: 'Gold 999 (grams)',
+        value: (baseInventory?.gold999 || 300).toString(),
+        placeholder: '300'
+      },
+      {
+        key: 'gold995',
+        label: 'Gold 995 (grams)',
+        value: (baseInventory?.gold995 || 100).toString(),
+        placeholder: '100'
+      }
+    ]);
+    setCollectedInventoryData({});
+    setShowInventoryDialog(true);
+  };
+
+  const handleInventoryDialogSubmit = (values: Record<string, number>) => {
+    const updatedData = { ...collectedInventoryData, ...values };
+    setCollectedInventoryData(updatedData);
+
+    if (inventoryDialogStep === 'gold') {
+      // Move to silver
+      setInventoryDialogStep('silver');
+      setInventoryInputs([
+        {
+          key: 'silver98',
+          label: 'Silver 98 (grams)',
+          value: (baseInventory?.silver98 || 20000).toString(),
+          placeholder: '20000'
+        },
+        {
+          key: 'silver96',
+          label: 'Silver 96 (grams)',
+          value: (baseInventory?.silver96 || 5000).toString(),
+          placeholder: '5000'
+        },
+        {
+          key: 'silver',
+          label: 'Base Silver (grams)',
+          value: (baseInventory?.silver || 10000).toString(),
+          placeholder: '10000'
+        }
+      ]);
+    } else if (inventoryDialogStep === 'silver') {
+      // Move to money
+      setInventoryDialogStep('money');
+      setInventoryInputs([
+        {
+          key: 'money',
+          label: 'Money (₹)',
+          value: (baseInventory?.money || 3000000).toString(),
+          placeholder: '3000000'
+        }
+      ]);
+    } else if (inventoryDialogStep === 'money') {
+      // All steps complete, save the inventory
+      setShowInventoryDialog(false);
+      
+      const finalInventory = {
+        gold999: updatedData.gold999,
+        gold995: updatedData.gold995,
+        silver: updatedData.silver,
+        silver98: updatedData.silver98,
+        silver96: updatedData.silver96,
+        rani: baseInventory?.rani || 0,
+        rupu: baseInventory?.rupu || 0,
+        money: updatedData.money
+      };
+
+      DatabaseService.setBaseInventory(finalInventory).then(success => {
+        if (success) {
+          setBaseInventory(finalInventory);
+          showAlert('Success', 'Base inventory has been set successfully.');
+        } else {
+          showAlert('Error', 'Failed to set base inventory.');
+        }
+      });
+    }
+  };
+
+  const handleInventoryDialogCancel = () => {
+    setShowInventoryDialog(false);
+    setCollectedInventoryData({});
+  };
+
   // Setup encryption key with Android-friendly dialogs
   const setupEncryptionKey = async (): Promise<boolean> => {
     try {
       // Check if key already exists
       const existingKey = await SecureStore.getItemAsync('backup_encryption_key');
       if (existingKey) {
-        console.log('🔑 Encryption key already exists');
         return true;
       }
-
-      console.log('🔑 No encryption key found, prompting user...');
 
       // Show setup dialog
       const key = await promptForEncryptionKey('setup');
       if (!key) {
-        console.log('🔑 User cancelled key setup');
         return false;
       }
 
       // Validate key
       const validation = EncryptionService.isValidKey(key);
       if (!validation.valid) {
-        Alert.alert('Invalid Key', validation.message || 'Key is invalid');
+        showAlert('Invalid Key', validation.message || 'Key is invalid');
         return false;
       }
 
       // Show confirmation dialog
       const confirmKey = await promptForEncryptionKey('confirm');
       if (!confirmKey) {
-        console.log('🔑 User cancelled key confirmation');
         return false;
       }
 
       if (key !== confirmKey) {
-        Alert.alert('Error', 'Keys do not match. Please try again.');
+        showAlert('Error', 'Keys do not match. Please try again.');
         return false;
       }
 
       // Save key
       await SecureStore.setItemAsync('backup_encryption_key', key);
-      console.log('🔑 Encryption key saved successfully');
       
-      Alert.alert(
-        'Success',
-        'Encryption key has been set. Please remember this key - you will need it to restore your backups.',
-        [{ text: 'OK' }]
-      );
+      // Wait for user to acknowledge the success alert
+      await new Promise<void>((resolve) => {
+        showAlert(
+          'Success',
+          'Encryption key has been set. Please remember this key - you will need it to restore your backups.',
+          [{ text: 'OK', onPress: () => resolve() }]
+        );
+      });
       
       return true;
     } catch (error) {
       console.error('🔑 Error setting up encryption key:', error);
-      Alert.alert('Error', 'Failed to set up encryption key');
+      showAlert('Error', 'Failed to set up encryption key');
       return false;
     }
   };
@@ -140,13 +246,13 @@ export const SettingsScreen: React.FC = () => {
         const success = await NotificationService.enableNotifications();
         if (success) {
           setNotificationsEnabled(true);
-          Alert.alert(
+          showAlert(
             'Notifications Enabled',
             'You will receive daily reminders for customers with pending debt between 12:00 PM - 1:00 PM.',
             [{ text: 'OK' }]
           );
         } else {
-          Alert.alert(
+          showAlert(
             'Permission Required',
             'Please grant notification permissions in your device settings to receive debt reminders.',
             [{ text: 'OK' }]
@@ -154,7 +260,7 @@ export const SettingsScreen: React.FC = () => {
         }
       } catch (error) {
         console.error('Error enabling notifications:', error);
-        Alert.alert(
+        showAlert(
           'Error',
           'Failed to enable notifications. Please try again.',
           [{ text: 'OK' }]
@@ -162,7 +268,7 @@ export const SettingsScreen: React.FC = () => {
       }
     } else {
       // Disabling notifications
-      Alert.alert(
+      showAlert(
         'Disable Notifications',
         'Are you sure you want to disable debt reminder notifications?',
         [
@@ -179,7 +285,7 @@ export const SettingsScreen: React.FC = () => {
                 setNotificationsEnabled(false);
               } catch (error) {
                 console.error('Error disabling notifications:', error);
-                Alert.alert(
+                showAlert(
                   'Error',
                   'Failed to disable notifications. Please try again.',
                   [{ text: 'OK' }]
@@ -194,76 +300,51 @@ export const SettingsScreen: React.FC = () => {
 
   const handleAutoBackupToggle = async (value: boolean) => {
     if (value) {
-      // Enabling auto backup - check and request permission first
+      // Enabling auto backup - check encryption key first
       try {
-        console.log('🟢 Auto backup toggle ON - Starting...');
         
-        const hasPermission = await BackupService.hasStoragePermission();
-        console.log('🟢 Has storage permission:', hasPermission);
-        
-        if (!hasPermission) {
-          console.log('🟢 Requesting storage permission...');
-          const granted = await BackupService.requestStoragePermission();
-          console.log('🟢 Permission granted:', granted);
-          
-          if (!granted) {
-            Alert.alert(
-              'Permission Required',
-              'Storage permission is required for automatic backups. Please grant permission to continue.',
-              [{ text: 'OK' }]
-            );
-            return;
-          }
-        }
-
-        console.log('🟢 Initializing directories...');
-        const dirsReady = await BackupService.initializeDirectories();
-        console.log('🟢 Directories ready:', dirsReady);
-        
-        if (!dirsReady) {
-          Alert.alert('Error', 'Failed to initialize backup directories.');
-          return;
-        }
-
-        // Setup encryption key - will prompt if not set
-        console.log('🟢 Setting up encryption key if needed...');
+        // Setup encryption key first - will prompt if not set
         const hasKey = await setupEncryptionKey();
-        console.log('🟢 Encryption key setup result:', hasKey);
         
         if (!hasKey) {
-          console.log('🟢 User cancelled key setup - NOT enabling backup');
           // Don't change the toggle state - user cancelled
           return; // User cancelled key setup
         }
 
-        // Key is set, now enable auto backup
-        console.log('🟢 Setting auto backup enabled in database...');
+        // Ensure SAF directory is selected
+        const hasDirectory = await BackupService.ensureSAFDirectorySelected();
+        
+        if (!hasDirectory) {
+          return; // User cancelled directory selection
+        }
+
+        // Mark first export/auto backup as done since we have directory
+        await BackupService.markFirstExportOrAutoBackupDone();
+
+        // Key and directory are set, now enable auto backup
         await BackupService.setAutoBackupEnabled(true);
-        console.log('🟢 Verifying auto backup was saved...');
         
         // Verify it was actually saved
         const isEnabled = await BackupService.isAutoBackupEnabled();
-        console.log('🟢 Auto backup verification result:', isEnabled);
         
         if (isEnabled) {
           setAutoBackupEnabled(true);
-          console.log('🟢 Auto backup enabled successfully!');
-          Alert.alert(
+          showAlert(
             'Auto Backup Enabled',
             'Your data will be automatically backed up daily.',
             [{ text: 'OK' }]
           );
         } else {
           console.error('🔴 Auto backup was not saved properly!');
-          Alert.alert('Error', 'Failed to enable auto backup. Please try again.');
+          showAlert('Error', 'Failed to enable auto backup. Please try again.');
         }
       } catch (error) {
         console.error('🔴 Error enabling auto backup:', error);
-        Alert.alert('Error', 'Failed to enable auto backup. Please try again.');
+        showAlert('Error', 'Failed to enable auto backup. Please try again.');
       }
     } else {
       // Disabling auto backup
-      Alert.alert(
+      showAlert(
         'Disable Auto Backup',
         'Are you sure you want to disable automatic backups?',
         [
@@ -275,10 +356,9 @@ export const SettingsScreen: React.FC = () => {
               try {
                 await BackupService.setAutoBackupEnabled(false);
                 setAutoBackupEnabled(false);
-                console.log('🟢 Auto backup disabled');
               } catch (error) {
                 console.error('🔴 Error disabling auto backup:', error);
-                Alert.alert('Error', 'Failed to disable auto backup.');
+                showAlert('Error', 'Failed to disable auto backup.');
               }
             },
           },
@@ -292,18 +372,66 @@ export const SettingsScreen: React.FC = () => {
       // Check if encryption key is set up
       const hasKey = await BackupService.hasEncryptionKey();
       if (!hasKey) {
-        console.log('📤 No encryption key, setting up...');
         const keySetup = await setupEncryptionKey();
         if (!keySetup) {
-          console.log('📤 User cancelled encryption key setup');
           return;
         }
       }
 
-      await BackupService.exportData();
+      // Show export options
+      showAlert(
+        'Export Data',
+        'Choose what data to export:',
+        [
+          {
+            text: 'Today',
+            onPress: async () => {
+              await performExport('today');
+            },
+          },
+          {
+            text: 'All Data',
+            onPress: async () => {
+              await performExport('all');
+            },
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error preparing export:', error);
+      showAlert('Error', 'Failed to prepare export. Please try again.');
+    }
+  };
+
+  const performExport = async (exportType: 'today' | 'all') => {
+    try {
+      const result = await BackupService.exportDataToUserStorage(exportType);
+      
+      if (result.success && result.fileUri && result.fileName) {
+        // Show success alert with share option
+        showAlert(
+          'Export Complete',
+          `Backup saved to your selected location as:\n${result.fileName}`,
+          [
+            {
+              text: 'Share',
+              onPress: () => {
+                BackupService.shareExportedFile(result.fileUri!, result.fileName!);
+              },
+            },
+            {
+              text: 'OK',
+            },
+          ]
+        );
+      }
     } catch (error) {
       console.error('Error exporting data:', error);
-      Alert.alert('Error', 'Failed to export data. Please try again.');
+      showAlert('Error', 'Failed to export data. Please try again.');
     }
   };
 
@@ -312,10 +440,8 @@ export const SettingsScreen: React.FC = () => {
       // Check if encryption key is set up
       const hasKey = await BackupService.hasEncryptionKey();
       if (!hasKey) {
-        console.log('📥 No encryption key, setting up...');
         const keySetup = await setupEncryptionKey();
         if (!keySetup) {
-          console.log('📥 User cancelled encryption key setup');
           return;
         }
       }
@@ -330,15 +456,23 @@ export const SettingsScreen: React.FC = () => {
       }
 
       const file = result.assets[0];
-      await BackupService.importData(file.uri);
+
+      // Check if it's a SAF URI (content://) or regular file URI
+      if (file.uri.startsWith('content://')) {
+        // Use SAF import method
+        await BackupService.importDataFromSAF(file.uri);
+      } else {
+        // Use regular import method
+        await BackupService.importData(file.uri);
+      }
     } catch (error) {
       console.error('Error importing data:', error);
-      Alert.alert('Error', 'Failed to import data. Please try again.');
+      showAlert('Error', 'Failed to import data. Please try again.');
     }
   };
 
   const handleClearAllData = () => {
-    Alert.alert(
+    showAlert(
       'Clear All Data',
       'Are you sure you want to permanently delete all data? This action cannot be undone.\n\nThis will delete:\n• All customers\n• All transactions\n\nInventory will reset to base values.',
       [
@@ -346,7 +480,6 @@ export const SettingsScreen: React.FC = () => {
           text: 'No',
           style: 'cancel',
           onPress: () => {
-            console.log('Clear data cancelled');
           },
         },
         {
@@ -357,20 +490,20 @@ export const SettingsScreen: React.FC = () => {
             try {
               const success = await DatabaseService.clearAllData();
               if (success) {
-                Alert.alert(
+                showAlert(
                   'Success',
                   'All data has been cleared successfully.',
                   [{ text: 'OK' }]
                 );
               } else {
-                Alert.alert(
+                showAlert(
                   'Error',
                   'Failed to clear data. Please try again.',
                   [{ text: 'OK' }]
                 );
               }
             } catch (error) {
-              Alert.alert(
+              showAlert(
                 'Error',
                 error instanceof Error ? error.message : 'An unknown error occurred',
                 [{ text: 'OK' }]
@@ -380,8 +513,7 @@ export const SettingsScreen: React.FC = () => {
             }
           },
         },
-      ],
-      { cancelable: true }
+      ]
     );
   };
 
@@ -410,6 +542,9 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Enable Notifications"
             description="Receive daily reminders for customers with pending debt"
+            style={styles.sectionListItem}
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="bell-outline" />}
             right={() => (
               <Switch
@@ -423,22 +558,10 @@ export const SettingsScreen: React.FC = () => {
           <Divider />
 
           <List.Item
-            title="Dark Mode"
-            description="Use dark theme for the app"
-            left={props => <List.Icon {...props} icon="theme-light-dark" />}
-            right={() => (
-              <Switch
-                value={darkModeEnabled}
-                onValueChange={setDarkModeEnabled}
-              />
-            )}
-          />
-
-          <Divider />
-
-          <List.Item
             title="Auto Backup"
-            description="Automatically backup data daily"
+            description="Automatically backup data daily to external storage"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="cloud-upload-outline" />}
             right={() => (
               <Switch
@@ -450,13 +573,61 @@ export const SettingsScreen: React.FC = () => {
           />
         </List.Section>
 
+        {/* Data Overview */}
+        <List.Section>
+          <List.Subheader style={styles.sectionHeader}>Data Overview</List.Subheader>
+
+          <List.Item
+            title="Customers"
+            description={isLoadingCustomers ? "Loading..." : `${customers.length} customers registered`}
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="account-group-outline" />}
+            onPress={() => {
+              // Could navigate to customer management screen in future
+              showAlert('Customers', `Total customers: ${customers.length}`);
+            }}
+          />
+
+          <Divider />
+
+          <List.Item
+            title="Metal Inventory"
+            description={
+              isLoadingInventory 
+                ? "Loading..." 
+                : `Gold: ${baseInventory?.gold999 || 0}g, Silver: ${baseInventory?.silver || 0}g`
+            }
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="package-variant-closed" />}
+            onPress={() => {
+              if (baseInventory) {
+                showAlert(
+                  'Current Base Inventory',
+                  `Gold 999: ${baseInventory.gold999}g\nGold 995: ${baseInventory.gold995}g\nSilver: ${baseInventory.silver}g\nSilver 98: ${baseInventory.silver98}g\nSilver 96: ${baseInventory.silver96}g\nRani: ${baseInventory.rani}g\nRupu: ${baseInventory.rupu}g\nMoney: ₹${baseInventory.money.toLocaleString()}`,
+                  [
+                    { text: 'OK' },
+                    { 
+                      text: 'Set Custom Values', 
+                      onPress: handleSetBaseInventory 
+                    }
+                  ]
+                );
+              }
+            }}
+          />
+        </List.Section>
+
         {/* Data Management */}
         <List.Section>
           <List.Subheader style={styles.sectionHeader}>Data Management</List.Subheader>
 
           <List.Item
             title="Export Data"
-            description="Export all transactions and customers"
+            description="Export to external storage location"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="file-export-outline" />}
             onPress={handleExportData}
           />
@@ -465,7 +636,9 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Import Data"
-            description="Import transactions and customers from file"
+            description="Import from backup file (supports all locations)"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="file-import-outline" />}
             onPress={handleImportData}
           />
@@ -475,6 +648,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Clear All Data"
             description={isClearing ? "Clearing data..." : "Delete all data, reset inventory to base"}
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="delete-outline" color={theme.colors.error} />}
             disabled={isClearing}
             onPress={handleClearAllData}
@@ -487,7 +662,9 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="1.0.0"
+            description="0.4.2"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}
           />
 
@@ -495,6 +672,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Privacy Policy"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="shield-check-outline" />}
             onPress={() => {
               // TODO: Open privacy policy
@@ -505,6 +683,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Terms of Service"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="file-document-outline" />}
             onPress={() => {
               // TODO: Open terms of service
@@ -533,6 +712,28 @@ export const SettingsScreen: React.FC = () => {
         }
         onSubmit={handleKeyDialogSubmit}
         onCancel={handleKeyDialogCancel}
+      />
+
+      {/* Inventory Input Dialog */}
+      <InventoryInputDialog
+        visible={showInventoryDialog}
+        title={
+          inventoryDialogStep === 'gold'
+            ? 'Set Gold Inventory'
+            : inventoryDialogStep === 'silver'
+            ? 'Set Silver Inventory'
+            : 'Set Money Inventory'
+        }
+        message={
+          inventoryDialogStep === 'gold'
+            ? 'Enter the current gold inventory levels:'
+            : inventoryDialogStep === 'silver'
+            ? 'Enter the current silver inventory levels:'
+            : 'Enter the current money balance:'
+        }
+        inputs={inventoryInputs}
+        onSubmit={handleInventoryDialogSubmit}
+        onCancel={handleInventoryDialogCancel}
       />
     </SafeAreaView>
   );
@@ -567,5 +768,8 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontFamily: 'Roboto_500Medium',
     fontSize: 16,
+  },
+  sectionListItem: {
+    // fontFamily removed - use titleStyle and descriptionStyle instead
   },
 });

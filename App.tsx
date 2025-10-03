@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Platform, Alert } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import * as SystemUI from 'expo-system-ui';
 import { PaperProvider, FAB, Snackbar } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -28,12 +28,12 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { EntryScreen } from './src/screens/EntryScreen';
 import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
+import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { Customer, TransactionEntry } from './src/types';
 import { DatabaseService } from './src/services/database';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
-import * as FileSystem from 'expo-file-system';
 
 const Tab = createBottomTabNavigator();
 
@@ -68,6 +68,11 @@ const AppContent: React.FC<AppContentProps> = ({
     snackbarVisible,
     setSnackbarVisible,
     snackbarMessage,
+    alertVisible,
+    setAlertVisible,
+    alertTitle,
+    alertMessage,
+    alertButtons,
     handleSelectCustomer,
     handleCreateCustomer,
     handleAddEntry,
@@ -206,6 +211,15 @@ const AppContent: React.FC<AppContentProps> = ({
             {snackbarMessage}
           </Snackbar>
 
+          {/* Custom Alert */}
+          <CustomAlert
+            visible={alertVisible}
+            title={alertTitle}
+            message={alertMessage}
+            buttons={alertButtons}
+            onDismiss={() => setAlertVisible(false)}
+          />
+
           <StatusBar style="auto" />
         </NavigationContainer>
       </PaperProvider>
@@ -231,24 +245,12 @@ export default function App() {
   // Initialize services on app start
   React.useEffect(() => {
     const initializeServices = async () => {
-      // Show BASE_DIR value
-      const baseDir = `${FileSystem.documentDirectory}BullionDeskBackup`;
-      Alert.alert('BASE_DIR', baseDir);
-
       // Initialize notifications
       await NotificationService.initialize();
 
-      // Check if this is the first launch
-      const isFirstLaunch = await BackupService.isFirstLaunch();
-      if (isFirstLaunch) {
-        // Show first launch setup dialog
-        await BackupService.firstLaunchSetup();
-      } else {
-        // Not first launch - check if auto backup is needed
-        const shouldBackup = await BackupService.shouldPerformAutoBackup();
-        if (shouldBackup) {
-          await BackupService.performAutoBackup();
-        }
+      const shouldBackup = await BackupService.shouldPerformAutoBackup();
+      if (shouldBackup) {
+        await BackupService.performAutoBackup();
       }
     };
 

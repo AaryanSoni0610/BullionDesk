@@ -9,7 +9,6 @@ const STORAGE_KEYS = {
   LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
   BASE_INVENTORY: '@bulliondesk_base_inventory',
   AUTO_BACKUP_ENABLED: '@bulliondesk_auto_backup_enabled',
-  FIRST_LAUNCH_SETUP: '@bulliondesk_first_launch_setup',
   STORAGE_PERMISSION_GRANTED: '@bulliondesk_storage_permission_granted',
   LAST_BACKUP_TIME: '@bulliondesk_last_backup_time',
 };
@@ -154,19 +153,13 @@ export class DatabaseService {
       };
 
       const ledgerEntries = await this.getAllLedgerEntries();
+      
+      // Log existing ledger entries for this transaction for debugging
+      const existingEntriesForTransaction = ledgerEntries.filter(e => e.transactionId === transaction.id);
+      
       ledgerEntries.push(ledgerEntry);
       await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(ledgerEntries));
       
-      console.log('✅ Ledger entry created:', {
-        ledgerId,
-        transactionId: transaction.id,
-        date: timestamp,
-        deltaAmount,
-        amountReceived: ledgerEntry.amountReceived,
-        amountGiven: ledgerEntry.amountGiven,
-        totalLedgerEntries: ledgerEntries.length,
-      });
-
       return true;
     } catch (error) {
       console.error('Error creating ledger entry:', error);
@@ -234,6 +227,43 @@ export class DatabaseService {
         const existingTransaction = transactions[existingIndex];
         previousAmountPaid = existingTransaction.lastGivenMoney;
         
+        // REVERSE old metal balances from previous transaction state
+        // This is crucial when entries change from metal-only to regular transactions
+        if (existingTransaction.entries.some(entry => entry.metalOnly === true)) {
+          
+          existingTransaction.entries.forEach(oldEntry => {
+            if (oldEntry.metalOnly && oldEntry.type !== 'money') {
+              const itemType = oldEntry.itemType;
+              let metalAmount = 0;
+
+              // Calculate the metal amount that was previously added
+              if (oldEntry.itemType === 'rani') {
+                metalAmount = oldEntry.pureWeight || 0;
+                metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
+              } else if (oldEntry.itemType === 'rupu') {
+                if (oldEntry.rupuReturnType === 'silver' && oldEntry.netWeight !== undefined) {
+                  metalAmount = oldEntry.netWeight;
+                } else {
+                  metalAmount = oldEntry.pureWeight || 0;
+                  metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
+                }
+              } else {
+                // Regular metals
+                metalAmount = oldEntry.weight || 0;
+                metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
+              }
+
+              // Reverse the metal balance (subtract what was added, add what was subtracted)
+              if (!customer.metalBalances) {
+                customer.metalBalances = {};
+              }
+              const currentBalance = customer.metalBalances[itemType as keyof typeof customer.metalBalances] || 0;
+              customer.metalBalances[itemType as keyof typeof customer.metalBalances] = currentBalance - metalAmount;
+              
+            }
+          });
+        }
+        
         // Update transaction with new values
         transaction = {
           ...existingTransaction,
@@ -288,19 +318,9 @@ export class DatabaseService {
       // Calculate the delta amount for ledger entry
       const deltaAmount = receivedAmount - previousAmountPaid;
       
-      console.log('💰 Payment delta calculation:', {
-        isUpdate,
-        receivedAmount,
-        previousAmountPaid,
-        deltaAmount,
-        willCreateLedgerEntry: deltaAmount !== 0,
-      });
-      
       // Create ledger entry only if there's a money change
       if (deltaAmount !== 0) {
         await this.createLedgerEntry(transaction, deltaAmount, now);
-      } else {
-        console.log('⚠️ No ledger entry created (delta is 0)');
       }
 
       // Check if any entry is metal-only
@@ -314,8 +334,9 @@ export class DatabaseService {
         metalBalances: customer.metalBalances || {},
       };
 
-      // Update metal balances for metal-only transactions
+      // Apply NEW metal balances for metal-only entries in updated transaction
       if (isMetalOnly) {
+        
         entries.forEach(entry => {
           if (entry.metalOnly && entry.type !== 'money') {
             const itemType = entry.itemType;
@@ -346,13 +367,13 @@ export class DatabaseService {
             }
             const currentBalance = updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] || 0;
             updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] = currentBalance + metalAmount;
+            
           }
         });
       }
 
       const customerSaved = await this.saveCustomer(updatedCustomer);
       if (!customerSaved) {
-        console.warn('Transaction saved but customer update failed');
       }
 
       // Calculate current inventory for logging
@@ -403,64 +424,8 @@ export class DatabaseService {
         }
       });
 
-      // Log inventory impact for debugging
-      console.log('\n=== Transaction Saved - Inventory Impact ===');
-      entries.forEach(entry => {
-        console.log(`Entry: ${entry.type} ${entry.itemType}`);
-        if (entry.type === 'sell') {
-          if (entry.weight) {
-            console.log(`  ${entry.itemType} out: ${entry.pureWeight || entry.weight}g`);
-          }
-        } else if (entry.type === 'purchase') {
-          if (entry.itemType === 'rani') {
-            console.log(`  Rani in: ${entry.weight}g (inward flow)`);
-            console.log(`  Gold999 out: ${entry.actualGoldGiven || 0}g (return to customer)`);
-          } else if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
-            console.log(`  Rupu in: ${entry.weight}g (inward flow)`);
-            console.log(`  Silver98 out: ${entry.silver98Weight || 0}g (return to customer)`);
-            console.log(`  Silver out: ${entry.silverWeight || 0}g (return to customer)`);
-          } else if (entry.weight) {
-            console.log(`  ${entry.itemType} in: ${entry.pureWeight || entry.weight}g (inward flow)`);
-          }
-        }
-        console.log(`  Subtotal: ₹${entry.subtotal}`);
-      });
-      console.log(`Money flow: ${transaction.total >= 0 ? 'IN' : 'OUT'} ₹${transaction.amountPaid}`);
-      console.log(`Customer balance: ${customer.balance} → ${updatedCustomer.balance}`);
-      console.log('\n--- Current Inventory ---');
-      console.log(`Gold 999: ${currentInventory.gold999.toFixed(3)}g`);
-      console.log(`Gold 995: ${currentInventory.gold995.toFixed(3)}g`);
-      console.log(`Rani: ${currentInventory.rani.toFixed(3)}g`);
-      console.log(`Silver: ${currentInventory.silver.toFixed(1)}g`);
-      console.log(`Silver 98: ${currentInventory.silver98.toFixed(1)}g`);
-      console.log(`Silver 96: ${currentInventory.silver96.toFixed(1)}g`);
-      console.log(`Rupu: ${currentInventory.rupu.toFixed(1)}g`);
-      console.log(`Money: ₹${currentInventory.money.toLocaleString()}`);
-      console.log('==========================================\n');
-
       // Update last transaction ID
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
-
-      console.log('Transaction saved successfully:', {
-        transactionId: transaction.id,
-        isUpdate,
-        deltaAmount,
-        originalCustomer: customer,
-        updatedCustomer,
-        entries: entries.length,
-        netAmount,
-        finalBalance,
-        receivedAmount,
-        transaction,
-        balanceCalculation: {
-          oldBalance: customer.balance,
-          transactionOwed: netAmount,
-          customerPaid: receivedAmount,
-          transactionResult: finalBalance,
-          newBalance: updatedCustomer.balance,
-          calculation: `${customer.balance} - (${finalBalance}) = ${updatedCustomer.balance}`
-        }
-      });
 
       return { success: true, transactionId: transaction.id };
     } catch (error) {
@@ -617,16 +582,48 @@ export class DatabaseService {
     }
   }
 
+  static async resetBaseInventory(): Promise<boolean> {
+    try {
+      const defaultInventory = {
+        gold999: 300,
+        gold995: 100,
+        silver: 10000,
+        silver98: 20000,
+        silver96: 5000,
+        rani: 0,
+        rupu: 0,
+        money: 3000000
+      };
+      
+      await this.setBaseInventory(defaultInventory);
+      return true;
+    } catch (error) {
+      console.error('Error resetting base inventory:', error);
+      return false;
+    }
+  }
+
   // Clear all data (preserves base inventory)
   static async clearAllData(): Promise<boolean> {
     try {
+      // Log current data counts before clearing
+      const customers = await this.getAllCustomers();
+      const transactions = await this.getAllTransactions();
+      const ledgerEntries = await this.getAllLedgerEntries();
+
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.CUSTOMERS,
         STORAGE_KEYS.TRANSACTIONS,
+        STORAGE_KEYS.LEDGER,
         STORAGE_KEYS.LAST_TRANSACTION_ID,
         // Note: BASE_INVENTORY is preserved - inventory will reset to base values
       ]);
-      console.log('All data cleared successfully (base inventory preserved)');
+
+      // Verify clearing worked
+      const customersAfter = await this.getAllCustomers();
+      const transactionsAfter = await this.getAllTransactions();
+      const ledgerEntriesAfter = await this.getAllLedgerEntries();
+
       return true;
     } catch (error) {
       console.error('Error clearing all data:', error);
@@ -645,29 +642,24 @@ export class DatabaseService {
         return { success: false, error: 'Transaction not found' };
       }
 
-      // Reverse inventory changes for each entry
-      const baseInventory = await this.getBaseInventory();
-      for (const entry of transaction.entries) {
-        if (entry.type === 'money') continue; // Skip money entries
-        
-        const itemType = entry.itemType as keyof typeof baseInventory;
-        const weight = entry.weight || 0;
-        
-        // Reverse the inventory change
-        // If it was a sell (we gave metal), add it back
-        // If it was a purchase (we received metal), subtract it
-        const inventoryDelta = entry.type === 'sell' ? weight : -weight;
-        baseInventory[itemType] = (baseInventory[itemType] || 0) + inventoryDelta;
-      }
-      
-      // Update base inventory
-      await this.setBaseInventory(baseInventory);
+      // Note: Base inventory should remain unchanged. Current inventory is calculated as:
+      // base_inventory + sum of all transaction effects
+      // When a transaction is deleted, it's automatically removed from the calculation
 
       // Reverse customer balance changes
       const customer = await this.getCustomerById(transaction.customerId);
       if (customer) {
-        // Reverse money balance
-        customer.balance = (customer.balance || 0) - transaction.total + transaction.amountPaid;
+        // Calculate what the finalBalance was for this transaction to reverse it
+        const { netAmount } = this.calculateTransactionTotals(transaction.entries);
+        const finalBalance = netAmount >= 0 
+          ? transaction.amountPaid - netAmount           // SELL: reverse the balance change
+          : Math.abs(netAmount) - transaction.amountPaid; // PURCHASE: reverse the balance change
+        
+        // Check if transaction was metal-only
+        const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+        
+        // Reverse the balance change
+        customer.balance = isMetalOnly ? customer.balance : customer.balance - finalBalance;
         
         // Reverse metal balances
         for (const entry of transaction.entries) {
@@ -699,7 +691,6 @@ export class DatabaseService {
       const filteredTransactions = transactions.filter(t => t.id !== transactionId);
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filteredTransactions));
 
-      console.log('✅ Transaction deleted and inventory reversed:', transactionId);
       return { success: true };
     } catch (error) {
       console.error('Error deleting transaction:', error);
@@ -712,7 +703,6 @@ export class DatabaseService {
     try {
       const enabledJson = await AsyncStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED);
       const result = enabledJson ? JSON.parse(enabledJson) : false;
-      console.log('📦 DB: getAutoBackupEnabled ->', result, '(raw:', enabledJson, ')');
       return result;
     } catch (error) {
       console.error('Error getting auto backup enabled:', error);
@@ -722,37 +712,14 @@ export class DatabaseService {
 
   static async setAutoBackupEnabled(enabled: boolean): Promise<boolean> {
     try {
-      console.log('📦 DB: setAutoBackupEnabled ->', enabled);
       await AsyncStorage.setItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED, JSON.stringify(enabled));
-      console.log('📦 DB: setAutoBackupEnabled - AsyncStorage write completed');
       
       // Verify the write
       const verify = await AsyncStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED);
-      console.log('📦 DB: setAutoBackupEnabled - Verification read:', verify);
       
       return true;
     } catch (error) {
       console.error('Error setting auto backup enabled:', error);
-      return false;
-    }
-  }
-
-  static async getFirstLaunchSetup(): Promise<boolean> {
-    try {
-      const setupJson = await AsyncStorage.getItem(STORAGE_KEYS.FIRST_LAUNCH_SETUP);
-      return setupJson ? JSON.parse(setupJson) : false;
-    } catch (error) {
-      console.error('Error getting first launch setup:', error);
-      return false;
-    }
-  }
-
-  static async setFirstLaunchSetup(done: boolean): Promise<boolean> {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.FIRST_LAUNCH_SETUP, JSON.stringify(done));
-      return true;
-    } catch (error) {
-      console.error('Error setting first launch setup:', error);
       return false;
     }
   }

@@ -673,7 +673,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="0.6.1"
+            description="0.7.0"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}

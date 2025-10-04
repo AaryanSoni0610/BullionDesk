@@ -8,6 +8,7 @@ import { Alert, Platform } from 'react-native';
 import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database';
+import { Customer, Transaction, TransactionEntry } from '../types';
 
 const SECURE_STORE_KEYS = {
   ENCRYPTION_KEY: 'backup_encryption_key',
@@ -380,7 +381,7 @@ export class BackupService {
       
       const records = { customers, transactions, ledger };
       
-      this.updateProgressAlert('Preparing backup data... 60%');
+      this.updateProgressAlert('Encrypting data... 60%');
       const deviceId = await this.getDeviceId();
 
       const backupData: BackupData = {
@@ -400,11 +401,10 @@ export class BackupService {
       zip.file('backup.json', JSON.stringify(backupData, null, 2));
       const zipBlob = await zip.generateAsync({ type: 'arraybuffer' });
 
-      this.updateProgressAlert('Encrypting data... 80%');
       // Encrypt zip
       const encrypted = await EncryptionService.encryptZip(zipBlob, key);
 
-      this.updateProgressAlert('Saving file... 90%');
+      this.updateProgressAlert('Encrypting data... 90%');
       // Create file using SAF in root directory
       const dateStr = new Date().toISOString().split('T')[0];
       const fileName = exportType === 'today'
@@ -655,11 +655,14 @@ export class BackupService {
           transaction.id = `${transaction.id}_imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         }
 
-        // Save transaction directly to avoid ID conflicts
-        const allTransactions = await DatabaseService.getAllTransactions();
-        allTransactions.push(transaction);
-        await AsyncStorage.setItem('@bulliondesk_transactions', JSON.stringify(allTransactions));
-        
+        // Get the customer for this transaction
+        const customer = await DatabaseService.getCustomerById(transaction.customerId);
+        if (customer) {
+          // Import transaction with all side effects
+          await this.importTransactionWithSideEffects(transaction, customer);
+        } else {
+          console.warn('Customer not found for imported transaction:', transaction.customerId);
+        }
       }
     }
 
@@ -677,57 +680,81 @@ export class BackupService {
       }
     }
 
-    // Force inventory recalculation after import
-    await this.recalculateInventoryAfterImport();
+    // Clear caches to ensure fresh data
+    DatabaseService.clearCache();
   }
 
   /**
-   * Recalculate inventory after import to ensure consistency
+   * Import a transaction with all its side effects (customer balances, ledger entries)
    */
-  private static async recalculateInventoryAfterImport(): Promise<void> {
+  private static async importTransactionWithSideEffects(
+    transaction: Transaction,
+    customer: Customer
+  ): Promise<void> {
     try {
-      // Get all transactions and recalculate inventory
+      // Save the transaction directly first
       const allTransactions = await DatabaseService.getAllTransactions();
-      const baseInventory = await DatabaseService.getBaseInventory();
+      allTransactions.push(transaction);
+      await AsyncStorage.setItem('@bulliondesk_transactions', JSON.stringify(allTransactions));
+      DatabaseService.clearCache();
 
-      // Reset to base inventory
-      const currentInventory = { ...baseInventory };
+      // Update customer balance based on transaction
+      const isMetalOnly = transaction.entries.some((entry: TransactionEntry) => entry.metalOnly === true);
+      
+      let newBalance = customer.balance;
+      if (!isMetalOnly) {
+        // For regular transactions: apply the transaction's balance effect
+        // Transaction.total is from merchant's perspective (positive = customer owes merchant)
+        // But customer.balance is positive when customer has credit (merchant owes customer)
+        // So we need to negate the transaction total
+        newBalance = customer.balance - transaction.total;
+      }
 
-      // Recalculate based on all transactions
-      allTransactions.forEach(trans => {
-        trans.entries.forEach(entry => {
-          if (entry.type === 'sell') {
+      const updatedCustomer: Customer = {
+        ...customer,
+        balance: newBalance,
+        lastTransaction: transaction.createdAt,
+        metalBalances: customer.metalBalances || {},
+      };
+
+      // Apply metal balances for metal-only entries
+      if (isMetalOnly) {
+        transaction.entries.forEach(entry => {
+          if (entry.metalOnly && entry.type !== 'money') {
+            const itemType = entry.itemType;
+            let metalAmount = 0;
+
+            // Determine metal balance change based on entry type and item
             if (entry.itemType === 'rani') {
-              currentInventory.rani -= entry.weight || 0;
-              currentInventory.gold999 -= entry.actualGoldGiven || 0;
-            } else if (entry.weight) {
-              const weight = entry.pureWeight || entry.weight;
-              if (entry.itemType in currentInventory) {
-                currentInventory[entry.itemType as keyof typeof currentInventory] -= weight;
+              metalAmount = entry.pureWeight || 0;
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+            } else if (entry.itemType === 'rupu') {
+              if (entry.rupuReturnType === 'silver' && entry.netWeight !== undefined) {
+                metalAmount = entry.netWeight;
+              } else {
+                metalAmount = entry.pureWeight || 0;
+                metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
               }
+            } else {
+              // Regular metals: use actual weight
+              metalAmount = entry.weight || 0;
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
             }
-          } else if (entry.type === 'purchase') {
-            if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
-              currentInventory.rupu += entry.weight || 0;
-              currentInventory.silver -= entry.silverWeight || 0;
-            } else if (entry.weight) {
-              const weight = entry.pureWeight || entry.weight;
-              if (entry.itemType in currentInventory) {
-                currentInventory[entry.itemType as keyof typeof currentInventory] += weight;
-              }
-            }
+
+            // Update the metal balance
+            const currentBalance = (updatedCustomer.metalBalances as any)[itemType] || 0;
+            (updatedCustomer.metalBalances as any)[itemType] = currentBalance + metalAmount;
           }
         });
-        // Update money inventory
-        if (trans.total >= 0) {
-          currentInventory.money += trans.amountPaid;
-        } else {
-          currentInventory.money -= trans.amountPaid;
-        }
-      });
+      }
+
+      await DatabaseService.saveCustomer(updatedCustomer);
+
+      // Note: Ledger entries are imported separately in mergeData method
+      // No need to create them here to avoid duplication
 
     } catch (error) {
-      console.error('Error recalculating inventory after import:', error);
+      console.error('Error importing transaction with side effects:', error);
     }
   }
 

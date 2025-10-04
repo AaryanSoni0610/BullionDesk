@@ -220,10 +220,10 @@ export const HistoryScreen: React.FC = () => {
 
     // Enhanced search logic
     if (query.trim()) {
-      const searchTerm = query.toLowerCase();
+      const searchTerm = query.trim().toLowerCase();
       filtered = filtered.filter(transaction => {
         // Search in customer name
-        const customerMatch = transaction.customerName.toLowerCase().includes(searchTerm);
+        const customerMatch = transaction.customerName.trim().toLowerCase().includes(searchTerm);
         
         // Search in transaction entries (item types)
         const itemMatch = transaction.entries.some(entry => {

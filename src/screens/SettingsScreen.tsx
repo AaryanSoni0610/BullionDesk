@@ -31,7 +31,7 @@ export const SettingsScreen: React.FC = () => {
   const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
   const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
   const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
-  const { navigateToTabs, showAlert } = useAppContext();
+  const { navigateToTabs, showAlert, navigateToCustomers } = useAppContext();
 
   // Check notification and backup status on mount
   React.useEffect(() => {
@@ -593,10 +593,7 @@ export const SettingsScreen: React.FC = () => {
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="account-group-outline" />}
-            onPress={() => {
-              // Could navigate to customer management screen in future
-              showAlert('Customers', `Total customers: ${customers.length}`);
-            }}
+            onPress={navigateToCustomers}
           />
 
           <Divider />

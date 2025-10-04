@@ -14,7 +14,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../theme';
-import { formatWeight, formatCurrency } from '../utils/formatting';
+import { formatWeight, formatCurrency, formatPureGoldPrecise } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -294,7 +294,16 @@ export const LedgerScreen: React.FC = () => {
                 silverInventory.silver -= entry.silverWeight; // Silver return goes out
               }
             } else {
-              const weight = entry.pureWeight || entry.weight;
+              let weight = entry.pureWeight || entry.weight;
+              
+              // For Rani entries, recalculate pure weight with precise formatting
+              if (entry.itemType === 'rani') {
+                const touchNum = entry.touch || 0;
+                const weightNum = entry.weight || 0;
+                const pureGoldPrecise = (weightNum * touchNum) / 100;
+                weight = formatPureGoldPrecise(pureGoldPrecise);
+              }
+              
               switch (entry.itemType) {
                 case 'gold999':
                 case 'gold995':
@@ -475,7 +484,17 @@ export const LedgerScreen: React.FC = () => {
     } else {
       // For gold/silver: Customer, Purchase, Sell
       const isPurchase = entry.type === 'purchase';
-      const weight = entry.pureWeight || entry.weight || 0;
+      
+      // For Rani entries in gold subledger, recalculate pure weight with precise formatting
+      let weight = entry.pureWeight || entry.weight || 0;
+      if (entry.itemType === 'rani' && selectedInventory === 'gold') {
+        // Recalculate pure weight for Rani using precise formatting (without cut subtraction for subledger)
+        const touchNum = entry.touch || 0;
+        const weightNum = entry.weight || 0;
+        const pureGoldPrecise = (weightNum * touchNum) / 100;
+        weight = formatPureGoldPrecise(pureGoldPrecise);
+      }
+      
       const purchaseWeight = isPurchase ? weight : 0;
       const sellWeight = isPurchase ? 0 : weight;
       const isSilverItem = entry.itemType?.includes('silver') || entry.itemType === 'rupu';
@@ -728,7 +747,7 @@ export const LedgerScreen: React.FC = () => {
                   style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
                   textStyle={{ color: '#E65100' }}
                 >
-                  Rani: {formatWeight(inventoryData.goldInventory.rani)}
+                  Rani: {inventoryData.goldInventory.rani.toFixed(3)}g
                 </Chip>
               </>
             ) : selectedInventory === 'silver' ? (

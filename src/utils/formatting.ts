@@ -74,6 +74,20 @@ export const formatPureGold = (value: number): number => {
 };
 
 /**
+ * Precise pure gold formatting function for rani - 3 digits after decimal, truncated not rounded
+ * Used for gold subledger display to show actual calculated values
+ * @param value - The gold weight value
+ * @returns Formatted gold weight number with 3 decimal places (truncated)
+ */
+export const formatPureGoldPrecise = (value: number): number => {
+  if (isNaN(value)) return 0;
+
+  // Truncate to 3 decimal places (don't round)
+  const truncated = Math.floor(value * 1000) / 1000;
+  return truncated;
+};
+
+/**
  * Pure silver formatting function for rupu - remove all decimal points
  * @param value - The silver weight value
  * @returns Formatted silver weight number (integer)

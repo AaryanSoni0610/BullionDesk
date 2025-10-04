@@ -40,6 +40,7 @@ export interface TransactionEntry {
   weight?: number;
   price?: number;
   touch?: number; // For Rani/Rupu
+  cut?: number; // For Rani purchase - cut percentage (cannot exceed touch)
   extraPerKg?: number; // For Rupu bonus
   pureWeight?: number; // Calculated for impure metals
   actualGoldGiven?: number; // For Rani sell entries

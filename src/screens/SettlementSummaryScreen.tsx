@@ -157,8 +157,11 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     }
 
     if (entry.itemType === 'rani') {
-      const pureGold = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
-      const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureGold, false)}`;
+      const touchNum = entry.touch || 0;
+      const cutNum = entry.cut || 0;
+      const effectiveTouch = Math.max(0, touchNum - cutNum);
+      const pureGold = entry.pureWeight || ((entry.weight || 0) * effectiveTouch) / 100;
+      const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Cut: ${entry.cut || 0}%, Pure: ${formatWeight(pureGold, false)}`;
       if (entry.price !== undefined) {
         return `${details}, Price: ₹${entry.price.toLocaleString()}/10g`;
       }

@@ -91,6 +91,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [weight, setWeight] = useState('');
   const [price, setPrice] = useState('');
   const [touch, setTouch] = useState('');
+  const [cut, setCut] = useState('');
   const [extraPerKg, setExtraPerKg] = useState('');
   const [amount, setAmount] = useState('');
   
@@ -115,6 +116,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         setWeight(editingEntry.weight?.toString() || '');
         setPrice(editingEntry.price?.toString() || '');
         setTouch(editingEntry.touch?.toString() || '');
+        setCut(editingEntry.cut?.toString() || '');
         setRupuReturnType(editingEntry.rupuReturnType || 'money');
         setSilverWeight(editingEntry.silverWeight?.toString() || '');
         setMetalOnly(editingEntry.metalOnly || false);
@@ -178,7 +180,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
     if (itemType === 'rani') {
       const touchNum = parseFloat(touch) || 0;
-      const pureGold = (weightNum * touchNum) / 100;
+      const cutNum = parseFloat(cut) || 0;
+      const effectiveTouch = Math.max(0, touchNum - cutNum); // Ensure non-negative
+      const pureGold = (weightNum * effectiveTouch) / 100;
       const formattedPureGold = formatPureGold(pureGold);
       rawSubtotal = (formattedPureGold * priceNum) / 10; // Gold price is per 10g
     } else if (itemType === 'rupu') {
@@ -283,9 +287,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           weight: weight.trim() ? parseFloat(weight) : undefined,
           price: metalOnly ? undefined : (price.trim() ? parseFloat(price) : undefined),
           touch: touch.trim() ? parseFloat(touch) : undefined,
+          cut: cut.trim() ? parseFloat(cut) : undefined,
           extraPerKg: extraPerKg.trim() ? parseFloat(extraPerKg) : undefined,
           pureWeight: itemType === 'rani' && weight.trim() && touch.trim() ? 
-            formatPureGold((parseFloat(weight) * parseFloat(touch)) / 100) : 
+            formatPureGold((parseFloat(weight) * (parseFloat(touch) - (parseFloat(cut) || 0))) / 100) : 
             itemType === 'rupu' && weight.trim() && touch.trim() ?
             formatPureSilver((parseFloat(weight) * parseFloat(touch)) / 100) : 
             undefined,
@@ -313,6 +318,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setWeight('');
       setPrice('');
       setTouch('');
+      setCut('');
       setExtraPerKg('');
       setRupuReturnType('money');
       setSilverWeight('');
@@ -347,7 +353,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     }
 
     if (itemType === 'rani') {
-      const pureGold = (parseFloat(weight) * parseFloat(touch)) / 100 || 0;
+      const touchNum = parseFloat(touch) || 0;
+      const cutNum = parseFloat(cut) || 0;
+      const effectiveTouch = Math.max(0, touchNum - cutNum);
+      const pureGold = (parseFloat(weight) * effectiveTouch) / 100 || 0;
       const formattedPureGold = formatPureGold(pureGold);
       return (
         <>
@@ -366,6 +375,24 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               label="Touch % (1-100)"
               value={touch}
               onChangeText={setTouch}
+              mode="outlined"
+              keyboardType="numeric"
+              style={styles.input}
+            />
+          </View>
+          <View>
+            <TextInput
+              label="Cut %"
+              value={cut}
+              onChangeText={(value) => {
+                const numValue = parseFloat(value) || 0;
+                const touchNum = parseFloat(touch) || 0;
+                if (numValue > touchNum) {
+                  setCut(touchNum.toString());
+                } else {
+                  setCut(value);
+                }
+              }}
               mode="outlined"
               keyboardType="numeric"
               style={styles.input}

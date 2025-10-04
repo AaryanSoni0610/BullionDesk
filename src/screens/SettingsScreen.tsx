@@ -31,7 +31,7 @@ export const SettingsScreen: React.FC = () => {
   const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
   const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
   const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
-  const { navigateToTabs, showAlert, navigateToCustomers, navigateToTrade } = useAppContext();
+  const { navigateToTabs, showAlert, navigateToCustomers, navigateToTrade, navigateToRaniRupaSell } = useAppContext();
 
   // Check notification and backup status on mount
   React.useEffect(() => {
@@ -635,6 +635,17 @@ export const SettingsScreen: React.FC = () => {
             left={props => <List.Icon {...props} icon="swap-vertical-circle-outline" />}
             onPress={() => navigateToTrade()}
           />
+
+          <Divider />
+
+          <List.Item
+            title="Rani/Rupa Bulk Sell"
+            description="Bulk sell Rani or Rupu items"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="swap-horizontal" />}
+            onPress={() => navigateToRaniRupaSell()}
+          />
         </List.Section>
 
         {/* Data Management */}
@@ -680,7 +691,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="v0.9.9"
+            description="v0.9.10"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}

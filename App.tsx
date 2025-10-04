@@ -27,6 +27,7 @@ import { EntryScreen } from './src/screens/EntryScreen';
 import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerListScreen } from './src/screens/CustomerListScreen';
 import { TradeScreen } from './src/screens/TradeScreen';
+import { RaniRupaSellScreen } from './src/screens/RaniRupaSellScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
 import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
@@ -35,7 +36,7 @@ import { BackupService } from './src/services/backupService';
 
 const Tab = createBottomTabNavigator();
 
-type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade';
+type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell';
 
 // Main App Component with Context
 interface AppContentProps {
@@ -46,6 +47,7 @@ interface AppContentProps {
   onNavigateToTabs: () => void;
   onNavigateToCustomers: () => void;
   onNavigateToTrade: () => void;
+  onNavigateToRaniRupaSell: () => void;
 }
 
 const AppContent: React.FC<AppContentProps> = ({
@@ -200,6 +202,10 @@ const AppContent: React.FC<AppContentProps> = ({
             <TradeScreen />
           )}
 
+          {appState === 'raniRupaSell' && (
+            <RaniRupaSellScreen />
+          )}
+
           {/* Customer Selection Modal */}
           <CustomerSelectionModal
             visible={customerModalVisible}
@@ -273,6 +279,7 @@ export default function App() {
   const handleNavigateToTabs = () => setAppState('tabs');
   const handleNavigateToCustomers = () => setAppState('customers');
   const handleNavigateToTrade = () => setAppState('trade');
+  const handleNavigateToRaniRupaSell = () => setAppState('raniRupaSell');
 
   if (!fontsLoaded) {
     return null; // or a loading screen
@@ -286,6 +293,7 @@ export default function App() {
       onNavigateToTabs={handleNavigateToTabs}
       onNavigateToCustomers={handleNavigateToCustomers}
       onNavigateToTrade={handleNavigateToTrade}
+      onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
     >
       <AppContent 
         appState={appState}
@@ -295,6 +303,7 @@ export default function App() {
         onNavigateToTabs={handleNavigateToTabs}
         onNavigateToCustomers={handleNavigateToCustomers}
         onNavigateToTrade={handleNavigateToTrade}
+        onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
       />
     </AppProvider>
   );

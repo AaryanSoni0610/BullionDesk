@@ -316,7 +316,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       finalBalance = adjustedNetAmount + received; // Negative = still owes, Positive = overpaid
     }
   }
-  console.log('Final Balance Calculation:', { adjustedNetAmount, received, finalBalance, isMoneyOnlyTransaction });
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">

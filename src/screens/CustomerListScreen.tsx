@@ -3,7 +3,9 @@ import {
   View,
   StyleSheet,
   FlatList,
-  TouchableOpacity,
+  ScrollView,
+  Animated,
+  BackHandler,
 } from 'react-native';
 import {
   Surface,
@@ -11,13 +13,16 @@ import {
   List,
   Text,
   Avatar,
-  Appbar,
   IconButton,
+  Divider,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Customer } from '../types';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { Customer, LedgerEntry } from '../types';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
+import { formatFullDate } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 
 export const CustomerListScreen: React.FC = () => {
@@ -25,8 +30,10 @@ export const CustomerListScreen: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string>('');
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [ledgerCache, setLedgerCache] = useState<Map<string, { data: LedgerEntry[], timestamp: number }>>(new Map());
 
-  const { navigateToEntry, navigateToTabs } = useAppContext();
+  const { navigateToSettings } = useAppContext();
 
   // Debounced search function
   const debouncedSearch = useCallback(
@@ -63,6 +70,22 @@ export const CustomerListScreen: React.FC = () => {
     debouncedSearch(searchQuery);
   }, [searchQuery, debouncedSearch]);
 
+  // Handle hardware back button - navigate to settings
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        navigateToSettings();
+        return true; // Prevent default back behavior
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, [navigateToSettings])
+  );
+
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -74,7 +97,7 @@ export const CustomerListScreen: React.FC = () => {
 
   const formatBalance = (balance: number) => {
     if (balance === 0) return 'Settled';
-    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`;
+    if (balance < 0) return `Balance: ₹${Math.abs(balance).toLocaleString()}`;
     else return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
   };
 
@@ -135,58 +158,245 @@ export const CustomerListScreen: React.FC = () => {
     return parts.join(' | ');
   };
 
-  const handleCustomerPress = (customer: Customer) => {
-    navigateToEntry(customer);
+  const fetchCustomerLedger = async (customerId: string): Promise<LedgerEntry[]> => {
+    const now = Date.now();
+    const CACHE_DURATION = 60000; // 1 minute
+
+    // Check cache first
+    const cached = ledgerCache.get(customerId);
+    if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+      return cached.data;
+    }
+
+    try {
+      // Fetch both ledger entries and transactions for this customer
+      const [allLedgerEntries, allTransactions] = await Promise.all([
+        DatabaseService.getAllLedgerEntries(),
+        DatabaseService.getAllTransactions()
+      ]);
+
+      // Get money transactions from ledger entries
+      const moneyLedgerEntries = allLedgerEntries.filter(entry => entry.customerId === customerId);
+
+      // Get metal transactions and convert them to ledger-like entries
+      const customerTransactions = allTransactions.filter(transaction => transaction.customerId === customerId);
+      const metalLedgerEntries: LedgerEntry[] = [];
+
+      customerTransactions.forEach(transaction => {
+        // Only include transactions that have metal entries (not money-only)
+        const hasMetalEntries = transaction.entries.some(entry => entry.type !== 'money');
+
+        if (hasMetalEntries) {
+          // Create a ledger-like entry for metal transactions
+          const metalEntry: LedgerEntry = {
+            id: `metal_${transaction.id}`,
+            transactionId: transaction.id,
+            customerId: transaction.customerId,
+            customerName: transaction.customerName,
+            date: transaction.date,
+            amountReceived: 0, // Metal transactions don't involve money
+            amountGiven: 0,
+            entries: transaction.entries, // Include all transaction entries
+            createdAt: transaction.createdAt
+          };
+
+          metalLedgerEntries.push(metalEntry);
+        }
+      });
+
+      // Combine money and metal entries
+      const allCustomerEntries = [...moneyLedgerEntries, ...metalLedgerEntries];
+
+      // Sort by date (newest first), then by type (metal before money)
+      const sortedEntries = allCustomerEntries.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+
+        if (dateA !== dateB) {
+          return dateB - dateA; // Newest first
+        }
+
+        // Within same date, prioritize metal entries over money entries
+        const aHasMetal = a.entries.some(entry => entry.type !== 'money');
+        const bHasMetal = b.entries.some(entry => entry.type !== 'money');
+
+        if (aHasMetal && !bHasMetal) return -1;
+        if (!aHasMetal && bHasMetal) return 1;
+
+        return 0;
+      });
+
+      // Cache the result
+      setLedgerCache(prev => new Map(prev.set(customerId, { data: sortedEntries, timestamp: now })));
+
+      return sortedEntries;
+    } catch (error) {
+      console.error('Error fetching customer ledger:', error);
+      return [];
+    }
   };
 
-  const handleHistoryPress = (customer: Customer) => {
-    // For now, navigate back to tabs - user can manually go to History tab
-    // TODO: Implement customer-specific history filtering
-    navigateToTabs();
+  const toggleCardExpansion = async (customerId: string) => {
+    const newExpanded = new Set(expandedCards);
+    if (newExpanded.has(customerId)) {
+      newExpanded.delete(customerId);
+    } else {
+      newExpanded.add(customerId);
+      // Pre-fetch ledger data when expanding
+      await fetchCustomerLedger(customerId);
+    }
+    setExpandedCards(newExpanded);
   };
 
-  const renderCustomerItem = ({ item }: { item: Customer }) => (
-    <Surface style={styles.customerItem} elevation={1}>
-      <TouchableOpacity
-        style={styles.customerContent}
-        onPress={() => handleCustomerPress(item)}
-      >
-        <Avatar.Text
-          size={50}
-          label={getInitials(item.name)}
-          style={styles.avatar}
-          labelStyle={styles.avatarLabel}
-        />
-        <View style={styles.customerInfo}>
-          <Text variant="titleMedium" style={styles.customerName}>
-            {item.name}
-          </Text>
-          <Text variant="bodySmall" style={styles.customerBalance}>
-            {formatMetalBalances(item)}
+  const renderLedgerEntry = (entry: LedgerEntry) => {
+    
+    const date = formatFullDate(entry.date);
+    let transactionType = '';
+    let details = '';
+
+    // Determine transaction type and details
+    if (entry.amountReceived > 0) {
+      transactionType = 'Receive';
+      details = `₹${entry.amountReceived.toLocaleString()}`;
+    } else if (entry.amountGiven > 0) {
+      transactionType = 'Give';
+      details = `₹${entry.amountGiven.toLocaleString()}`;
+    } else {
+      // Metal transaction - check entries for type
+      const hasSell = entry.entries.some(e => e.type === 'sell');
+      const hasPurchase = entry.entries.some(e => e.type === 'purchase');
+
+      if (hasSell) {
+        transactionType = 'Sell';
+      } else if (hasPurchase) {
+        transactionType = 'Purchase';
+      }
+
+      // Get metal details
+      const metalDetails: string[] = [];
+      entry.entries.forEach(e => {
+        if (e.type !== 'money') {
+          const isGold = e.itemType.includes('gold') || e.itemType === 'rani';
+          const weight = isGold ? e.weight?.toFixed(3) : Math.floor(e.weight || 0).toFixed(1);
+          const typeName = e.itemType === 'gold999' ? 'Gold 999' :
+                          e.itemType === 'gold995' ? 'Gold 995' :
+                          e.itemType === 'rani' ? 'Rani' :
+                          e.itemType === 'silver' ? 'Silver' :
+                          e.itemType === 'rupu' ? 'Rupu' : e.itemType;
+          const detail = `${typeName} ${weight}g`;
+          metalDetails.push(detail);
+        }
+      });
+      details = metalDetails.join(', ');
+    }
+
+    return (
+      <View style={styles.transactionRow}>
+        <View style={styles.transactionCell}>
+          <Text variant="bodyMedium" style={styles.transactionDate}>
+            {date}
           </Text>
         </View>
-      </TouchableOpacity>
-      <IconButton
-        icon="history"
-        size={24}
-        onPress={() => handleHistoryPress(item)}
-        style={styles.historyButton}
-      />
-    </Surface>
-  );
+        <View style={styles.transactionCell}>
+          <Text variant="bodyMedium" style={[styles.transactionType, { textAlign: 'center' }]}>
+            {transactionType}
+          </Text>
+        </View>
+        <View style={styles.transactionCell}>
+          <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
+            {details}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderCustomerItem = ({ item }: { item: Customer }) => {
+    const isExpanded = expandedCards.has(item.id);
+    const ledgerData = ledgerCache.get(item.id)?.data || [];
+
+    return (
+      <View>
+        <List.Item
+          title={item.name}
+          description={formatMetalBalances(item)}
+          titleStyle={styles.customerName}
+          descriptionStyle={styles.customerBalance}
+          left={() => (
+            <Avatar.Text
+              size={36}
+              label={getInitials(item.name)}
+              style={styles.avatar}
+              labelStyle={[styles.avatarLabel, {fontFamily: 'Roboto_500Medium'}]}
+            />
+          )}
+          right={() => (
+            <IconButton
+              icon={isExpanded ? "chevron-up" : "chevron-down"}
+              size={20}
+              onPress={() => toggleCardExpansion(item.id)}
+              style={styles.expandButton}
+            />
+          )}
+          onPress={() => toggleCardExpansion(item.id)}
+          style={styles.customerItem}
+        />
+
+        {isExpanded && (
+          <View style={styles.expandedContent}>
+            {/* Transaction Header */}
+            <View style={styles.transactionHeader}>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left' }]}>
+                Date
+              </Text>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
+                Type
+              </Text>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
+                Details
+              </Text>
+            </View>
+
+            {/* Transaction Table */}
+            <ScrollView style={styles.transactionTable}>
+              {ledgerData.length > 0 ? (
+                ledgerData.map((entry, index) => (
+                  <View key={`${entry.id}-${index}`}>
+                    {renderLedgerEntry(entry)}
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noLedgerData}>No transactions found</Text>
+              )}
+            </ScrollView>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   const displayedCustomers = searchQuery.trim() === '' ? customers : filteredCustomers;
 
   return (
-    <View style={styles.container}>
-      <Appbar.Header style={styles.header}>
-        <Appbar.BackAction onPress={navigateToTabs} />
-        <Appbar.Content title="Customers" />
-      </Appbar.Header>
+    <SafeAreaView style={styles.container}>
+        {/* App Title Bar */}
+        <Surface style={styles.appTitleBar} elevation={1}>
+            <View style={styles.appTitleContent}>
+            <IconButton
+                icon="arrow-left"
+                size={20}
+                onPress={navigateToSettings}
+                style={styles.backButton}
+            />
+            <Text variant="titleLarge" style={styles.appTitle}>
+                Customers
+            </Text>
+            </View>
+        </Surface>
 
       <View style={styles.content}>
         <Searchbar
-          placeholder="Search customers..."
+          placeholder="Search by customer name"
           onChangeText={setSearchQuery}
           value={searchQuery}
           style={styles.searchBar}
@@ -203,6 +413,7 @@ export const CustomerListScreen: React.FC = () => {
             keyExtractor={item => item.id}
             style={styles.customerList}
             showsVerticalScrollIndicator={false}
+            ItemSeparatorComponent={() => <Divider />}
             ListEmptyComponent={
               searchQuery.trim() !== '' ? (
                 <Text variant="bodyMedium" style={styles.noResults}>
@@ -217,7 +428,7 @@ export const CustomerListScreen: React.FC = () => {
           />
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -239,27 +450,40 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  header: {
-    backgroundColor: theme.colors.primary,
+  
+  appTitleBar: {
+    backgroundColor: theme.colors.surface,
+    paddingVertical: theme.spacing.xs,
+  },
+  appTitleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.sm,
+  },
+  appTitle: {
+    color: theme.colors.primary,
+    fontFamily: 'Roboto_700Bold',
+  },
+  backButton: {
+    marginRight: theme.spacing.sm,
   },
   content: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: theme.spacing.md,
   },
   searchBar: {
-    marginBottom: 16,
-    backgroundColor: theme.colors.surface,
+    marginHorizontal: theme.spacing.xs,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+    elevation: 0,
+    backgroundColor: theme.colors.surfaceVariant,
   },
   customerList: {
     flex: 1,
   },
   customerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
-    borderRadius: 8,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: 'transparent',
+    paddingVertical: 8,
   },
   customerContent: {
     flex: 1,
@@ -268,23 +492,27 @@ const styles = StyleSheet.create({
   },
   avatar: {
     backgroundColor: theme.colors.primary,
-    marginRight: 16,
+    marginRight: 0,
   },
   avatarLabel: {
     color: theme.colors.onPrimary,
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
   },
   customerInfo: {
     flex: 1,
   },
   customerName: {
     color: theme.colors.onSurface,
-    fontWeight: '600',
+    fontWeight: '500',
+    fontSize: 16,
+    fontFamily: 'Roboto_500Medium',
+    marginTop: -10,
   },
   customerBalance: {
     color: theme.colors.onSurfaceVariant,
-    marginTop: 4,
+    fontSize: 14,
+    marginTop: 2,
+    fontFamily: 'Roboto_400Regular',
   },
   historyButton: {
     margin: 0,
@@ -298,5 +526,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.error,
     marginTop: 32,
+  },
+  expandButton: {
+    marginRight: -5,
+    marginTop: -5,
+  },
+  expandedContent: {
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    borderRadius: 8,
+    elevation: theme.elevation.level1,
+  },
+  transactionTable: {
+    maxHeight: 200,
+    minHeight: 40,
+    borderRadius: 8,
+  },
+  transactionHeader: {
+    flexDirection: 'row',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  transactionHeaderText: {
+    flex: 1,
+    fontFamily: 'Roboto_700Bold',
+    color: theme.colors.onSurfaceVariant,
+  },
+  transactionRow: {
+    flexDirection: 'row',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  transactionCell: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  transactionDate: {
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
+  },
+  transactionType: {
+    textAlign: 'center',
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
+  },
+  transactionAmount: {
+    fontFamily: 'Roboto_500Medium',
+    color: theme.colors.onSurface,
+    fontSize: 14,
+  },
+  noLedgerData: {
+    textAlign: 'center',
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
+    marginTop: 0,
+    padding: theme.spacing.sm,
+    fontFamily: 'Roboto_400Regular',
+
   },
 });

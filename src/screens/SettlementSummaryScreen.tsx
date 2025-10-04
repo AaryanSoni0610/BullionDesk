@@ -25,7 +25,7 @@ interface SettlementSummaryScreenProps {
   onAddMoreEntry: () => void;
   onDeleteEntry: (entryId: string) => void;
   onEditEntry: (entryId: string) => void;
-  onSaveTransaction: (receivedAmount?: number) => void;
+  onSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number) => void;
   editingTransactionId?: string | null;
   lastGivenMoney?: number;
   transactionCreatedAt?: string | null;
@@ -289,10 +289,10 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     try {
       // Calculate effective received amount including discount/extra
       const effectiveReceived = netAmount > 0 
-        ? received - discountExtraAmount  // Receiving: subtract discount
-        : received + discountExtraAmount; // Giving: add extra
+        ? received  // Sell: merchant receives amountPaid
+        : received + discountExtraAmount; // Purchase: merchant gives amountPaid + extra
       
-      await onSaveTransaction(effectiveReceived);
+      await onSaveTransaction(effectiveReceived, discountExtraAmount);
     } catch (error) {
       console.error('Failed to save transaction:', error);
     } finally {

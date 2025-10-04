@@ -21,6 +21,7 @@ export interface Transaction {
   date: string;
   entries: TransactionEntry[];
   discount: number;
+  discountExtraAmount: number; // Amount of discount (sell) or extra (purchase) applied
   subtotal: number;
   total: number;
   amountPaid: number;

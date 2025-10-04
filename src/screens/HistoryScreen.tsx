@@ -363,7 +363,10 @@ export const HistoryScreen: React.FC = () => {
       }
     } else {
       // For money transactions, show money balance
-      const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
+      const transactionRemaining = transaction.total >= 0 
+        ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
+        : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
+      
       const hasRemainingBalance = transactionRemaining > 0;
       
       let isMoneyOnly = false;

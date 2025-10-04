@@ -169,15 +169,23 @@ export const HomeScreen: React.FC = () => {
       }
     } else {
       // For money transactions, show money balance
-      const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
+      // finalBalance = netAmount >= 0
+          // ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
+          // : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
+      const transactionRemaining = transaction.total >= 0 
+        ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
+        : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
 
+      console.log('Transaction Remaining:', transactionRemaining);
       const hasRemainingBalance = transactionRemaining > 0;
       if (hasRemainingBalance && !isMoneyOnly) {
-        const isDebt = transaction.total > 0;
+        const isDebt = transaction.total > 0 && transactionRemaining > 0;
+        console.log('Debt:', isDebt);
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
-      } else {
+      } else if (isMoneyOnly){
         const isDebt = transaction.total < 0;
+        console.log('Debt:', isDebt);
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       }

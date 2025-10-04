@@ -238,7 +238,8 @@ export class DatabaseService {
     customer: Customer,
     entries: TransactionEntry[],
     receivedAmount: number = 0,
-    existingTransactionId?: string  // If provided, update existing transaction
+    existingTransactionId?: string,  // If provided, update existing transaction
+    discountExtraAmount: number = 0
   ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
     try {
       // Validate input
@@ -294,9 +295,10 @@ export class DatabaseService {
         finalBalance = netAmount;
       } else {
         // For sell/purchase transactions:
+        console.log('netAmount', netAmount, 'receivedAmount', receivedAmount, 'discountExtraAmount', discountExtraAmount);
         finalBalance = netAmount >= 0
-          ? receivedAmount - netAmount           // SELL: customer payment reduces customer debt
-          : Math.abs(netAmount) - receivedAmount; // PURCHASE: merchant payment reduces merchant debt
+          ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
+          : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
       }
 
       console.log('🧮 Calculated Values:', {
@@ -328,8 +330,8 @@ export class DatabaseService {
           const oldNetAmount = existingTransaction.total;
           const oldReceivedAmount = existingTransaction.amountPaid;
           oldBalanceEffect = oldNetAmount >= 0 
-            ? oldReceivedAmount - oldNetAmount           // SELL: customer payment reduces customer debt
-            : Math.abs(oldNetAmount) - oldReceivedAmount; // PURCHASE: merchant payment reduces merchant debt
+            ? oldReceivedAmount - oldNetAmount - existingTransaction.discountExtraAmount          // SELL: customer payment reduces customer debt
+            : Math.abs(oldNetAmount) - oldReceivedAmount - existingTransaction.discountExtraAmount; // PURCHASE: merchant payment reduces merchant debt
         }
         
         // REVERSE old metal balances from previous transaction state
@@ -374,6 +376,7 @@ export class DatabaseService {
           ...existingTransaction,
           entries: entries.map(e => ({ ...e, lastUpdatedAt: now })),
           discount: 0,
+          discountExtraAmount,
           subtotal: Math.abs(subtotal),
           total: netAmount,
           amountPaid: receivedAmount,
@@ -405,6 +408,7 @@ export class DatabaseService {
           date: now,
           entries: entries.map(e => ({ ...e, createdAt: now, lastUpdatedAt: now })),
           discount: 0,
+          discountExtraAmount,
           subtotal: Math.abs(subtotal),
           total: netAmount,
           amountPaid: receivedAmount,
@@ -813,16 +817,23 @@ export class DatabaseService {
           finalBalance = -netAmount;
         } else {
           // For sell/purchase transactions
+          //finalBalance = netAmount >= 0
+          // ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
+          // : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
           finalBalance = netAmount >= 0 
-            ? transaction.amountPaid - netAmount           // SELL: reverse the balance change
-            : Math.abs(netAmount) - transaction.amountPaid; // PURCHASE: reverse the balance change
+            ? netAmount - transaction.amountPaid - transaction.discountExtraAmount          // SELL: customer payment reduces customer debt
+            : transaction.amountPaid - Math.abs(netAmount) - transaction.discountExtraAmount; // PURCHASE: merchant payment reduces merchant debt
         }
         
         // Check if transaction was metal-only
         const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
         
         // Reverse the balance change
-        customer.balance = isMetalOnly ? customer.balance : customer.balance - finalBalance;
+        customer.balance = isMetalOnly
+          ? customer.balance
+          : netAmount >= 0
+            ? customer.balance + finalBalance
+            : customer.balance - finalBalance;
         
         // Reverse metal balances
         for (const entry of transaction.entries) {

@@ -195,7 +195,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   };
 
-  const handleSaveTransaction = async (receivedAmount: number = 0) => {
+  const handleSaveTransaction = async (receivedAmount: number = 0, discountExtraAmount: number = 0) => {
     // Guard against concurrent saves
     if (isSavingTransaction) {
       return;
@@ -213,7 +213,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         currentCustomer, 
         currentEntries, 
         receivedAmount,
-        editingTransactionId || undefined
+        editingTransactionId || undefined,
+        discountExtraAmount
       );
 
       if (result.success) {

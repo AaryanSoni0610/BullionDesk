@@ -488,6 +488,7 @@ const styles = StyleSheet.create({
   },
   avatar: {
     backgroundColor: theme.colors.primary,
+    marginLeft: 10,
     marginRight: 0,
   },
   avatarLabel: {
@@ -524,7 +525,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   expandButton: {
-    marginRight: -5,
+    marginRight: -10,
     marginTop: -5,
   },
   expandedContent: {

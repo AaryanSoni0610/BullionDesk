@@ -49,6 +49,7 @@ interface AppContextType {
   navigateToSettings: () => void;
   navigateToTabs: () => void;
   navigateToCustomers: () => void;
+  navigateToTrade: () => void;
   
   // Transaction Management
   handleSelectCustomer: (customer: Customer) => void;
@@ -69,6 +70,7 @@ interface AppProviderProps {
   onNavigateToSettings: () => void;
   onNavigateToTabs: () => void;
   onNavigateToCustomers: () => void;
+  onNavigateToTrade: () => void;
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ 
@@ -78,6 +80,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   onNavigateToSettings,
   onNavigateToTabs,
   onNavigateToCustomers,
+  onNavigateToTrade,
 }) => {
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
@@ -122,6 +125,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const navigateToCustomers = () => {
     onNavigateToCustomers();
+  };
+
+  const navigateToTrade = () => {
+    onNavigateToTrade();
   };
 
   const handleSelectCustomer = (customer: Customer) => {
@@ -308,6 +315,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     navigateToSettings,
     navigateToTabs,
     navigateToCustomers,
+    navigateToTrade,
     handleSelectCustomer,
     handleCreateCustomer,
     handleAddEntry,

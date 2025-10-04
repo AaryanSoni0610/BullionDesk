@@ -26,6 +26,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { EntryScreen } from './src/screens/EntryScreen';
 import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerListScreen } from './src/screens/CustomerListScreen';
+import { TradeScreen } from './src/screens/TradeScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
 import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
@@ -34,7 +35,7 @@ import { BackupService } from './src/services/backupService';
 
 const Tab = createBottomTabNavigator();
 
-type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers';
+type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade';
 
 // Main App Component with Context
 interface AppContentProps {
@@ -44,6 +45,7 @@ interface AppContentProps {
   onNavigateToSettings: () => void;
   onNavigateToTabs: () => void;
   onNavigateToCustomers: () => void;
+  onNavigateToTrade: () => void;
 }
 
 const AppContent: React.FC<AppContentProps> = ({
@@ -53,6 +55,7 @@ const AppContent: React.FC<AppContentProps> = ({
   onNavigateToSettings,
   onNavigateToTabs,
   onNavigateToCustomers,
+  onNavigateToTrade,
 }) => {
   const {
     currentCustomer,
@@ -193,6 +196,10 @@ const AppContent: React.FC<AppContentProps> = ({
             <CustomerListScreen />
           )}
 
+          {appState === 'trade' && (
+            <TradeScreen />
+          )}
+
           {/* Customer Selection Modal */}
           <CustomerSelectionModal
             visible={customerModalVisible}
@@ -265,6 +272,7 @@ export default function App() {
   const handleNavigateToSettings = () => setAppState('settings');
   const handleNavigateToTabs = () => setAppState('tabs');
   const handleNavigateToCustomers = () => setAppState('customers');
+  const handleNavigateToTrade = () => setAppState('trade');
 
   if (!fontsLoaded) {
     return null; // or a loading screen
@@ -277,6 +285,7 @@ export default function App() {
       onNavigateToSettings={handleNavigateToSettings}
       onNavigateToTabs={handleNavigateToTabs}
       onNavigateToCustomers={handleNavigateToCustomers}
+      onNavigateToTrade={handleNavigateToTrade}
     >
       <AppContent 
         appState={appState}
@@ -285,6 +294,7 @@ export default function App() {
         onNavigateToSettings={handleNavigateToSettings}
         onNavigateToTabs={handleNavigateToTabs}
         onNavigateToCustomers={handleNavigateToCustomers}
+        onNavigateToTrade={handleNavigateToTrade}
       />
     </AppProvider>
   );

@@ -31,7 +31,7 @@ export const SettingsScreen: React.FC = () => {
   const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
   const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
   const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
-  const { navigateToTabs, showAlert, navigateToCustomers } = useAppContext();
+  const { navigateToTabs, showAlert, navigateToCustomers, navigateToTrade } = useAppContext();
 
   // Check notification and backup status on mount
   React.useEffect(() => {
@@ -624,6 +624,17 @@ export const SettingsScreen: React.FC = () => {
               }
             }}
           />
+
+          <Divider />
+
+          <List.Item
+            title="Trade"
+            description="View and manage trade records"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="swap-vertical-circle-outline" />}
+            onPress={() => navigateToTrade()}
+          />
         </List.Section>
 
         {/* Data Management */}
@@ -669,7 +680,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="v0.9.8"
+            description="v0.9.9"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}

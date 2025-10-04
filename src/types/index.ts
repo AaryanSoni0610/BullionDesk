@@ -59,6 +59,18 @@ export type MetalType = 'gold999' | 'gold995' | 'silver';
 export type ImpureMetalType = 'rani' | 'rupu';
 export type ItemType = MetalType | ImpureMetalType | 'money';
 
+// Trade Entry - separate from main transaction system
+export interface Trade {
+  id: string;
+  customerName: string;
+  type: 'sell' | 'purchase';
+  itemType: 'gold999' | 'gold995' | 'silver' | 'rani' | 'rupu';
+  price: number; // Price per 10g (gold/rani) or per kg (silver/rupu)
+  weight: number; // Weight in grams
+  date: string;
+  createdAt: string;
+}
+
 // Ledger Entry - tracks each transaction update for accurate daily cash flow
 export interface LedgerEntry {
   id: string; // Unique ID for this ledger entry

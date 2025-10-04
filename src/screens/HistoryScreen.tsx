@@ -176,8 +176,6 @@ export const HistoryScreen: React.FC = () => {
       'gold995': 'Gold 995',
       'rani': 'Rani',
       'silver': 'Silver',
-      'silver98': 'Silver 98',
-      'silver96': 'Silver 96',
       'rupu': 'Rupu',
       'money': 'Money',
     };
@@ -468,16 +466,6 @@ export const HistoryScreen: React.FC = () => {
                   {/* Show Rupu silver returns */}
                   {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
                     <>
-                      {entry.silver98Weight && entry.silver98Weight > 0 && (
-                        <View style={styles.entryRow}>
-                          <Text variant="bodySmall" style={[styles.entryType]}>
-                            ↗️ Silver 98
-                          </Text>
-                          <Text variant="bodySmall" style={[styles.entryDetails]}>
-                            {Math.floor(entry.silver98Weight).toFixed(1)}g
-                          </Text>
-                        </View>
-                      )}
                       {entry.silverWeight && entry.silverWeight > 0 && (
                         <View style={styles.entryRow}>
                           <Text variant="bodySmall" style={[styles.entryType]}>
@@ -576,16 +564,6 @@ export const HistoryScreen: React.FC = () => {
                       {/* Show Rupu silver returns */}
                       {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
                         <>
-                          {entry.silver98Weight && entry.silver98Weight > 0 && (
-                            <View style={styles.entryRow}>
-                              <Text variant="bodySmall" style={[styles.entryType]}>
-                                ↗️ Silver 98
-                              </Text>
-                              <Text variant="bodySmall" style={[styles.entryDetails]}>
-                                {Math.floor(entry.silver98Weight).toFixed(1)}g
-                              </Text>
-                            </View>
-                          )}
                           {entry.silverWeight && entry.silverWeight > 0 && (
                             <View style={styles.entryRow}>
                               <Text variant="bodySmall" style={[styles.entryType]}>

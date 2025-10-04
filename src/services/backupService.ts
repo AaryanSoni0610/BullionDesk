@@ -709,7 +709,6 @@ export class BackupService {
           } else if (entry.type === 'purchase') {
             if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
               currentInventory.rupu += entry.weight || 0;
-              currentInventory.silver98 -= entry.silver98Weight || 0;
               currentInventory.silver -= entry.silverWeight || 0;
             } else if (entry.weight) {
               const weight = entry.pureWeight || entry.weight;

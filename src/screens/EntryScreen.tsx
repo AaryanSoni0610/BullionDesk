@@ -102,7 +102,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   // Rupu specific fields
   const [rupuReturnType, setRupuReturnType] = useState<'money' | 'silver'>('money');
-  const [silver98Weight, setSilver98Weight] = useState('');
   const [silverWeight, setSilverWeight] = useState('');
   
   // Form states
@@ -123,7 +122,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setMoneyAmount(editingEntry.amount?.toString() || '');
       setMoneyType(editingEntry.moneyType || 'debt');
       setRupuReturnType(editingEntry.rupuReturnType || 'money');
-      setSilver98Weight(editingEntry.silver98Weight?.toString() || '');
       setSilverWeight(editingEntry.silverWeight?.toString() || '');
       setMetalOnly(editingEntry.metalOnly || false);
     }
@@ -152,8 +150,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       { label: 'Gold 995', value: 'gold995' },
       { label: 'Rani (Impure Gold)', value: 'rani' },
       { label: 'Silver', value: 'silver' },
-      { label: 'Silver 98', value: 'silver98' },
-      { label: 'Silver 96', value: 'silver96' },
       { label: 'Rupu (Impure Silver)', value: 'rupu' },
     ];
     
@@ -203,10 +199,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         // Money return: subtotal = (pure weight + extra) * price per kg / 1000 (outward flow)
         rawSubtotal = (formattedTotalPureWithExtra * priceNum) / 1000;
       } else {
-        // Silver return: net weight = (pure silver + extra) - (silver98 + silver)
-        const silver98Num = parseFloat(silver98Weight) || 0;
+        // Silver return: net weight = (pure silver + extra) - silver
         const silverNum = parseFloat(silverWeight) || 0;
-        const rawNetWeight = formattedTotalPureWithExtra - (silver98Num + silverNum);
+        const rawNetWeight = formattedTotalPureWithExtra - silverNum;
         const netWeight = formatPureSilver(rawNetWeight);
         rawSubtotal = (netWeight * priceNum) / 1000;
       }
@@ -253,7 +248,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (itemType === 'rani' || itemType === 'rupu') {
       const hasTouch = touch.trim() !== '';
       if (itemType === 'rupu' && rupuReturnType === 'silver') {
-        return hasRequiredFields && hasTouch && silver98Weight.trim() !== '' && silverWeight.trim() !== '';
+        return hasRequiredFields && hasTouch && silverWeight.trim() !== '';
       }
       return hasRequiredFields && hasTouch;
     }
@@ -287,7 +282,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         moneyType: transactionType === 'money' ? moneyType : undefined,
         amount: transactionType === 'money' && moneyAmount.trim() ? parseFloat(moneyAmount) : undefined,
         rupuReturnType: itemType === 'rupu' ? rupuReturnType : undefined,
-        silver98Weight: itemType === 'rupu' && rupuReturnType === 'silver' ? parseFloat(silver98Weight) || 0 : undefined,
         silverWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? parseFloat(silverWeight) || 0 : undefined,
         netWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? (() => {
           const touchNum = parseFloat(touch) || 0;
@@ -296,9 +290,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           const formattedPureSilver = formatPureSilver(pureWeight);
           const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
           const formattedTotalPureWithExtra = formatPureSilver(totalPureWithExtra);
-          const silver98Num = parseFloat(silver98Weight) || 0;
           const silverNum = parseFloat(silverWeight) || 0;
-          const rawNetWeight = formattedTotalPureWithExtra - (silver98Num + silverNum);
+          const rawNetWeight = formattedTotalPureWithExtra - silverNum;
           return formatPureSilver(rawNetWeight);
         })() : undefined,
         metalOnly: transactionType !== 'money' ? metalOnly : undefined,
@@ -314,7 +307,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setExtraPerKg('');
       setMoneyAmount('');
       setRupuReturnType('money');
-      setSilver98Weight('');
       setSilverWeight('');
 
       
@@ -513,15 +505,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           {!metalOnly && rupuReturnType === 'silver' && (
             <>
               <TextInput
-                label="Silver 98 (g)"
-                value={silver98Weight}
-                onChangeText={setSilver98Weight}
-                mode="outlined"
-                keyboardType="numeric"
-                style={styles.input}
-              />
-              <TextInput
-                label="Silver (g)"
+                label="Silver Return (g)"
                 value={silverWeight}
                 onChangeText={setSilverWeight}
                 mode="outlined"
@@ -530,9 +514,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               />
               <View style={styles.calculationDisplay}>
                 <Text variant="bodySmall">Net Weight: {(() => {
-                  const silver98Num = parseFloat(silver98Weight) || 0;
                   const silverNum = parseFloat(silverWeight) || 0;
-                  const rawNet = formattedTotalPureWithExtra - (silver98Num + silverNum);
+                  const rawNet = formattedTotalPureWithExtra - silverNum;
                   const net = formatPureSilver(rawNet);
                   return `${net}g`;
                 })()}</Text>

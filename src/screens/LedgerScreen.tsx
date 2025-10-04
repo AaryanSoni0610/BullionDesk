@@ -37,8 +37,6 @@ interface InventoryData {
   };
   silverInventory: {
     silver: number;
-    silver98: number;
-    silver96: number;
     rupu: number;
     total: number;
   };
@@ -242,7 +240,7 @@ export const LedgerScreen: React.FC = () => {
     let pendingTransactions = 0;
 
     const goldInventory = { gold999: 0, gold995: 0, rani: 0, total: 0 };
-    const silverInventory = { silver: 0, silver98: 0, silver96: 0, rupu: 0, total: 0 };
+    const silverInventory = { silver: 0, rupu: 0, total: 0 };
 
     // Get base inventory
     const baseInventory = await DatabaseService.getBaseInventory();
@@ -252,8 +250,6 @@ export const LedgerScreen: React.FC = () => {
     goldInventory.gold995 = baseInventory.gold995;
     goldInventory.rani = baseInventory.rani;
     silverInventory.silver = baseInventory.silver;
-    silverInventory.silver98 = baseInventory.silver98;
-    silverInventory.silver96 = baseInventory.silver96;
     silverInventory.rupu = baseInventory.rupu;
 
     transactions.forEach(transaction => {
@@ -293,8 +289,6 @@ export const LedgerScreen: React.FC = () => {
                   goldInventory[entry.itemType] -= weight;
                   break;
                 case 'silver':
-                case 'silver98':
-                case 'silver96':
                 case 'rupu':
                   silverInventory[entry.itemType] -= weight;
                   break;
@@ -309,9 +303,6 @@ export const LedgerScreen: React.FC = () => {
             // For rupu with silver return: add rupu, subtract silver return
             if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
               silverInventory.rupu += entry.weight; // Rupu weight comes in
-              if (entry.silver98Weight) {
-                silverInventory.silver98 -= entry.silver98Weight; // Silver 98 return goes out
-              }
               if (entry.silverWeight) {
                 silverInventory.silver -= entry.silverWeight; // Silver return goes out
               }
@@ -324,8 +315,6 @@ export const LedgerScreen: React.FC = () => {
                   goldInventory[entry.itemType] += weight;
                   break;
                 case 'silver':
-                case 'silver98':
-                case 'silver96':
                 case 'rupu':
                   silverInventory[entry.itemType] += weight;
                   break;
@@ -349,7 +338,7 @@ export const LedgerScreen: React.FC = () => {
     
     // Calculate inventory totals (excluding rani from gold and rupu from silver)
     goldInventory.total = goldInventory.gold999 + goldInventory.gold995;
-    silverInventory.total = silverInventory.silver + silverInventory.silver98 + silverInventory.silver96;
+    silverInventory.total = silverInventory.silver + silverInventory.rupu;
 
     // Calculate actual money inventory: base money + cash in - cash out
     const actualMoneyInventory = baseInventory.money + totalIn - totalOut;
@@ -427,21 +416,8 @@ export const LedgerScreen: React.FC = () => {
           else if (selectedInventory === 'silver') {
             includeEntry = entry.itemType.startsWith('silver') || entry.itemType === 'rupu';
             
-            // Add rupu silver returns (silver98 + silver) as separate sell entries
+            // Add rupu silver returns as separate sell entries
             if (entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver') {
-              if (entry.silver98Weight && entry.silver98Weight > 0) {
-                entries.push({
-                  transactionId: transaction.id,
-                  customerName,
-                  entry: {
-                    ...entry,
-                    type: 'sell',
-                    itemType: 'silver98',
-                    weight: entry.silver98Weight,
-                    subtotal: 0
-                  }
-                });
-              }
               if (entry.silverWeight && entry.silverWeight > 0) {
                 entries.push({
                   transactionId: transaction.id,
@@ -478,8 +454,6 @@ export const LedgerScreen: React.FC = () => {
       'gold995': 'Gold 995',
       'rani': 'Rani',
       'silver': 'Silver',
-      'silver98': 'Silver 98',
-      'silver96': 'Silver 96',
       'rupu': 'Rupu',
     };
     return typeMap[itemType] || itemType;
@@ -775,20 +749,6 @@ export const LedgerScreen: React.FC = () => {
               </>
             ) : selectedInventory === 'silver' ? (
               <>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
-                  textStyle={{ color: '#455A64' }}
-                >
-                  Silver 98: {formatWeight(inventoryData.silverInventory.silver98, true)}
-                </Chip>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
-                  textStyle={{ color: '#455A64' }}
-                >
-                  Silver 96: {formatWeight(inventoryData.silverInventory.silver96, true)}
-                </Chip>
                 <Chip 
                   mode="flat" 
                   style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}

@@ -143,18 +143,6 @@ export const SettingsScreen: React.FC = () => {
       setInventoryDialogStep('silver');
       setInventoryInputs([
         {
-          key: 'silver98',
-          label: 'Silver 98 (grams)',
-          value: (baseInventory?.silver98 || 20000).toString(),
-          placeholder: '20000'
-        },
-        {
-          key: 'silver96',
-          label: 'Silver 96 (grams)',
-          value: (baseInventory?.silver96 || 5000).toString(),
-          placeholder: '5000'
-        },
-        {
           key: 'silver',
           label: 'Base Silver (grams)',
           value: (baseInventory?.silver || 10000).toString(),
@@ -180,8 +168,6 @@ export const SettingsScreen: React.FC = () => {
         gold999: updatedData.gold999,
         gold995: updatedData.gold995,
         silver: updatedData.silver,
-        silver98: updatedData.silver98,
-        silver96: updatedData.silver96,
         rani: baseInventory?.rani || 0,
         rupu: baseInventory?.rupu || 0,
         money: updatedData.money
@@ -630,7 +616,7 @@ export const SettingsScreen: React.FC = () => {
               if (baseInventory) {
                 showAlert(
                   'Current Base Inventory',
-                  `Gold 999: ${baseInventory.gold999}g\nGold 995: ${baseInventory.gold995}g\nSilver: ${baseInventory.silver}g\nSilver 98: ${baseInventory.silver98}g\nSilver 96: ${baseInventory.silver96}g\nRani: ${baseInventory.rani}g\nRupu: ${baseInventory.rupu}g\nMoney: ₹${baseInventory.money.toLocaleString()}`,
+                  `Gold 999: ${baseInventory.gold999}g\nGold 995: ${baseInventory.gold995}g\nSilver: ${baseInventory.silver}g\nRani: ${baseInventory.rani}g\nRupu: ${baseInventory.rupu}g\nMoney: ₹${baseInventory.money.toLocaleString()}`,
                   [
                     { text: 'OK' },
                     { 

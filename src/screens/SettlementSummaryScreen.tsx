@@ -142,8 +142,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       'gold995': 'Gold 995',
       'rani': 'Rani',
       'silver': 'Silver',
-      'silver98': 'Silver 98',
-      'silver96': 'Silver 96',
       'rupu': 'Rupu',
       'money': 'Money',
     };

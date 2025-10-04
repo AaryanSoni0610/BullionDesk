@@ -443,8 +443,6 @@ export class DatabaseService {
         gold995: baseInventory.gold995,
         rani: baseInventory.rani,
         silver: baseInventory.silver,
-        silver98: baseInventory.silver98,
-        silver96: baseInventory.silver96,
         rupu: baseInventory.rupu,
         money: baseInventory.money,
       };
@@ -465,7 +463,6 @@ export class DatabaseService {
           } else if (entry.type === 'purchase') {
             if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
               currentInventory.rupu += entry.weight || 0;
-              currentInventory.silver98 -= entry.silver98Weight || 0;
               currentInventory.silver -= entry.silverWeight || 0;
             } else if (entry.weight) {
               const weight = entry.pureWeight || entry.weight;
@@ -531,8 +528,6 @@ export class DatabaseService {
       gold999: number;
       gold995: number;
       silver: number;
-      silver98: number;
-      silver96: number;
       rani: number;
       rupu: number;
       money: number;
@@ -556,8 +551,6 @@ export class DatabaseService {
       gold999: number;
       gold995: number;
       silver: number;
-      silver98: number;
-      silver96: number;
       rani: number;
       rupu: number;
       money: number;
@@ -582,8 +575,6 @@ export class DatabaseService {
     gold999: number;
     gold995: number;
     silver: number;
-    silver98: number;
-    silver96: number;
     rani: number;
     rupu: number;
     money: number;
@@ -591,7 +582,15 @@ export class DatabaseService {
     try {
       const baseInventoryJson = await AsyncStorage.getItem(STORAGE_KEYS.BASE_INVENTORY);
       if (baseInventoryJson) {
-        return JSON.parse(baseInventoryJson);
+        const inventory = JSON.parse(baseInventoryJson);
+        // Migrate old inventory by combining silver98 and silver96 into silver
+        if (inventory.silver98 || inventory.silver96) {
+          inventory.silver = (inventory.silver || 0) + (inventory.silver98 || 0) + (inventory.silver96 || 0);
+          delete inventory.silver98;
+          delete inventory.silver96;
+          await this.setBaseInventory(inventory);
+        }
+        return inventory;
       }
       
       // Initialize with default values
@@ -599,8 +598,6 @@ export class DatabaseService {
         gold999: 300,
         gold995: 100,
         silver: 10000,
-        silver98: 20000,
-        silver96: 5000,
         rani: 0,
         rupu: 0,
         money: 3000000
@@ -614,8 +611,6 @@ export class DatabaseService {
         gold999: 300,
         gold995: 100,
         silver: 10000,
-        silver98: 20000,
-        silver96: 5000,
         rani: 0,
         rupu: 0,
         money: 3000000
@@ -627,8 +622,6 @@ export class DatabaseService {
     gold999: number;
     gold995: number;
     silver: number;
-    silver98: number;
-    silver96: number;
     rani: number;
     rupu: number;
     money: number;
@@ -648,8 +641,6 @@ export class DatabaseService {
         gold999: 300,
         gold995: 100,
         silver: 10000,
-        silver98: 20000,
-        silver96: 5000,
         rani: 0,
         rupu: 0,
         money: 3000000

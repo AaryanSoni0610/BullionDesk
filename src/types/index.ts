@@ -8,8 +8,6 @@ export interface Customer {
     gold995?: number;
     rani?: number; // Stores pure gold equivalent
     silver?: number;
-    silver98?: number;
-    silver96?: number;
     rupu?: number; // Stores pure silver equivalent
   };
   avatar?: string;
@@ -37,7 +35,7 @@ export interface Transaction {
 export interface TransactionEntry {
   id: string;
   type: 'sell' | 'purchase' | 'money';
-  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'silver98' | 'silver96' | 'rupu';
+  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'rupu';
   weight?: number;
   price?: number;
   touch?: number; // For Rani/Rupu
@@ -47,7 +45,6 @@ export interface TransactionEntry {
   moneyType?: 'debt' | 'balance'; // For money entries
   amount?: number; // For money entries
   rupuReturnType?: 'money' | 'silver'; // For Rupu purchase entries
-  silver98Weight?: number; // For Rupu silver return
   silverWeight?: number; // For Rupu silver return
   netWeight?: number; // For Rupu silver return calculation
   metalOnly?: boolean; // For metal-only transactions (no money involved)
@@ -56,7 +53,7 @@ export interface TransactionEntry {
   lastUpdatedAt?: string; // ISO datetime when entry was last updated
 }
 
-export type MetalType = 'gold999' | 'gold995' | 'silver' | 'silver98' | 'silver96';
+export type MetalType = 'gold999' | 'gold995' | 'silver';
 export type ImpureMetalType = 'rani' | 'rupu';
 export type ItemType = MetalType | ImpureMetalType;
 

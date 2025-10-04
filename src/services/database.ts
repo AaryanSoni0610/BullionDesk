@@ -182,9 +182,6 @@ export class DatabaseService {
 
       const ledgerEntries = await this.getAllLedgerEntries();
       
-      // Log existing ledger entries for this transaction for debugging
-      const existingEntriesForTransaction = ledgerEntries.filter(e => e.transactionId === transaction.id);
-      
       ledgerEntries.push(ledgerEntry);
       await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(ledgerEntries));
       
@@ -245,13 +242,24 @@ export class DatabaseService {
       // Calculate totals
       const { netAmount, subtotal } = this.calculateTransactionTotals(entries);
       
+      // Check if this is a money-only transaction
+      const isMoneyOnlyTransaction = entries.every(entry => entry.type === 'money');
+      
       // Final balance calculation (from MERCHANT's perspective):
-      const finalBalance = netAmount >= 0 
-        ? receivedAmount - netAmount           // SELL: customer payment reduces customer debt
-        : Math.abs(netAmount) - receivedAmount; // PURCHASE: merchant payment reduces merchant debt
+      let finalBalance: number;
+      if (isMoneyOnlyTransaction) {
+        // For money-only transactions:
+        // Positive netAmount (receive) = merchant receives money = reduces customer debt = negative balance change
+        // Negative netAmount (give) = merchant gives money = increases customer debt = positive balance change
+        finalBalance = -netAmount;
+      } else {
+        // For sell/purchase transactions:
+        finalBalance = netAmount >= 0 
+          ? receivedAmount - netAmount           // SELL: customer payment reduces customer debt
+          : Math.abs(netAmount) - receivedAmount; // PURCHASE: merchant payment reduces merchant debt
+      }
 
       let transaction: Transaction;
-      let lastToLastGivenMoney = 0;
       let previousAmountPaid = 0;
       let oldBalanceEffect = 0;
 
@@ -370,9 +378,14 @@ export class DatabaseService {
       // Calculate the delta amount for ledger entry
       const deltaAmount = receivedAmount - previousAmountPaid;
       
-      // Create ledger entry only if there's a money change
-      if (deltaAmount !== 0) {
-        await this.createLedgerEntry(transaction, deltaAmount, now);
+      // Check if this is a money-only transaction
+      const isMoneyOnly = entries.some(entry => entry.type === 'money');
+      
+      // Create ledger entry for money changes or money-only transactions
+      if (deltaAmount !== 0 || isMoneyOnly) {
+        // For money-only transactions, use the transaction total as delta if no payment made
+        const ledgerDelta = isMoneyOnly && deltaAmount === 0 ? netAmount : deltaAmount;
+        await this.createLedgerEntry(transaction, ledgerDelta, now);
       }
 
       // Check if any entry is metal-only
@@ -450,7 +463,13 @@ export class DatabaseService {
       // Update inventory based on all transactions
       allTransactions.forEach(trans => {
         trans.entries.forEach(entry => {
-          if (entry.type === 'sell') {
+          if (entry.type === 'money') {
+            // Money entries affect money inventory
+            // moneyType 'receive' = merchant receives money = increase money inventory
+            // moneyType 'give' = merchant gives money = decrease money inventory
+            const moneyChange = entry.moneyType === 'receive' ? (entry.amount || 0) : -(entry.amount || 0);
+            currentInventory.money += moneyChange;
+          } else if (entry.type === 'sell') {
             if (entry.itemType === 'rani') {
               currentInventory.rani -= entry.weight || 0;
               currentInventory.gold999 -= entry.actualGoldGiven || 0;
@@ -472,11 +491,15 @@ export class DatabaseService {
             }
           }
         });
-        // Update money inventory
-        if (trans.total >= 0) {
-          currentInventory.money += trans.amountPaid;
-        } else {
-          currentInventory.money -= trans.amountPaid;
+        // Update money inventory based on payments (only for non-money-only transactions)
+        // For money-only transactions, inventory is already updated via entry.type === 'money'
+        const transactionHasMoneyEntry = trans.entries.some(e => e.type === 'money');
+        if (!transactionHasMoneyEntry) {
+          if (trans.total >= 0) {
+            currentInventory.money += trans.amountPaid;
+          } else {
+            currentInventory.money -= trans.amountPaid;
+          }
         }
       });
 
@@ -657,10 +680,6 @@ export class DatabaseService {
   // Clear all data (preserves base inventory)
   static async clearAllData(): Promise<boolean> {
     try {
-      // Log current data counts before clearing
-      const customers = await this.getAllCustomers();
-      const transactions = await this.getAllTransactions();
-      const ledgerEntries = await this.getAllLedgerEntries();
 
       // Clear all main data storage keys
       await AsyncStorage.multiRemove([
@@ -681,11 +700,6 @@ export class DatabaseService {
 
       // Clear in-memory cache
       this.clearCache();
-
-      // Verify clearing worked
-      const customersAfter = await this.getAllCustomers();
-      const transactionsAfter = await this.getAllTransactions();
-      const ledgerEntriesAfter = await this.getAllLedgerEntries();
 
       return true;
     } catch (error) {
@@ -714,9 +728,20 @@ export class DatabaseService {
       if (customer) {
         // Calculate what the finalBalance was for this transaction to reverse it
         const { netAmount } = this.calculateTransactionTotals(transaction.entries);
-        const finalBalance = netAmount >= 0 
-          ? transaction.amountPaid - netAmount           // SELL: reverse the balance change
-          : Math.abs(netAmount) - transaction.amountPaid; // PURCHASE: reverse the balance change
+        
+        // Check if this was a money-only transaction
+        const isMoneyOnlyTransaction = transaction.entries.every(entry => entry.type === 'money');
+        
+        let finalBalance: number;
+        if (isMoneyOnlyTransaction) {
+          // For money-only transactions
+          finalBalance = -netAmount;
+        } else {
+          // For sell/purchase transactions
+          finalBalance = netAmount >= 0 
+            ? transaction.amountPaid - netAmount           // SELL: reverse the balance change
+            : Math.abs(netAmount) - transaction.amountPaid; // PURCHASE: reverse the balance change
+        }
         
         // Check if transaction was metal-only
         const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
@@ -777,9 +802,6 @@ export class DatabaseService {
   static async setAutoBackupEnabled(enabled: boolean): Promise<boolean> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED, JSON.stringify(enabled));
-      
-      // Verify the write
-      const verify = await AsyncStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED);
       
       return true;
     } catch (error) {

@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Platform } from 'react-native';
-import * as SystemUI from 'expo-system-ui';
-import * as NavigationBar from 'expo-navigation-bar';
-import { PaperProvider, FAB, Snackbar } from 'react-native-paper';
+import { PaperProvider, Snackbar } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -31,8 +28,6 @@ import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
 import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
-import { Customer, TransactionEntry } from './src/types';
-import { DatabaseService } from './src/services/database';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
 
@@ -246,15 +241,6 @@ export default function App() {
   // Initialize services on app start
   React.useEffect(() => {
     const initializeServices = async () => {
-      // Configure system UI for better notification panel visibility
-      try {
-        // Don't set system UI background to prevent notification panel issues
-        // Let the system handle the notification panel appearance naturally
-      } catch (error) {
-        // Ignore errors if system UI is not available
-        console.error('Failed to configure system UI:', error);
-      }
-
       // Initialize notifications
       await NotificationService.initialize();
 
@@ -293,13 +279,3 @@ export default function App() {
     </AppProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: theme.dimensions.bottomNavHeight + 16,
-    backgroundColor: theme.colors.primary,
-  },
-});

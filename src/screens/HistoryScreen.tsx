@@ -39,9 +39,8 @@ export const HistoryScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'last7days' | 'last30days' | 'custom'>('today');
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { navigateToSettings, loadTransactionForEdit, navigateToTabs } = useAppContext();
+  const { navigateToSettings, loadTransactionForEdit } = useAppContext();
   const navigation = useNavigation();
   
   type AlertButton = {
@@ -202,10 +201,6 @@ export const HistoryScreen: React.FC = () => {
       
       setTransactions(sortedTransactions);
       
-      // Load recent searches from storage (simplified for now)
-      // In a real app, you'd load this from AsyncStorage
-      const savedSearches = ['Gold 999', 'Silver', 'John Doe']; // Mock data
-      setRecentSearches(savedSearches.slice(0, 5));
     } catch (error) {
       console.error('Error loading transactions:', error);
       setError('Unable to load transaction history');
@@ -336,6 +331,7 @@ export const HistoryScreen: React.FC = () => {
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const shareableCardRef = useRef<View>(null);
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+    const isMoneyOnly = transaction.entries.every(entry => entry.type === 'money');
     
     // Calculate transaction-specific remaining balance
     let transactionBalanceLabel = 'Settled';
@@ -370,7 +366,7 @@ export const HistoryScreen: React.FC = () => {
       const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
       const hasRemainingBalance = transactionRemaining > 0;
       if (hasRemainingBalance) {
-        const isDebt = transaction.total > 0;
+        const isDebt = transaction.total < 0;
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       } else {
@@ -505,6 +501,7 @@ export const HistoryScreen: React.FC = () => {
                   </Text>
                 )}
                 {isMetalOnly && <View style={{ flex: 1 }} />}
+                {isMoneyOnly && <View style={{ flex: 1 }} />}
                 <Text variant="bodySmall" style={[styles.transactionBalance, 
                   { color: transactionBalanceColor }
                 ]}>
@@ -1004,7 +1001,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
-  
   // Payment and Additional Styles
   paymentLabel: {
     color: theme.colors.onSurfaceVariant,

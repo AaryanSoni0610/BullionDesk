@@ -3,11 +3,8 @@ import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensi
 import {
   Surface,
   Text,
-  Card,
   Button,
-  Divider,
   ActivityIndicator,
-  ProgressBar,
   Chip,
   IconButton
 } from 'react-native-paper';
@@ -77,8 +74,7 @@ export const LedgerScreen: React.FC = () => {
   const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
-  const { navigateToSettings, navigateToTabs } = useAppContext();
+  const { navigateToSettings } = useAppContext();
   const navigation = useNavigation();
 
   // Format date for display in DD/MM/YYYY format
@@ -112,15 +108,6 @@ export const LedgerScreen: React.FC = () => {
   useEffect(() => {
     loadInventoryData();
   }, [selectedPeriod]);
-
-  useEffect(() => {
-    const updateLayout = () => {
-      setScreenWidth(Dimensions.get('window').width);
-    };
-
-    const subscription = Dimensions.addEventListener('change', updateLayout);
-    return () => subscription?.remove();
-  }, []);
 
   // Handle hardware back button - navigate to home screen
   useFocusEffect(
@@ -159,7 +146,7 @@ export const LedgerScreen: React.FC = () => {
       // Filter ledger entries by selected period
       const filteredLedger = filterLedgerEntriesByPeriod(allLedgerEntries);
 
-      const data = await calculateInventoryData(filteredTrans, customers);
+      const data = await calculateInventoryData(filteredTrans, customers, filteredLedger);
       setInventoryData(data);
       setFilteredTransactions(filteredTrans);
       setFilteredLedgerEntries(filteredLedger);
@@ -232,7 +219,7 @@ export const LedgerScreen: React.FC = () => {
     }
   };
 
-  const calculateInventoryData = async (transactions: Transaction[], customers: Customer[]): Promise<InventoryData> => {
+  const calculateInventoryData = async (transactions: Transaction[], customers: Customer[], ledgerEntries: LedgerEntry[]): Promise<InventoryData> => {
     let totalSales = 0;
     let totalPurchases = 0;
     let totalIn = 0;  // Cash received from customers
@@ -321,15 +308,8 @@ export const LedgerScreen: React.FC = () => {
               }
             }
           }
-        } else if (entry.type === 'money') {
-          // Money transactions: track cash paid out to customers
-          if (entry.moneyType === 'debt') {
-            // Merchant owes money to customer (customer debt)
-            totalOut += Math.abs(entry.subtotal);
-          } else if (entry.moneyType === 'balance') {
-            // Merchant gives money to customer (customer had credit)
-            totalOut += Math.abs(entry.subtotal);
-          }
+        } else {
+          // Handle other transaction types if needed
         }
       });
     });
@@ -340,8 +320,10 @@ export const LedgerScreen: React.FC = () => {
     goldInventory.total = goldInventory.gold999 + goldInventory.gold995;
     silverInventory.total = silverInventory.silver + silverInventory.rupu;
 
-    // Calculate actual money inventory: base money + cash in - cash out
-    const actualMoneyInventory = baseInventory.money + totalIn - totalOut;
+    // Calculate actual money inventory from ledger entries: base money + sum(amountReceived) - sum(amountGiven)
+    const totalMoneyReceived = ledgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
+    const totalMoneyGiven = ledgerEntries.reduce((sum, entry) => sum + entry.amountGiven, 0);
+    const actualMoneyInventory = baseInventory.money + totalMoneyReceived - totalMoneyGiven;
 
     return {
       totalTransactions: transactions.length,
@@ -353,9 +335,9 @@ export const LedgerScreen: React.FC = () => {
       goldInventory,
       silverInventory,
       cashFlow: {
-        totalIn,
-        totalOut,
-        netFlow: totalIn - totalOut,
+        totalIn: totalMoneyReceived,
+        totalOut: totalMoneyGiven,
+        netFlow: totalMoneyReceived - totalMoneyGiven,
         moneyIn: actualMoneyInventory,  // Actual cash holdings
         moneyOut: 0  // Not used for actual inventory
       }
@@ -370,9 +352,9 @@ export const LedgerScreen: React.FC = () => {
     const entries: EntryData[] = [];
     
     if (selectedInventory === 'money') {
-      // For money subledger: use ledger entries (one row per payment/update)
+      // For money subledger: use ledger entries (one row per payment/update or receivable/payable)
       filteredLedgerEntries.forEach(ledgerEntry => {
-        // Only include if there's actual money movement
+        // Only include if there's actual money movement or receivable/payable
         if (ledgerEntry.amountReceived > 0 || ledgerEntry.amountGiven > 0) {
           entries.push({
             transactionId: ledgerEntry.transactionId,
@@ -386,13 +368,15 @@ export const LedgerScreen: React.FC = () => {
       });
       
     } else {
-      // For gold/silver subledgers - use transactions
-      const processedTransactions = new Set<string>();
-      
       filteredTransactions.forEach(transaction => {
         const customer = customers.find(c => c.id === transaction.customerId);
         const customerName = customer?.name || 'Unknown Customer';
         transaction.entries.forEach(entry => {
+          // Skip money entries in gold/silver subledgers
+          if (entry.type === 'money') {
+            return;
+          }
+          
           let includeEntry = false;
           
           if (selectedInventory === 'gold') {

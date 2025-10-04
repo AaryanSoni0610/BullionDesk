@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Image, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler } from 'react-native';
 import {
   Surface,
   Text,
@@ -137,20 +137,22 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   }
   
   const getItemDisplayName = (entry: TransactionEntry): string => {
+    if (entry.type === 'money') {
+      return 'Money';
+    }
     const typeMap: Record<string, string> = {
       'gold999': 'Gold 999',
       'gold995': 'Gold 995',
       'rani': 'Rani',
       'silver': 'Silver',
       'rupu': 'Rupu',
-      'money': 'Money',
     };
     return typeMap[entry.itemType] || entry.itemType;
   };
 
   const formatEntryDetails = (entry: TransactionEntry): string => {
     if (entry.type === 'money') {
-      const type = entry.moneyType === 'debt' ? 'Debt' : 'Balance';
+      const type = entry.moneyType === 'receive' ? 'Receive' : 'Give';
       return `${type}: ₹${entry.amount?.toLocaleString()}`;
     }
 
@@ -232,13 +234,9 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           }
         } else if (entry.type === 'money') {
           // Money transaction: add to net money flow based on moneyType
-          if (entry.moneyType === 'debt') {
-            // Debt = customer owes merchant = inward flow (merchant receives)
-            netMoneyFlow += Math.abs(entry.subtotal);
-          } else {
-            // Balance = merchant owes customer = outward flow (merchant gives)
-            netMoneyFlow -= Math.abs(entry.subtotal);
-          }
+          // Positive subtotal = inward flow (merchant receives money)
+          // Negative subtotal = outward flow (merchant gives money)
+          netMoneyFlow += entry.subtotal;
           // Don't add money entries to give/take items to avoid redundancy
         }
       }
@@ -247,8 +245,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     const netAmount = netMoneyFlow; // Positive = customer owes merchant, Negative = merchant owes customer
     
     return { 
-      totalGive: netMoneyFlow < 0 ? Math.abs(netMoneyFlow) : 0, 
-      totalTake: netMoneyFlow > 0 ? netMoneyFlow : 0, 
       netAmount, 
       giveItems, 
       takeItems,
@@ -256,7 +252,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     };
   };
 
-  const { totalGive, totalTake, netAmount, giveItems, takeItems, isMetalOnly } = calculateTotals();
+  const { netAmount, giveItems, takeItems, isMetalOnly } = calculateTotals();
   const received = parseFloat(receivedAmount) || 0;
   const discountExtraAmount = parseFloat(discountExtra) || 0;
   
@@ -265,28 +261,28 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (24 * 60 * 60 * 1000)
     : false;
   
-  // Determine if entry modifications are locked
-  const areEntriesLocked = isEditing && isOldTransaction;
+  // Check if there are any money-only entries
+  const hasMoneyOnlyEntry = entries.some(entry => entry.type === 'money');
   
-  // Check if FAB should be shown (hide when all entries are money or entries are locked)
-  const shouldShowFAB = entries.some(entry => entry.type !== 'money') && !areEntriesLocked;
-  const isMoneyOnlyTransaction = entries.length > 0 && entries.every(entry => entry.type === 'money');
+  // Determine if entry modifications are locked
+  // Allow editing metal-only transactions at any time
+  const areEntriesLocked = isEditing && isOldTransaction && !isMetalOnly;
+  
+  // Check if FAB should be shown: hide if entries are locked OR if there's a money-only entry
+  const shouldShowFAB = !areEntriesLocked && !hasMoneyOnlyEntry;
   
   // Apply discount/extra to net amount
   const adjustedNetAmount = netAmount > 0 
     ? netAmount - discountExtraAmount  // Customer owes: subtract discount
-    : netAmount - discountExtraAmount; // Merchant owes: subtract extra (making it more negative)
-  
+    : netAmount + discountExtraAmount; // Merchant owes: add extra
+
   // Enhanced save transaction with validation
   const handleSaveTransaction = async () => {
-    // Skip payment validation for money-only transactions
-    if (!isMoneyOnlyTransaction) {
-      const paymentValidationError = validatePaymentAmount(receivedAmount, Math.abs(adjustedNetAmount));
-      
-      if (paymentValidationError) {
-        setPaymentError(paymentValidationError);
-        return;
-      }
+    const paymentValidationError = validatePaymentAmount(receivedAmount, Math.abs(adjustedNetAmount));
+    
+    if (paymentValidationError) {
+      setPaymentError(paymentValidationError);
+      return;
     }
     
     setIsSaving(true);
@@ -300,14 +296,27 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   };
   
   // Calculate final balance based on money flow direction (using adjusted amount)
-  let finalBalance;
-  if (adjustedNetAmount > 0) {
-    // Inward flow: Customer pays merchant
-    finalBalance = adjustedNetAmount - received; // Positive = debt, Negative = balance
+  let finalBalance: number;
+  
+  // Check if this is a money-only transaction
+  const isMoneyOnlyTransaction = entries.every(entry => entry.type === 'money');
+  
+  if (isMoneyOnlyTransaction) {
+    // For money-only transactions:
+    // Positive adjustedNetAmount (receive) = merchant receives money = reduces customer debt = negative balance change
+    // Negative adjustedNetAmount (give) = merchant gives money = increases customer debt = positive balance change
+    finalBalance = -adjustedNetAmount;
   } else {
-    // Outward flow: Merchant pays customer
-    finalBalance = adjustedNetAmount + received; // Negative = still owes, Positive = overpaid
+    // For sell/purchase transactions:
+    if (adjustedNetAmount > 0) {
+      // Inward flow: Customer pays merchant
+      finalBalance = adjustedNetAmount - received; // Positive = debt, Negative = balance
+    } else {
+      // Outward flow: Merchant pays customer
+      finalBalance = adjustedNetAmount + received; // Negative = still owes, Positive = overpaid
+    }
   }
+  console.log('Final Balance Calculation:', { adjustedNetAmount, received, finalBalance, isMoneyOnlyTransaction });
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">
@@ -319,7 +328,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               style={[
                 styles.entryType,
                 { color: entry.type === 'sell' ? theme.colors.sellColor : 
-                        entry.type === 'money' ? (entry.moneyType === 'debt' ? theme.colors.error : theme.colors.success) : 
+                        entry.type === 'money' ? (entry.moneyType === 'give' ? theme.colors.debtColor : theme.colors.success) : 
                         theme.colors.primary }
               ]}
             >
@@ -619,7 +628,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           mode="contained"
           icon={isSaving ? undefined : "check"}
           onPress={handleSaveTransaction}
-          disabled={entries.length === 0 || isSaving || (!isMoneyOnlyTransaction && !!paymentError)}
+          disabled={entries.length === 0 || isSaving || !!paymentError}
           loading={isSaving}
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}
@@ -694,7 +703,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.md,
   },
   entriesSection: {
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
   },
   sectionDivider: {
     marginVertical: theme.spacing.lg,
@@ -787,12 +796,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   arrowIcon: {
-    margin: -8,
-    marginLeft: -12,
+    margin: 0,
+    marginLeft: -22,
   },
   summaryItem: {
     marginLeft: theme.spacing.md,
-    marginBottom: theme.spacing.xs,
   },
   summaryDivider: {
     marginVertical: theme.spacing.md,

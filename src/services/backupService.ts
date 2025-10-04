@@ -30,6 +30,14 @@ interface BackupData {
     customers: any[];
     transactions: any[];
     ledger: any[];
+    baseInventory: {
+      gold999: number;
+      gold995: number;
+      silver: number;
+      rani: number;
+      rupu: number;
+      money: number;
+    };
   };
 }
 
@@ -269,7 +277,7 @@ export class BackupService {
               // Ignore cleanup errors
               console.log('Could not clean up temp file:', error);
             }
-          }, 30000); // 30 second delay
+          }, 120000); // 2 minute delay
           return;
         } catch (copyError) {
           console.error('Error copying SAF file for sharing:', copyError);
@@ -296,36 +304,13 @@ export class BackupService {
     const customers = await DatabaseService.getAllCustomers();
     const transactions = await DatabaseService.getAllTransactions();
     const ledger = await DatabaseService.getAllLedgerEntries();
+    const baseInventory = await DatabaseService.getBaseInventory();
 
     return {
       customers,
       transactions,
       ledger,
-    };
-  }
-
-  /**
-   * Collect data from database for a specific date
-   */
-  private static async collectDatabaseDataForDate(targetDate: Date): Promise<BackupData['records']> {
-    const customers = await DatabaseService.getAllCustomers();
-    const allTransactions = await DatabaseService.getAllTransactions();
-    const allLedger = await DatabaseService.getAllLedgerEntries();
-
-    // Filter transactions for the target date
-    const targetDateString = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-    const transactions = allTransactions.filter(transaction => {
-      return transaction.date === targetDateString;
-    });
-
-    // Filter ledger entries for transactions from the target date
-    const transactionIds = new Set(transactions.map(t => t.id));
-    const ledger = allLedger.filter(entry => transactionIds.has(entry.transactionId));
-
-    return {
-      customers,
-      transactions,
-      ledger,
+      baseInventory,
     };
   }
 
@@ -379,7 +364,10 @@ export class BackupService {
       this.updateProgressAlert('Loading ledger... 50%');
       const ledger = await DatabaseService.getAllLedgerEntries();
       
-      const records = { customers, transactions, ledger };
+      this.updateProgressAlert('Loading inventory... 55%');
+      const baseInventory = await DatabaseService.getBaseInventory();
+      
+      const records = { customers, transactions, ledger, baseInventory };
       
       this.updateProgressAlert('Encrypting data... 60%');
       const deviceId = await this.getDeviceId();
@@ -392,7 +380,7 @@ export class BackupService {
           records.transactions.length +
           records.ledger.length,
         deviceId,
-        records,
+        records
       };
 
       this.updateProgressAlert('Creating zip file... 70%');
@@ -678,6 +666,11 @@ export class BackupService {
         allLedger.push(ledgerEntry);
         await AsyncStorage.setItem('@bulliondesk_ledger', JSON.stringify(allLedger));
       }
+    }
+
+    // Restore base inventory if present in backup
+    if (records.baseInventory) {
+      await DatabaseService.setBaseInventory(records.baseInventory);
     }
 
     // Clear caches to ensure fresh data

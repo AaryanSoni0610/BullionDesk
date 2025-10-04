@@ -227,7 +227,6 @@ export class NotificationService {
 
       const now = new Date();
       const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
 
       // Only schedule notifications between 12:00 PM and 1:00 PM
       if (currentHour !== 12) {

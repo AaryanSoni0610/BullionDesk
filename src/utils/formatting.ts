@@ -92,9 +92,22 @@ export const formatPureSilver = (value: number): number => {
  * @returns Formatted amount string with label and currency symbol
  */
 export const formatTransactionAmount = (transaction: any): string => {
-  const amount = transaction.amountPaid || 0;
-  // Determine if money was received (SELL) or given (PURCHASE) based on transaction.total sign
-  const isReceived = transaction.total > 0;
+  // Check if this is a money-only transaction
+  const isMoneyOnly = transaction.entries?.every((entry: any) => entry.type === 'money');
+  
+  let amount: number;
+  let isReceived: boolean;
+  
+  if (isMoneyOnly) {
+    // For money-only transactions, show the transaction total amount
+    amount = Math.abs(transaction.total);
+    isReceived = transaction.total > 0;
+  } else {
+    // For regular transactions, show amountPaid
+    amount = transaction.amountPaid || 0;
+    isReceived = transaction.total > 0;
+  }
+  
   const label = isReceived ? '+' : '-';
   return amount > 0 ? `${label}₹${amount.toLocaleString()}` : '₹0';
 };

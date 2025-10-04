@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Image, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler } from 'react-native';
 import {
   Surface,
   Text,
@@ -9,15 +9,13 @@ import {
   TextInput,
   Divider,
   IconButton,
-  HelperText,
   Snackbar,
   RadioButton,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { formatWeight, formatMoney, formatPureGold, formatPureSilver } from '../utils/formatting';
+import { formatMoney, formatPureGold, formatPureSilver } from '../utils/formatting';
 import { Customer, TransactionEntry, ItemType } from '../types';
 
 interface EntryScreenProps {
@@ -40,7 +38,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   // Check what types of entries already exist (excluding the one being edited)
   const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
-  const hasMoneyEntries = otherEntries.some(entry => entry.type === 'money');
   const hasSellPurchaseEntries = otherEntries.some(entry => entry.type === 'sell' || entry.type === 'purchase');
   const hasMetalOnlyEntries = otherEntries.some(entry => entry.metalOnly === true);
   
@@ -71,23 +68,21 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   // Determine available transaction types
   const getAvailableTransactionTypes = () => {
-    if (hasMoneyEntries) {
-      // If money entries exist, only allow money
-      return ['money'];
-    } else if (hasMetalOnlyEntries) {
+    if (hasMetalOnlyEntries) {
       // If metal-only entries exist, only allow metal-only (no new entries)
       return [];
     } else if (hasSellPurchaseEntries) {
       // If sell/purchase entries exist, only allow sell/purchase
       return ['sell', 'purchase'];
     } else {
-      // No entries exist, allow all types
+      // No entries exist, allow sell/purchase/money
       return ['sell', 'purchase', 'money'];
     }
   };
   
   const availableTypes = getAvailableTransactionTypes();
   const [transactionType, setTransactionType] = useState<'purchase' | 'sell' | 'money'>('sell');
+  const [moneyType, setMoneyType] = useState<'give' | 'receive'>('receive');
   const [itemType, setItemType] = useState<ItemType>('gold999');
   const [menuVisible, setMenuVisible] = useState(false);
   const [metalOnly, setMetalOnly] = useState(false);
@@ -97,8 +92,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [price, setPrice] = useState('');
   const [touch, setTouch] = useState('');
   const [extraPerKg, setExtraPerKg] = useState('');
-  const [moneyAmount, setMoneyAmount] = useState('');
-  const [moneyType, setMoneyType] = useState<'debt' | 'balance'>('debt');
+  const [amount, setAmount] = useState('');
   
   // Rupu specific fields
   const [rupuReturnType, setRupuReturnType] = useState<'money' | 'silver'>('money');
@@ -112,18 +106,19 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   // Pre-fill form when editing an entry
   useEffect(() => {
     if (editingEntry) {
-      setTransactionType(editingEntry.type);
-      if (editingEntry.type !== 'money') {
+      setTransactionType(editingEntry.type as 'purchase' | 'sell' | 'money');
+      if (editingEntry.type === 'money') {
+        setMoneyType(editingEntry.moneyType || 'receive');
+        setAmount(editingEntry.amount?.toString() || '');
+      } else {
         setItemType(editingEntry.itemType);
+        setWeight(editingEntry.weight?.toString() || '');
+        setPrice(editingEntry.price?.toString() || '');
+        setTouch(editingEntry.touch?.toString() || '');
+        setRupuReturnType(editingEntry.rupuReturnType || 'money');
+        setSilverWeight(editingEntry.silverWeight?.toString() || '');
+        setMetalOnly(editingEntry.metalOnly || false);
       }
-      setWeight(editingEntry.weight?.toString() || '');
-      setPrice(editingEntry.price?.toString() || '');
-      setTouch(editingEntry.touch?.toString() || '');
-      setMoneyAmount(editingEntry.amount?.toString() || '');
-      setMoneyType(editingEntry.moneyType || 'debt');
-      setRupuReturnType(editingEntry.rupuReturnType || 'money');
-      setSilverWeight(editingEntry.silverWeight?.toString() || '');
-      setMetalOnly(editingEntry.metalOnly || false);
     }
   }, [editingEntry]);
   
@@ -164,17 +159,17 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const itemOptions = getItemOptions();
 
   const calculateSubtotal = (): number => {
+    // Handle money transactions
+    if (transactionType === 'money') {
+      const amountNum = parseFloat(amount) || 0;
+      // Give: merchant gives money (outward flow) = negative
+      // Receive: merchant receives money (inward flow) = positive
+      return moneyType === 'give' ? -amountNum : amountNum;
+    }
+
     // Metal-only transactions have no subtotal (no money involved)
     if (metalOnly) {
       return 0;
-    }
-    
-    if (transactionType === 'money') {
-      const formatted = formatMoney(moneyAmount);
-      const amount = parseFloat(formatted) || 0;
-      // Debt = customer owes merchant = inward flow = positive
-      // Balance = merchant owes customer = outward flow = negative
-      return moneyType === 'debt' ? amount : -amount;
     }
 
     const weightNum = parseFloat(weight) || 0;
@@ -236,10 +231,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
   
   const isValid = () => {
+    // For money transactions, only amount is required
     if (transactionType === 'money') {
-      return moneyAmount.trim() !== '';
+      return amount.trim() !== '' && parseFloat(amount) > 0;
     }
-    
+
     // For metal-only transactions, price is not required
     const hasRequiredFields = metalOnly 
       ? weight.trim() !== '' 
@@ -266,37 +262,50 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     setIsSubmitting(true);
     
     try {
-      const entry: TransactionEntry = {
-        id: editingEntry?.id || Date.now().toString(),
-        type: transactionType,
-        itemType: transactionType === 'money' ? 'gold999' : itemType,
-        weight: weight.trim() ? parseFloat(weight) : undefined,
-        price: metalOnly ? undefined : (price.trim() ? parseFloat(price) : undefined),
-        touch: touch.trim() ? parseFloat(touch) : undefined,
-        extraPerKg: extraPerKg.trim() ? parseFloat(extraPerKg) : undefined,
-        pureWeight: itemType === 'rani' && weight.trim() && touch.trim() ? 
-          formatPureGold((parseFloat(weight) * parseFloat(touch)) / 100) : 
-          itemType === 'rupu' && weight.trim() && touch.trim() ?
-          formatPureSilver((parseFloat(weight) * parseFloat(touch)) / 100) : 
-          undefined,
-        moneyType: transactionType === 'money' ? moneyType : undefined,
-        amount: transactionType === 'money' && moneyAmount.trim() ? parseFloat(moneyAmount) : undefined,
-        rupuReturnType: itemType === 'rupu' ? rupuReturnType : undefined,
-        silverWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? parseFloat(silverWeight) || 0 : undefined,
-        netWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? (() => {
-          const touchNum = parseFloat(touch) || 0;
-          const extraNum = parseFloat(extraPerKg) || 0;
-          const pureWeight = (parseFloat(weight) * touchNum) / 100;
-          const formattedPureSilver = formatPureSilver(pureWeight);
-          const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
-          const formattedTotalPureWithExtra = formatPureSilver(totalPureWithExtra);
-          const silverNum = parseFloat(silverWeight) || 0;
-          const rawNetWeight = formattedTotalPureWithExtra - silverNum;
-          return formatPureSilver(rawNetWeight);
-        })() : undefined,
-        metalOnly: transactionType !== 'money' ? metalOnly : undefined,
-        subtotal,
-      };
+      let entry: TransactionEntry;
+
+      if (transactionType === 'money') {
+        // Create money entry
+        entry = {
+          id: editingEntry?.id || Date.now().toString(),
+          type: 'money',
+          moneyType,
+          amount: parseFloat(amount),
+          subtotal,
+          itemType: 'gold999', // Required by type, but not used for money entries
+        };
+      } else {
+        // Create regular entry
+        entry = {
+          id: editingEntry?.id || Date.now().toString(),
+          type: transactionType as 'purchase' | 'sell',
+          itemType,
+          weight: weight.trim() ? parseFloat(weight) : undefined,
+          price: metalOnly ? undefined : (price.trim() ? parseFloat(price) : undefined),
+          touch: touch.trim() ? parseFloat(touch) : undefined,
+          extraPerKg: extraPerKg.trim() ? parseFloat(extraPerKg) : undefined,
+          pureWeight: itemType === 'rani' && weight.trim() && touch.trim() ? 
+            formatPureGold((parseFloat(weight) * parseFloat(touch)) / 100) : 
+            itemType === 'rupu' && weight.trim() && touch.trim() ?
+            formatPureSilver((parseFloat(weight) * parseFloat(touch)) / 100) : 
+            undefined,
+          rupuReturnType: itemType === 'rupu' ? rupuReturnType : undefined,
+          silverWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? parseFloat(silverWeight) || 0 : undefined,
+          netWeight: itemType === 'rupu' && rupuReturnType === 'silver' ? (() => {
+            const touchNum = parseFloat(touch) || 0;
+            const extraNum = parseFloat(extraPerKg) || 0;
+            const pureWeight = (parseFloat(weight) * touchNum) / 100;
+            const formattedPureSilver = formatPureSilver(pureWeight);
+            const totalPureWithExtra = formattedPureSilver + (formattedPureSilver * extraNum) / 1000;
+            const formattedTotalPureWithExtra = formatPureSilver(totalPureWithExtra);
+            const silverNum = parseFloat(silverWeight) || 0;
+            const rawNetWeight = formattedTotalPureWithExtra - silverNum;
+            return formatPureSilver(rawNetWeight);
+          })() : undefined,
+          metalOnly,
+          subtotal,
+        };
+      }
 
       onAddEntry(entry);
       
@@ -305,9 +314,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setPrice('');
       setTouch('');
       setExtraPerKg('');
-      setMoneyAmount('');
       setRupuReturnType('money');
       setSilverWeight('');
+      setAmount('');
+      setMoneyType('receive');
 
       
       setSnackbarMessage(editingEntry ? 'Entry updated successfully' : 'Entry added successfully');
@@ -322,47 +332,17 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   };
 
   const renderDynamicFields = () => {
+    // Money transaction fields
     if (transactionType === 'money') {
       return (
-        <>
-          <SegmentedButtons
-            value={moneyType}
-            onValueChange={setMoneyType as any}
-            buttons={[
-              { 
-                value: 'debt', 
-                label: 'Give', 
-                icon: 'arrow-up-circle',
-                style: { backgroundColor: moneyType === 'debt' ? theme.colors.error : undefined }
-              },
-              { 
-                value: 'balance', 
-                label: 'Receive', 
-                icon: 'arrow-down-circle',
-                style: { backgroundColor: moneyType === 'balance' ? theme.colors.success : undefined }
-              },
-            ]}
-            style={styles.segmentedButtons}
-          />
-          <View>
-            <TextInput
-              label="Amount (₹)"
-              value={moneyAmount}
-              onChangeText={(text) => {
-                setMoneyAmount(text);
-              }}
-              onBlur={() => {
-                if (moneyAmount.trim()) {
-                  const formatted = formatMoney(moneyAmount);
-                  setMoneyAmount(formatted);
-                }
-              }}
-              mode="outlined"
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </View>
-        </>
+        <TextInput
+          label="Amount (₹)"
+          value={amount}
+          onChangeText={setAmount}
+          mode="outlined"
+          keyboardType="numeric"
+          style={styles.input}
+        />
       );
     }
 
@@ -620,13 +600,35 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               value: 'money',
               label: 'Money',
               icon: 'cash',
-              style: { backgroundColor: transactionType === 'money' ? theme.colors.secondary : undefined }
+              style: { backgroundColor: transactionType === 'money' ? '#BABABA' : undefined }
             }] : []),
           ]}
           style={styles.segmentedButtons}
         />
 
-        {/* Item Type Dropdown - Only show for sell/purchase */}
+        {transactionType === 'money' && (
+          <SegmentedButtons
+            value={moneyType}
+            onValueChange={setMoneyType as any}
+            buttons={[
+              {
+                value: 'receive',
+                label: 'Receive',
+                icon: 'arrow-down-bold',
+                style: { backgroundColor: moneyType === 'receive' ? theme.colors.success : undefined }
+              },
+              {
+                value: 'give',
+                label: 'Give',
+                icon: 'arrow-up-bold',
+                style: { backgroundColor: moneyType === 'give' ? theme.colors.debtColor : undefined }
+              },
+            ]}
+            style={[styles.segmentedButtons, { marginHorizontal: theme.spacing.md }]}
+          />
+        )}
+
+        {/* Item Type Dropdown */}
         {transactionType !== 'money' && (
           <Menu
             visible={menuVisible}

@@ -3,11 +3,8 @@ import {
   View,
   StyleSheet,
   FlatList,
-  Keyboard,
   Animated,
   Dimensions,
-  TouchableWithoutFeedback,
-  PanResponder,
 } from 'react-native';
 import {
   Modal,
@@ -19,8 +16,6 @@ import {
   Text,
   Avatar,
   Divider,
-  ActivityIndicator,
-  Snackbar,
   IconButton,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -46,7 +41,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [recentCustomers, setRecentCustomers] = useState<Customer[]>([]);
   const [slideAnim] = useState(new Animated.Value(Dimensions.get('window').height));
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
   const [validationError, setValidationError] = useState<string>('');
@@ -271,12 +265,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     }
     
     return parts.join('; ');
-  };
-
-  const getBalanceColor = (balance: number) => {
-    if (balance > 0) return theme.colors.primary; // Blue - Balance (merchant owes customer)
-    if (balance < 0) return theme.colors.debtColor; // Orange - Debt (customer owes merchant)
-    return theme.colors.success; // Green - Settled
   };
 
   const formatLastTransaction = (date?: string) => {

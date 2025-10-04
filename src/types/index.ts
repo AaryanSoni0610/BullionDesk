@@ -35,14 +35,14 @@ export interface Transaction {
 export interface TransactionEntry {
   id: string;
   type: 'sell' | 'purchase' | 'money';
-  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'rupu';
+  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'rupu' | 'money';
   weight?: number;
   price?: number;
   touch?: number; // For Rani/Rupu
   extraPerKg?: number; // For Rupu bonus
   pureWeight?: number; // Calculated for impure metals
   actualGoldGiven?: number; // For Rani sell entries
-  moneyType?: 'debt' | 'balance'; // For money entries
+  moneyType?: 'give' | 'receive'; // For money entries: 'give' = merchant gives money (outward), 'receive' = merchant receives money (inward)
   amount?: number; // For money entries
   rupuReturnType?: 'money' | 'silver'; // For Rupu purchase entries
   silverWeight?: number; // For Rupu silver return
@@ -55,7 +55,7 @@ export interface TransactionEntry {
 
 export type MetalType = 'gold999' | 'gold995' | 'silver';
 export type ImpureMetalType = 'rani' | 'rupu';
-export type ItemType = MetalType | ImpureMetalType;
+export type ItemType = MetalType | ImpureMetalType | 'money';
 
 // Ledger Entry - tracks each transaction update for accurate daily cash flow
 export interface LedgerEntry {

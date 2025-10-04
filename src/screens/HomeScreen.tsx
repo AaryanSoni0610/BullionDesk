@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Image, ScrollView, RefreshControl, FlatList, BackHandler } from 'react-native';
-import { Surface, Text, List, FAB, Card, Chip, Button, ActivityIndicator, IconButton } from 'react-native-paper';
+import { Surface, Text, FAB, Card, Button, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
@@ -12,7 +12,6 @@ import { Transaction, Customer } from '../types';
 
 export const HomeScreen: React.FC = () => {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [customers, setCustomers] = useState<Map<string, Customer>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,14 +63,12 @@ export const HomeScreen: React.FC = () => {
       });
       
       setRecentTransactions(sortedTransactions);
-      setCustomers(customerMap);
       setError(null);
     } catch (error) {
       console.error('Error loading recent transactions:', error);
       setError('Unable to load transactions. Please try again.');
       if (!refresh) {
         setRecentTransactions([]);
-        setCustomers(new Map());
       }
     } finally {
       setIsLoading(false);
@@ -170,7 +167,7 @@ export const HomeScreen: React.FC = () => {
       const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
       const hasRemainingBalance = transactionRemaining > 0;
       if (hasRemainingBalance) {
-        const isDebt = transaction.total > 0;
+        const isDebt = transaction.total < 0;
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       }

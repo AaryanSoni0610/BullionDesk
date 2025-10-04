@@ -22,7 +22,6 @@ export const SettingsScreen: React.FC = () => {
   const [isCheckingBackup, setIsCheckingBackup] = React.useState(true);
   const [showKeyDialog, setShowKeyDialog] = React.useState(false);
   const [keyDialogMode, setKeyDialogMode] = React.useState<'setup' | 'confirm' | 'enter'>('setup');
-  const [tempKey, setTempKey] = React.useState<string>('');
   const [keyDialogCallback, setKeyDialogCallback] = React.useState<((key: string | null) => void) | null>(null);
   const [customers, setCustomers] = React.useState<any[]>([]);
   const [baseInventory, setBaseInventory] = React.useState<any>(null);
@@ -605,9 +604,9 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Metal Inventory"
             description={
-              isLoadingInventory 
-                ? "Loading..." 
-                : `Gold: ${baseInventory?.gold999 || 0}g, Silver: ${baseInventory?.silver || 0}g`
+              isLoadingInventory
+                ? "Loading..."
+                : `Gold: ${(baseInventory?.gold999 + baseInventory?.gold995 || 0)}g, Silver: ${baseInventory?.silver || 0}g, Money: ₹${baseInventory?.money?.toLocaleString() || 0}`
             }
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
@@ -647,7 +646,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Import Data"
-            description="Import from backup file (supports all locations)"
+            description="Import from backup file"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="file-import-outline" />}
@@ -673,7 +672,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="0.7.0"
+            description="v0.8.0"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}

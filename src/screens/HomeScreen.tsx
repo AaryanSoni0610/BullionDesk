@@ -138,6 +138,11 @@ export const HomeScreen: React.FC = () => {
     let transactionBalanceLabel = 'Settled';
     let transactionBalanceColor = theme.colors.primary; // Blue for settled
     
+    let isMoneyOnly = false;
+    if (transaction.entries.every(entry => entry.itemType === 'money')) {
+      isMoneyOnly = true;
+    }
+
     if (isMetalOnly) {
       // For metal-only transactions, show the metal items
       const metalItems: string[] = [];
@@ -165,8 +170,13 @@ export const HomeScreen: React.FC = () => {
     } else {
       // For money transactions, show money balance
       const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
+
       const hasRemainingBalance = transactionRemaining > 0;
-      if (hasRemainingBalance) {
+      if (hasRemainingBalance && !isMoneyOnly) {
+        const isDebt = transaction.total > 0;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+        transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+      } else {
         const isDebt = transaction.total < 0;
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;

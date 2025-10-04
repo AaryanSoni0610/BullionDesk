@@ -287,7 +287,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     
     setIsSaving(true);
     try {
-      await onSaveTransaction(received);
+      // Calculate effective received amount including discount/extra
+      const effectiveReceived = netAmount > 0 
+        ? received - discountExtraAmount  // Receiving: subtract discount
+        : received + discountExtraAmount; // Giving: add extra
+      
+      await onSaveTransaction(effectiveReceived);
     } catch (error) {
       console.error('Failed to save transaction:', error);
     } finally {

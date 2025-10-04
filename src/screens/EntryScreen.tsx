@@ -272,7 +272,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           moneyType,
           amount: parseFloat(amount),
           subtotal,
-          itemType: 'gold999', // Required by type, but not used for money entries
+          itemType: 'money', // Correct itemType for money entries
         };
       } else {
         // Create regular entry

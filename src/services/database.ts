@@ -159,6 +159,16 @@ export class DatabaseService {
     }
   }
 
+  static async getLedgerEntriesByCustomerId(customerId: string): Promise<LedgerEntry[]> {
+    try {
+      const allEntries = await this.getAllLedgerEntries();
+      return allEntries.filter(entry => entry.customerId === customerId);
+    } catch (error) {
+      console.error('Error getting ledger entries by customer ID:', error);
+      return [];
+    }
+  }
+
   static async createLedgerEntry(
     transaction: Transaction,
     deltaAmount: number,
@@ -239,25 +249,62 @@ export class DatabaseService {
       const now = new Date().toISOString();
       const isUpdate = !!existingTransactionId;
 
+      // LOGGING: Transaction details
+      console.log('🔄 SAVE TRANSACTION STARTED');
+      console.log('📊 Transaction Type:', isUpdate ? 'UPDATE' : 'CREATE');
+      console.log('👤 Customer:', {
+        id: customer.id,
+        name: customer.name,
+        currentBalance: customer.balance,
+        currentMetalBalances: customer.metalBalances
+      });
+      console.log('📝 Entries:', entries.map(entry => ({
+        id: entry.id,
+        type: entry.type,
+        itemType: entry.itemType,
+        weight: entry.weight,
+        price: entry.price,
+        touch: entry.touch,
+        pureWeight: entry.pureWeight,
+        subtotal: entry.subtotal,
+        moneyType: entry.moneyType,
+        amount: entry.amount,
+        metalOnly: entry.metalOnly,
+        rupuReturnType: entry.rupuReturnType,
+        silverWeight: entry.silverWeight,
+        netWeight: entry.netWeight
+      })));
+      console.log('💰 Received Amount:', receivedAmount);
+      if (isUpdate) {
+        console.log('🔄 Updating Transaction ID:', existingTransactionId);
+      }
+
       // Calculate totals
       const { netAmount, subtotal } = this.calculateTransactionTotals(entries);
-      
+
       // Check if this is a money-only transaction
       const isMoneyOnlyTransaction = entries.every(entry => entry.type === 'money');
-      
+
       // Final balance calculation (from MERCHANT's perspective):
       let finalBalance: number;
       if (isMoneyOnlyTransaction) {
         // For money-only transactions:
-        // Positive netAmount (receive) = merchant receives money = reduces customer debt = negative balance change
-        // Negative netAmount (give) = merchant gives money = increases customer debt = positive balance change
-        finalBalance = -netAmount;
+        // Positive netAmount (receive) = merchant receives money = customer has credit
+        // Negative netAmount (give) = merchant gives money = customer owes more
+        finalBalance = netAmount;
       } else {
         // For sell/purchase transactions:
-        finalBalance = netAmount >= 0 
+        finalBalance = netAmount >= 0
           ? receivedAmount - netAmount           // SELL: customer payment reduces customer debt
           : Math.abs(netAmount) - receivedAmount; // PURCHASE: merchant payment reduces merchant debt
       }
+
+      console.log('🧮 Calculated Values:', {
+        netAmount,
+        subtotal,
+        finalBalance,
+        isMoneyOnlyTransaction
+      });
 
       let transaction: Transaction;
       let previousAmountPaid = 0;
@@ -406,9 +453,17 @@ export class DatabaseService {
         metalBalances: customer.metalBalances || {},
       };
 
+      // LOGGING: Customer balance change
+      console.log('💰 CUSTOMER BALANCE CHANGE:');
+      console.log('  Previous Balance:', customer.balance);
+      console.log('  New Balance:', newBalance);
+      console.log('  Balance Change:', newBalance - customer.balance);
+      console.log('  Old Balance Effect Reversed:', oldBalanceEffect);
+      console.log('  New Balance Effect Applied:', finalBalance);
+
       // Apply NEW metal balances for metal-only entries in updated transaction
       if (isMetalOnly) {
-        
+        console.log('🏭 METAL BALANCE CHANGES:');
         entries.forEach(entry => {
           if (entry.metalOnly && entry.type !== 'money') {
             const itemType = entry.itemType;
@@ -439,7 +494,8 @@ export class DatabaseService {
             }
             const currentBalance = updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] || 0;
             updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] = currentBalance + metalAmount;
-            
+
+            console.log(`  ${itemType.toUpperCase()}: ${currentBalance} → ${currentBalance + metalAmount} (change: ${metalAmount > 0 ? '+' : ''}${metalAmount})`);
           }
         });
       }
@@ -451,7 +507,7 @@ export class DatabaseService {
       // Calculate current inventory for logging
       const allTransactions = await this.getAllTransactions();
       const baseInventory = await this.getBaseInventory();
-      const currentInventory = {
+      const inventoryBefore = {
         gold999: baseInventory.gold999,
         gold995: baseInventory.gold995,
         rani: baseInventory.rani,
@@ -468,25 +524,25 @@ export class DatabaseService {
             // moneyType 'receive' = merchant receives money = increase money inventory
             // moneyType 'give' = merchant gives money = decrease money inventory
             const moneyChange = entry.moneyType === 'receive' ? (entry.amount || 0) : -(entry.amount || 0);
-            currentInventory.money += moneyChange;
+            inventoryBefore.money += moneyChange;
           } else if (entry.type === 'sell') {
             if (entry.itemType === 'rani') {
-              currentInventory.rani -= entry.weight || 0;
-              currentInventory.gold999 -= entry.actualGoldGiven || 0;
+              inventoryBefore.rani -= entry.weight || 0;
+              inventoryBefore.gold999 -= entry.actualGoldGiven || 0;
             } else if (entry.weight) {
               const weight = entry.pureWeight || entry.weight;
-              if (entry.itemType in currentInventory) {
-                currentInventory[entry.itemType as keyof typeof currentInventory] -= weight;
+              if (entry.itemType in inventoryBefore) {
+                inventoryBefore[entry.itemType as keyof typeof inventoryBefore] -= weight;
               }
             }
           } else if (entry.type === 'purchase') {
             if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
-              currentInventory.rupu += entry.weight || 0;
-              currentInventory.silver -= entry.silverWeight || 0;
+              inventoryBefore.rupu += entry.weight || 0;
+              inventoryBefore.silver -= entry.silverWeight || 0;
             } else if (entry.weight) {
               const weight = entry.pureWeight || entry.weight;
-              if (entry.itemType in currentInventory) {
-                currentInventory[entry.itemType as keyof typeof currentInventory] += weight;
+              if (entry.itemType in inventoryBefore) {
+                inventoryBefore[entry.itemType as keyof typeof inventoryBefore] += weight;
               }
             }
           }
@@ -496,15 +552,34 @@ export class DatabaseService {
         const transactionHasMoneyEntry = trans.entries.some(e => e.type === 'money');
         if (!transactionHasMoneyEntry) {
           if (trans.total >= 0) {
-            currentInventory.money += trans.amountPaid;
+            inventoryBefore.money += trans.amountPaid;
           } else {
-            currentInventory.money -= trans.amountPaid;
+            inventoryBefore.money -= trans.amountPaid;
           }
+        }
+      });
+
+      // LOGGING: Inventory changes
+      console.log('📦 INVENTORY CHANGES:');
+      console.log('  Base Inventory:', baseInventory);
+      console.log('  Final Inventory:', inventoryBefore);
+      console.log('  Inventory Changes:');
+      Object.keys(inventoryBefore).forEach(key => {
+        const before = baseInventory[key as keyof typeof baseInventory];
+        const after = inventoryBefore[key as keyof typeof inventoryBefore];
+        const change = after - before;
+        if (change !== 0) {
+          console.log(`    ${key.toUpperCase()}: ${before} → ${after} (${change > 0 ? '+' : ''}${change})`);
         }
       });
 
       // Update last transaction ID
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
+
+      // LOGGING: Transaction completion
+      console.log('✅ TRANSACTION SAVED SUCCESSFULLY');
+      console.log('🆔 Transaction ID:', transaction.id);
+      console.log('🔄 SAVE TRANSACTION COMPLETED\n');
 
       return { success: true, transactionId: transaction.id };
     } catch (error) {

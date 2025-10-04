@@ -365,10 +365,22 @@ export const HistoryScreen: React.FC = () => {
       // For money transactions, show money balance
       const transactionRemaining = Math.abs(transaction.total) - transaction.amountPaid;
       const hasRemainingBalance = transactionRemaining > 0;
+      
+      let isMoneyOnly = false;
+      if (transaction.entries.every(entry => entry.itemType === 'money')) {
+        isMoneyOnly = true;
+      }
+
       if (hasRemainingBalance) {
-        const isDebt = transaction.total < 0;
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
-        transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+        if (!isMoneyOnly) {
+          const isDebt = transaction.total > 0;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+          transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+        } else {
+          const isDebt = transaction.total < 0;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+          transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+        }
       } else {
         transactionBalanceColor = theme.colors.primary; // Blue for settled
       }
@@ -600,6 +612,7 @@ export const HistoryScreen: React.FC = () => {
                       </Text>
                     )}
                     {isMetalOnly && <View style={{ flex: 1 }} />}
+                    {isMoneyOnly && <View style={{ flex: 1 }} />}
                     <Text variant="bodySmall" style={[styles.transactionBalance, 
                       { color: transactionBalanceColor }
                     ]}>

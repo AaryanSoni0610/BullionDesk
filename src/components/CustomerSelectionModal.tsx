@@ -200,7 +200,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
 
   const formatBalance = (balance: number) => {
     if (balance === 0) return 'Settled';
-    if (balance > 0) return `Balance: ₹${balance.toLocaleString()}`; // Merchant owes customer
+    if (balance < 0) return `Balance: ₹${balance.toLocaleString()}`; // Merchant owes customer
     else return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
   };
 
@@ -248,9 +248,9 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     const parts: string[] = [];
     
     // Add money balance/debt first
-    if (customer.balance < 0) {
+    if (customer.balance > 0) {
       parts.push(`Balance: ₹${Math.abs(customer.balance).toLocaleString()}`);
-    } else if (customer.balance > 0) {
+    } else if (customer.balance < 0) {
       parts.push(`Debt: ₹${Math.abs(customer.balance).toLocaleString()}`);
     }
     

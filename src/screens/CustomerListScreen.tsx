@@ -19,7 +19,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Customer, LedgerEntry } from '../types';
+import { Customer, LedgerEntry, Transaction } from '../types';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
 import { formatFullDate } from '../utils/formatting';
@@ -169,17 +169,13 @@ export const CustomerListScreen: React.FC = () => {
     }
 
     try {
-      // Fetch both ledger entries and transactions for this customer
-      const [allLedgerEntries, allTransactions] = await Promise.all([
-        DatabaseService.getAllLedgerEntries(),
-        DatabaseService.getAllTransactions()
+      // Fetch both ledger entries and transactions for this customer directly from database
+      const [moneyLedgerEntries, customerTransactions] = await Promise.all([
+        DatabaseService.getLedgerEntriesByCustomerId(customerId),
+        DatabaseService.getTransactionsByCustomerId(customerId)
       ]);
 
-      // Get money transactions from ledger entries
-      const moneyLedgerEntries = allLedgerEntries.filter(entry => entry.customerId === customerId);
-
       // Get metal transactions and convert them to ledger-like entries
-      const customerTransactions = allTransactions.filter(transaction => transaction.customerId === customerId);
       const metalLedgerEntries: LedgerEntry[] = [];
 
       customerTransactions.forEach(transaction => {

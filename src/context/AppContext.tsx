@@ -25,6 +25,10 @@ interface AppContextType {
   // Modal Management
   customerModalVisible: boolean;
   setCustomerModalVisible: (visible: boolean) => void;
+  allowCustomerCreation: boolean;
+  setAllowCustomerCreation: (allow: boolean) => void;
+  isCustomerSelectionForRaniRupa: boolean;
+  setIsCustomerSelectionForRaniRupa: (isForRaniRupa: boolean) => void;
   
   // Snackbar Management
   snackbarVisible: boolean;
@@ -93,6 +97,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [transactionCreatedAt, setTransactionCreatedAt] = useState<string | null>(null);
   const [transactionLastUpdatedAt, setTransactionLastUpdatedAt] = useState<string | null>(null);
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
+  const [allowCustomerCreation, setAllowCustomerCreation] = useState(true);
+  const [isCustomerSelectionForRaniRupa, setIsCustomerSelectionForRaniRupa] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [alertVisible, setAlertVisible] = useState(false);
@@ -140,12 +146,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const handleSelectCustomer = (customer: Customer) => {
     setCustomerModalVisible(false);
-    // Clear editing transaction ID for new transactions
-    setEditingTransactionId(null);
-    setLastGivenMoney(0);
-    setTransactionCreatedAt(null);
-    setTransactionLastUpdatedAt(null);
-    navigateToEntry(customer);
+    
+    if (isCustomerSelectionForRaniRupa) {
+      // For Rani/Rupa sell, just set the customer without navigating
+      setCurrentCustomer(customer);
+      setIsCustomerSelectionForRaniRupa(false);
+    } else {
+      // Clear editing transaction ID for new transactions
+      setEditingTransactionId(null);
+      setLastGivenMoney(0);
+      setTransactionCreatedAt(null);
+      setTransactionLastUpdatedAt(null);
+      navigateToEntry(customer);
+    }
   };
 
   const handleCreateCustomer = async (name: string) => {
@@ -304,6 +317,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     transactionLastUpdatedAt,
     customerModalVisible,
     setCustomerModalVisible,
+    allowCustomerCreation,
+    setAllowCustomerCreation,
+    isCustomerSelectionForRaniRupa,
+    setIsCustomerSelectionForRaniRupa,
     snackbarVisible,
     setSnackbarVisible,
     snackbarMessage,

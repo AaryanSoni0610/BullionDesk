@@ -603,7 +603,7 @@ export const SettingsScreen: React.FC = () => {
             description={
               isLoadingInventory
                 ? "Loading..."
-                : `Gold: ${(baseInventory?.gold999 + baseInventory?.gold995 || 0)}g, Silver: ${baseInventory?.silver || 0}g, Money: ₹${baseInventory?.money?.toLocaleString() || 0}`
+                : `Gold: ${DatabaseService.roundInventoryValue((baseInventory?.gold999 + baseInventory?.gold995 || 0), 'gold999')}g, Silver: ${DatabaseService.roundInventoryValue(baseInventory?.silver || 0, 'silver')}g, Money: ₹${DatabaseService.roundInventoryValue(baseInventory?.money || 0, 'money').toLocaleString()}`
             }
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
@@ -612,7 +612,7 @@ export const SettingsScreen: React.FC = () => {
               if (baseInventory) {
                 showAlert(
                   'Current Base Inventory',
-                  `Gold 999: ${baseInventory.gold999}g\nGold 995: ${baseInventory.gold995}g\nSilver: ${baseInventory.silver}g\nRani: ${baseInventory.rani}g\nRupu: ${baseInventory.rupu}g\nMoney: ₹${baseInventory.money.toLocaleString()}`,
+                  `Gold 999: ${DatabaseService.roundInventoryValue(baseInventory.gold999, 'gold999')}g\nGold 995: ${DatabaseService.roundInventoryValue(baseInventory.gold995, 'gold995')}g\nSilver: ${DatabaseService.roundInventoryValue(baseInventory.silver, 'silver')}g\nRani: ${DatabaseService.roundInventoryValue(baseInventory.rani, 'rani')}g\nRupu: ${DatabaseService.roundInventoryValue(baseInventory.rupu, 'rupu')}g\nMoney: ₹${DatabaseService.roundInventoryValue(baseInventory.money, 'money').toLocaleString()}`,
                   [
                     { text: 'OK' },
                     { 
@@ -623,17 +623,6 @@ export const SettingsScreen: React.FC = () => {
                 );
               }
             }}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Trade"
-            description="View and manage trade records"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
-            left={props => <List.Icon {...props} icon="swap-vertical-circle-outline" />}
-            onPress={() => navigateToTrade()}
           />
 
           <Divider />

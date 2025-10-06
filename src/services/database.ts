@@ -21,6 +21,18 @@ let cacheTimestamp = 0;
 const CACHE_DURATION = 300000; // 5 minutes
 
 export class DatabaseService {
+  // Helper function to round inventory values to appropriate precision
+  static roundInventoryValue(value: number, itemType: string): number {
+    if (itemType === 'money') {
+      return Math.round(value); // Whole rupees
+    } else if (itemType.includes('gold') || itemType === 'rani') {
+      return Math.round(value * 1000) / 1000; // 3 decimal places for gold
+    } else if (itemType.includes('silver') || itemType === 'rupu') {
+      return Math.round(value * 10) / 10; // 1 decimal place for silver
+    }
+    return Math.round(value * 1000) / 1000; // Default to 3 decimal places
+  }
+
   // Cache management
   static clearCache() {
     customersCache = null;
@@ -563,6 +575,14 @@ export class DatabaseService {
           }
         }
       });
+
+      // Apply rounding to inventory values to prevent floating point precision issues
+      inventoryBefore.gold999 = this.roundInventoryValue(inventoryBefore.gold999, 'gold999');
+      inventoryBefore.gold995 = this.roundInventoryValue(inventoryBefore.gold995, 'gold995');
+      inventoryBefore.rani = this.roundInventoryValue(inventoryBefore.rani, 'rani');
+      inventoryBefore.silver = this.roundInventoryValue(inventoryBefore.silver, 'silver');
+      inventoryBefore.rupu = this.roundInventoryValue(inventoryBefore.rupu, 'rupu');
+      inventoryBefore.money = this.roundInventoryValue(inventoryBefore.money, 'money');
 
       // LOGGING: Inventory changes
       console.log('📦 INVENTORY CHANGES:');

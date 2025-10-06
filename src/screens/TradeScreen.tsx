@@ -4,7 +4,6 @@ import {
   StyleSheet,
   FlatList,
   Animated,
-  BackHandler,
   ScrollView,
 } from 'react-native';
 import {
@@ -17,8 +16,8 @@ import {
   Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import { Image } from 'react-native';
 import { Trade } from '../types';
 import { theme } from '../theme';
 import { TradeService } from '../services/tradeService';
@@ -33,7 +32,7 @@ export const TradeScreen: React.FC = () => {
   const [tradeInputs, setTradeInputs] = useState<any[]>([]);
   const [collectedTradeData, setCollectedTradeData] = useState<any>({});
 
-  const { navigateToSettings, showAlert } = useAppContext();
+  const { showAlert, navigateToSettings } = useAppContext();
 
   // Load trades on mount
   useEffect(() => {
@@ -53,22 +52,6 @@ export const TradeScreen: React.FC = () => {
       showAlert('Error', 'Failed to load trades');
     }
   };
-
-  // Handle hardware back button - navigate to settings
-  useFocusEffect(
-    React.useCallback(() => {
-      const onBackPress = () => {
-        navigateToSettings();
-        return true; // Prevent default back behavior
-      };
-
-      BackHandler.addEventListener('hardwareBackPress', onBackPress);
-
-      return () => {
-        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
-      };
-    }, [navigateToSettings])
-  );
 
   const toggleCardExpansion = (tradeId: string) => {
     const newExpanded = new Set(expandedCards);
@@ -363,15 +346,15 @@ export const TradeScreen: React.FC = () => {
       {/* App Title Bar */}
       <Surface style={styles.appTitleBar} elevation={1}>
         <View style={styles.appTitleContent}>
-          <IconButton
-            icon="arrow-left"
-            size={20}
-            onPress={navigateToSettings}
-            style={styles.backButton}
-          />
           <Text variant="titleLarge" style={styles.appTitle}>
             Trades
           </Text>
+          <IconButton
+            icon="cog-outline"
+            size={24}
+            onPress={navigateToSettings}
+            style={styles.settingsButton}
+          />
         </View>
       </Surface>
 
@@ -428,19 +411,20 @@ const styles = StyleSheet.create({
   },
   appTitleBar: {
     backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
   },
   appTitleContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
   },
   appTitle: {
     color: theme.colors.primary,
     fontFamily: 'Roboto_700Bold',
   },
-  backButton: {
-    marginRight: theme.spacing.sm,
+  settingsButton: {
+    margin: 0,
   },
   content: {
     flex: 1,

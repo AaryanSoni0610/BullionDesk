@@ -17,12 +17,12 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
+import { formatPureGoldPrecise, formatPureSilver, formatPureGold } from '../utils/formatting';
 import { theme } from '../theme';
-import { DatabaseService } from '../services/database';
 import { RaniRupaStockService } from '../services/raniRupaStockService';
 import { useAppContext } from '../context/AppContext';
-import { RaniRupaStock } from '../types';
+import { Customer, TransactionEntry } from '../types';
+import { DatabaseService } from '../services/database';
 
 interface InventoryItem {
   id: string;
@@ -39,13 +39,29 @@ export const RaniRupaSellScreen: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [extraWeight, setExtraWeight] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isWaitingForCustomerSelection, setIsWaitingForCustomerSelection] = useState(false);
 
-  const { navigateToSettings, showAlert } = useAppContext();
+  const { navigateToSettings, showAlert, setCustomerModalVisible, setAllowCustomerCreation, customerModalVisible, currentCustomer, setIsCustomerSelectionForRaniRupa, setCurrentCustomer } = useAppContext();
 
   // Load inventory items based on selected type
   useEffect(() => {
     loadInventoryItems();
   }, [selectedType]);
+
+  // Handle customer selection completion
+  useEffect(() => {
+    if (!customerModalVisible && isWaitingForCustomerSelection) {
+      setIsWaitingForCustomerSelection(false);
+      setIsCustomerSelectionForRaniRupa(false); // Reset the flag
+      if (currentCustomer) {
+        // Customer was selected, show confirmation
+        handleCustomerSelected(currentCustomer);
+        // Clear currentCustomer after handling
+        setCurrentCustomer(null);
+      }
+    }
+  }, [customerModalVisible, isWaitingForCustomerSelection, currentCustomer, setCurrentCustomer]);
 
   const loadInventoryItems = async () => {
     try {
@@ -108,7 +124,7 @@ export const RaniRupaSellScreen: React.FC = () => {
     });
 
     const extra = parseFloat(extraWeight) || 0;
-    return total + extra;
+    return formatPureGold(total) + extra;
   };
 
   const handleSell = async () => {
@@ -118,35 +134,103 @@ export const RaniRupaSellScreen: React.FC = () => {
       return;
     }
 
+    // Show customer selection modal without allowing customer creation
+    setAllowCustomerCreation(false);
+    setIsCustomerSelectionForRaniRupa(true);
+    setIsWaitingForCustomerSelection(true);
+    setCustomerModalVisible(true);
+  };
+
+  const handleCustomerSelected = (customer: Customer) => {
+    const itemCount = selectedItems.size;
+    const totalWeight = calculateTotalPureWeight();
+    
+    // Show confirmation alert
+    showAlert(
+      'Confirm Sale',
+      `Are you sure you want to sell ${itemCount} ${selectedType} item(s) to '${customer.name}'?\n\nTotal Pure Weight: ${selectedType === 'rani' ? totalWeight.toFixed(3) : totalWeight.toFixed(1)}g`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: () => executeSale(customer) }
+      ]
+    );
+    
+    // Clear currentCustomer after handling
+    setSelectedCustomer(customer);
+  };
+
+  const executeSale = async (customer: Customer) => {
     try {
+      // Create transaction entries
+      const entries: TransactionEntry[] = [];
+      
+      // Sell entries for each selected Rani/Rupa item (merchant sells Rani/Rupa to customer)
+      selectedItems.forEach(itemId => {
+        const item = inventoryItems.find(i => i.id === itemId);
+        if (item) {
+          entries.push({
+            id: `entry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'sell',
+            itemType: selectedType,
+            weight: item.weight,
+            touch: item.touch,
+            pureWeight: item.pureWeight,
+            price: 0, // No price for bulk exchange
+            subtotal: 0, // No money involved in this exchange
+            createdAt: new Date().toISOString(),
+          });
+        }
+      });
+
+      // Purchase entry for total pure weight (merchant purchases pure metal from customer)
+      const totalPureWeight = calculateTotalPureWeight();
+      const pureItemType = selectedType === 'rani' ? 'gold999' : 'silver';
+      entries.push({
+        id: `entry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        type: 'purchase',
+        itemType: pureItemType,
+        weight: totalPureWeight,
+        price: 0, // No price for bulk exchange
+        subtotal: 0, // No money involved in this exchange
+        createdAt: new Date().toISOString(),
+      });
+
+      // Save transaction
+      const result = await DatabaseService.saveTransaction(
+        customer,
+        entries,
+        0, // receivedAmount
+        undefined, // existingTransactionId
+        0 // discountExtraAmount
+      );
+
+      if (!result.success) {
+        showAlert('Error', `Failed to create transaction: ${result.error}`);
+        return;
+      }
+
       // Remove selected stock items
       for (const itemId of selectedItems) {
         const item = inventoryItems.find(i => i.id === itemId);
         if (item) {
-          const result = await RaniRupaStockService.removeStock(item.stock_id);
-          if (!result.success) {
-            showAlert('Error', `Failed to remove stock item: ${result.error}`);
-            return;
+          const stockResult = await RaniRupaStockService.removeStock(item.stock_id);
+          if (!stockResult.success) {
+            showAlert('Warning', `Transaction created but failed to remove stock item: ${stockResult.error}`);
+            // Continue with other items
           }
         }
       }
 
-      // Handle extra weight if entered (this would need to be handled differently)
-      // For now, we'll just show success message
-      const extra = parseFloat(extraWeight) || 0;
-      if (extra > 0) {
-        showAlert('Warning', 'Extra weight handling not implemented yet. Only selected items were removed from stock.');
-      }
+      showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`);
 
-      showAlert('Success', `Sold ${totalWeight.toFixed(2)}g of pure ${selectedType.toUpperCase()}. ${selectedItems.size} items removed from stock.`);
-
-      // Reload inventory to reflect changes
-      await loadInventoryItems();
+      // Reset state
       setSelectedItems(new Set());
       setExtraWeight('');
+      await loadInventoryItems();
+      
     } catch (error) {
-      console.error('Error during sell operation:', error);
-      showAlert('Error', 'Failed to complete sell operation');
+      console.error('Error during sale execution:', error);
+      showAlert('Error', 'Failed to complete the sale');
     }
   };
 

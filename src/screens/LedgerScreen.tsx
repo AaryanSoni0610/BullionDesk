@@ -329,10 +329,19 @@ export const LedgerScreen: React.FC = () => {
     goldInventory.total = goldInventory.gold999 + goldInventory.gold995;
     silverInventory.total = silverInventory.silver + silverInventory.rupu;
 
+    // Apply rounding to prevent floating point precision issues in display
+    goldInventory.gold999 = DatabaseService.roundInventoryValue(goldInventory.gold999, 'gold999');
+    goldInventory.gold995 = DatabaseService.roundInventoryValue(goldInventory.gold995, 'gold995');
+    goldInventory.rani = DatabaseService.roundInventoryValue(goldInventory.rani, 'rani');
+    goldInventory.total = DatabaseService.roundInventoryValue(goldInventory.total, 'gold999'); // Use gold999 precision for total
+    silverInventory.silver = DatabaseService.roundInventoryValue(silverInventory.silver, 'silver');
+    silverInventory.rupu = DatabaseService.roundInventoryValue(silverInventory.rupu, 'rupu');
+    silverInventory.total = DatabaseService.roundInventoryValue(silverInventory.total, 'silver'); // Use silver precision for total
+
     // Calculate actual money inventory from ledger entries: base money + sum(amountReceived) - sum(amountGiven)
     const totalMoneyReceived = ledgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
     const totalMoneyGiven = ledgerEntries.reduce((sum, entry) => sum + entry.amountGiven, 0);
-    const actualMoneyInventory = baseInventory.money + totalMoneyReceived - totalMoneyGiven;
+    const actualMoneyInventory = DatabaseService.roundInventoryValue(baseInventory.money + totalMoneyReceived - totalMoneyGiven, 'money');
 
     return {
       totalTransactions: transactions.length,

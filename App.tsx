@@ -69,6 +69,7 @@ const AppContent: React.FC<AppContentProps> = ({
     transactionLastUpdatedAt,
     customerModalVisible,
     setCustomerModalVisible,
+    allowCustomerCreation,
     snackbarVisible,
     setSnackbarVisible,
     snackbarMessage,
@@ -106,6 +107,9 @@ const AppContent: React.FC<AppContentProps> = ({
               break;
             case 'Ledger':
               iconName = focused ? 'chart-line' : 'chart-line-variant';
+              break;
+            case 'Trade':
+              iconName = focused ? 'swap-vertical-circle-outline' : 'swap-vertical';
               break;
             default:
               iconName = 'circle';
@@ -146,6 +150,11 @@ const AppContent: React.FC<AppContentProps> = ({
         name="History" 
         component={HistoryScreen}
         options={{ tabBarLabel: 'History' }}
+      />
+      <Tab.Screen 
+        name="Trade" 
+        component={TradeScreen}
+        options={{ tabBarLabel: 'Trade' }}
       />
       <Tab.Screen 
         name="Ledger" 
@@ -212,6 +221,7 @@ const AppContent: React.FC<AppContentProps> = ({
             onDismiss={() => setCustomerModalVisible(false)}
             onSelectCustomer={handleSelectCustomer}
             onCreateCustomer={handleCreateCustomer}
+            allowCreateCustomer={allowCustomerCreation}
           />
 
           {/* Success Snackbar */}

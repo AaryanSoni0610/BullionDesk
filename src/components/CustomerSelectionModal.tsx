@@ -28,6 +28,7 @@ interface CustomerSelectionModalProps {
   onDismiss: () => void;
   onSelectCustomer: (customer: Customer) => void;
   onCreateCustomer: (name: string) => void;
+  allowCreateCustomer?: boolean;
 }
 
 export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
@@ -35,6 +36,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   onDismiss,
   onSelectCustomer,
   onCreateCustomer,
+  allowCreateCustomer = true,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -272,7 +274,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     return `Last: ${new Date(date).toLocaleDateString()}`;
   };
 
-  const showCreateButton = searchQuery.trim() !== '' && 
+  const showCreateButton = allowCreateCustomer && searchQuery.trim() !== '' && 
     !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.toLowerCase());
 
   const showRecentCustomers = searchQuery.trim() === '' && recentCustomers.length > 0;

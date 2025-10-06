@@ -24,7 +24,7 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatFullDate } from '../utils/formatting';
+import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -465,12 +465,30 @@ export const HistoryScreen: React.FC = () => {
                       {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
                     </Text>
                     <Text variant="bodySmall" style={styles.entryDetails}>
-                      {entry.weight && `${(() => {
-                        const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
-                        const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
-                        return formattedWeight;
-                      })()}g`}
-                      {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
+                      {entry.weight && (() => {
+                        // Special formatting for rani/rupu sell items
+                        if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+                          const weight = entry.weight || 0;
+                          const touch = entry.touch || 100;
+                          const pureWeight = (weight * touch) / 100;
+                          const formattedPureWeight = entry.itemType === 'rani' 
+                            ? formatPureGoldPrecise(pureWeight) 
+                            : formatPureSilver(pureWeight);
+                          
+                          if (entry.itemType === 'rani') {
+                            // Rani: weight(3 decimals):touch(2 decimals)%:pureWeight(3 decimals)g
+                            return `${weight.toFixed(3)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(3)}g`;
+                          } else {
+                            // Rupu: weight(1 decimal):touch(2 decimals)%:pureWeight(1 decimal)g
+                            return `${weight.toFixed(1)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(1)}g`;
+                          }
+                        } else {
+                          // Default formatting for other items
+                          const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                          const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                          return `${formattedWeight}g`;
+                        }
+                      })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${entry.price.toLocaleString()}` : ''}
                     </Text>
                   </View>
                   
@@ -564,12 +582,30 @@ export const HistoryScreen: React.FC = () => {
                           {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
                         </Text>
                         <Text variant="bodySmall" style={styles.entryDetails}>
-                          {entry.weight && `${(() => {
-                            const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
-                            const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
-                            return formattedWeight;
-                          })()}g`}
-                          {!entry.metalOnly && entry.price && ` : ₹${entry.price.toLocaleString()}`}
+                          {entry.weight && (() => {
+                            // Special formatting for rani/rupu sell items
+                            if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+                              const weight = entry.weight || 0;
+                              const touch = entry.touch || 100;
+                              const pureWeight = (weight * touch) / 100;
+                              const formattedPureWeight = entry.itemType === 'rani' 
+                                ? formatPureGoldPrecise(pureWeight) 
+                                : formatPureSilver(pureWeight);
+                              
+                              if (entry.itemType === 'rani') {
+                                // Rani: weight(3 decimals):touch(2 decimals)%:pureWeight(3 decimals)g
+                                return `${weight.toFixed(3)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(3)}g`;
+                              } else {
+                                // Rupu: weight(1 decimal):touch(2 decimals)%:pureWeight(1 decimals)g
+                                return `${weight.toFixed(1)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(1)}g`;
+                              }
+                            } else {
+                              // Default formatting for other items
+                              const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                              const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                              return `${formattedWeight}g`;
+                            }
+                          })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${entry.price.toLocaleString()}` : ''}
                         </Text>
                       </View>
                       

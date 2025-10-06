@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatRelativeDate } from '../utils/formatting';
+import { formatTransactionAmount, formatRelativeDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer } from '../types';
@@ -180,11 +180,11 @@ export const HomeScreen: React.FC = () => {
 
       if (hasRemainingBalance && !isMoneyOnly) {
         const isDebt = transaction.total > 0 && transactionRemaining > 0;
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       } else if (isMoneyOnly){
         const isDebt = transaction.total < 0;
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       }
     }
@@ -517,7 +517,6 @@ const styles = StyleSheet.create({
     margin: theme.spacing.md,
     right: 0,
     bottom: theme.spacing.md,
-    backgroundColor: theme.colors.primary,
     borderRadius: 16,
   },
   

@@ -35,7 +35,6 @@ export class RaniRupaStockService {
       stock.push(newStock);
       await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
 
-      console.log('✅ STOCK ADDED:', newStock);
       return { success: true, stock_id };
     } catch (error) {
       console.error('Error adding stock:', error);
@@ -56,7 +55,6 @@ export class RaniRupaStockService {
       const removedItem = stock.splice(index, 1)[0];
       await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
 
-      console.log('✅ STOCK REMOVED:', removedItem);
       return { success: true };
     } catch (error) {
       console.error('Error removing stock:', error);
@@ -90,7 +88,6 @@ export class RaniRupaStockService {
   static async clearAllStock(): Promise<{ success: boolean; error?: string }> {
     try {
       await AsyncStorage.removeItem(STORAGE_KEYS.RANI_RUPA_STOCK);
-      console.log('✅ ALL STOCK CLEARED');
       return { success: true };
     } catch (error) {
       console.error('Error clearing stock:', error);

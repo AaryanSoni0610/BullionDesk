@@ -3,15 +3,18 @@ import * as SecureStore from 'expo-secure-store';
 import { Customer, Transaction, TransactionEntry, LedgerEntry } from '../types';
 import { RaniRupaStockService } from './raniRupaStockService';
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   CUSTOMERS: '@bulliondesk_customers',
   TRANSACTIONS: '@bulliondesk_transactions',
   LEDGER: '@bulliondesk_ledger',
   LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
+  TRADES: '@bulliondesk_trades',
+  LAST_TRADE_ID: '@bulliondesk_last_trade_id',
   BASE_INVENTORY: '@bulliondesk_base_inventory',
   AUTO_BACKUP_ENABLED: '@bulliondesk_auto_backup_enabled',
   STORAGE_PERMISSION_GRANTED: '@bulliondesk_storage_permission_granted',
   LAST_BACKUP_TIME: '@bulliondesk_last_backup_time',
+  RANI_RUPA_STOCK: '@bulliondesk_rani_rupa_stock'
 };
 
 // Simple in-memory cache for performance optimization
@@ -38,6 +41,57 @@ export class DatabaseService {
     customersCache = null;
     transactionsCache = null;
     cacheTimestamp = 0;
+  }
+
+  // Calculate net opening balance effects on inventory
+  static async calculateOpeningBalanceEffects(): Promise<{
+    gold999: number;
+    gold995: number;
+    silver: number;
+    rani: number;
+    rupu: number;
+    money: number;
+  }> {
+    try {
+      const customers = await this.getAllCustomers();
+      
+      const effects = {
+        gold999: 0,
+        gold995: 0,
+        silver: 0,
+        rani: 0,
+        rupu: 0,
+        money: 0
+      };
+
+      for (const customer of customers) {
+        // Money balance: Positive = customer owes merchant (merchant has received money)
+        // So positive balance reduces base inventory (inflow)
+        effects.money += customer.balance;
+
+        // Metal balances: Positive = merchant owes customer (merchant has given out metal)
+        // So positive balance reduces base inventory (outflow)
+        if (customer.metalBalances) {
+          effects.gold999 += customer.metalBalances.gold999 || 0;
+          effects.gold995 += customer.metalBalances.gold995 || 0;
+          effects.silver += customer.metalBalances.silver || 0;
+          effects.rani += customer.metalBalances.rani || 0;
+          effects.rupu += customer.metalBalances.rupu || 0;
+        }
+      }
+
+      return effects;
+    } catch (error) {
+      console.error('Error calculating opening balance effects:', error);
+      return {
+        gold999: 0,
+        gold995: 0,
+        silver: 0,
+        rani: 0,
+        rupu: 0,
+        money: 0
+      };
+    }
   }
 
   // Customer operations
@@ -81,7 +135,7 @@ export class DatabaseService {
       await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
       
       // Clear cache since data has changed
-      this.clearCache();
+      DatabaseService.clearCache();
       
       return true;
     } catch (error) {
@@ -263,36 +317,6 @@ export class DatabaseService {
       const now = new Date().toISOString();
       const isUpdate = !!existingTransactionId;
 
-      // LOGGING: Transaction details
-      console.log('🔄 SAVE TRANSACTION STARTED');
-      console.log('📊 Transaction Type:', isUpdate ? 'UPDATE' : 'CREATE');
-      console.log('👤 Customer:', {
-        id: customer.id,
-        name: customer.name,
-        currentBalance: customer.balance,
-        currentMetalBalances: customer.metalBalances
-      });
-      console.log('📝 Entries:', entries.map(entry => ({
-        id: entry.id,
-        type: entry.type,
-        itemType: entry.itemType,
-        weight: entry.weight,
-        price: entry.price,
-        touch: entry.touch,
-        pureWeight: entry.pureWeight,
-        subtotal: entry.subtotal,
-        moneyType: entry.moneyType,
-        amount: entry.amount,
-        metalOnly: entry.metalOnly,
-        rupuReturnType: entry.rupuReturnType,
-        silverWeight: entry.silverWeight,
-        netWeight: entry.netWeight
-      })));
-      console.log('💰 Received Amount:', receivedAmount);
-      if (isUpdate) {
-        console.log('🔄 Updating Transaction ID:', existingTransactionId);
-      }
-
       // Calculate totals
       const { netAmount, subtotal } = this.calculateTransactionTotals(entries);
 
@@ -308,18 +332,10 @@ export class DatabaseService {
         finalBalance = netAmount;
       } else {
         // For sell/purchase transactions:
-        console.log('netAmount', netAmount, 'receivedAmount', receivedAmount, 'discountExtraAmount', discountExtraAmount);
         finalBalance = netAmount >= 0
           ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
           : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
       }
-
-      console.log('🧮 Calculated Values:', {
-        netAmount,
-        subtotal,
-        finalBalance,
-        isMoneyOnlyTransaction
-      });
 
       let transaction: Transaction;
       let previousAmountPaid = 0;
@@ -401,7 +417,7 @@ export class DatabaseService {
 
         transactions[existingIndex] = transaction;
         await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-        this.clearCache();
+        DatabaseService.clearCache();
       } else {
         // CREATE new transaction
         const transactionId = `txn_${Date.now()}`;
@@ -436,7 +452,7 @@ export class DatabaseService {
         const transactions = await this.getAllTransactions();
         transactions.push(transaction);
         await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-        this.clearCache();
+        DatabaseService.clearCache();
       }
 
       // Calculate the delta amount for ledger entry
@@ -470,17 +486,8 @@ export class DatabaseService {
         metalBalances: customer.metalBalances || {},
       };
 
-      // LOGGING: Customer balance change
-      console.log('💰 CUSTOMER BALANCE CHANGE:');
-      console.log('  Previous Balance:', customer.balance);
-      console.log('  New Balance:', newBalance);
-      console.log('  Balance Change:', newBalance - customer.balance);
-      console.log('  Old Balance Effect Reversed:', oldBalanceEffect);
-      console.log('  New Balance Effect Applied:', finalBalance);
-
       // Apply NEW metal balances for metal-only entries in updated transaction
       if (isMetalOnly) {
-        console.log('🏭 METAL BALANCE CHANGES:');
         entries.forEach(entry => {
           if (entry.metalOnly && entry.type !== 'money') {
             const itemType = entry.itemType;
@@ -511,8 +518,6 @@ export class DatabaseService {
             }
             const currentBalance = updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] || 0;
             updatedCustomer.metalBalances[itemType as keyof typeof updatedCustomer.metalBalances] = currentBalance + metalAmount;
-
-            console.log(`  ${itemType.toUpperCase()}: ${currentBalance} → ${currentBalance + metalAmount} (change: ${metalAmount > 0 ? '+' : ''}${metalAmount})`);
           }
         });
       }
@@ -584,20 +589,6 @@ export class DatabaseService {
       inventoryBefore.rupu = this.roundInventoryValue(inventoryBefore.rupu, 'rupu');
       inventoryBefore.money = this.roundInventoryValue(inventoryBefore.money, 'money');
 
-      // LOGGING: Inventory changes
-      console.log('📦 INVENTORY CHANGES:');
-      console.log('  Base Inventory:', baseInventory);
-      console.log('  Final Inventory:', inventoryBefore);
-      console.log('  Inventory Changes:');
-      Object.keys(inventoryBefore).forEach(key => {
-        const before = baseInventory[key as keyof typeof baseInventory];
-        const after = inventoryBefore[key as keyof typeof inventoryBefore];
-        const change = after - before;
-        if (change !== 0) {
-          console.log(`    ${key.toUpperCase()}: ${before} → ${after} (${change > 0 ? '+' : ''}${change})`);
-        }
-      });
-
       // Update last transaction ID
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
 
@@ -607,25 +598,13 @@ export class DatabaseService {
           if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
             // Add stock for purchases
             const touch = entry.touch || 100; // Default to 100% for rupu
-            const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
-            if (result.success) {
-              console.log(`📦 STOCK ADDED: ${entry.itemType} ${entry.weight}g @ ${touch}% touch (ID: ${result.stock_id})`);
-            } else {
-              console.error(`❌ STOCK ADD FAILED: ${result.error}`);
-            }
+            await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
           }
-          // Note: Stock removal for sales is handled in RaniRupaSellScreen.tsx
-          // This is because sales require selecting specific stock items, not just quantities
         }
       } catch (stockError) {
         console.error('Error managing stock:', stockError);
-        // Don't fail the transaction if stock management fails
+        return { success: false, error: 'Error managing stock' };
       }
-
-      // LOGGING: Transaction completion
-      console.log('✅ TRANSACTION SAVED SUCCESSFULLY');
-      console.log('🆔 Transaction ID:', transaction.id);
-      console.log('🔄 SAVE TRANSACTION COMPLETED\n');
 
       return { success: true, transactionId: transaction.id };
     } catch (error) {
@@ -716,9 +695,9 @@ export class DatabaseService {
         await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(data.baseInventory));
       }
       if (data.raniRupaStock) {
-        await AsyncStorage.setItem('rani_rupa_stock', JSON.stringify(data.raniRupaStock));
+        await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(data.raniRupaStock));
       }
-      this.clearCache();
+      DatabaseService.clearCache();
       return true;
     } catch (error) {
       console.error('Error importing data:', error);
@@ -783,7 +762,22 @@ export class DatabaseService {
     money: number;
   }): Promise<boolean> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(inventory));
+      // Calculate opening balance effects
+      const openingEffects = await this.calculateOpeningBalanceEffects();
+
+      // Adjust base inventory based on opening balance effects
+      // Positive opening effect = merchant has received (inflow) = reduce base inventory
+      // Negative opening effect = merchant has given (outflow) = increase base inventory
+      const adjustedInventory = {
+        gold999: inventory.gold999 - openingEffects.gold999,
+        gold995: inventory.gold995 - openingEffects.gold995,
+        silver: inventory.silver - openingEffects.silver,
+        rani: inventory.rani - openingEffects.rani,
+        rupu: inventory.rupu - openingEffects.rupu,
+        money: inventory.money - openingEffects.money
+      };
+
+      await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(adjustedInventory));
       return true;
     } catch (error) {
       console.error('Error setting base inventory:', error);
@@ -820,8 +814,12 @@ export class DatabaseService {
         STORAGE_KEYS.TRANSACTIONS,
         STORAGE_KEYS.LEDGER,
         STORAGE_KEYS.LAST_TRANSACTION_ID,
+        STORAGE_KEYS.TRADES,
+        STORAGE_KEYS.LAST_TRADE_ID,
+        STORAGE_KEYS.RANI_RUPA_STOCK, // Rani/Rupa stock data
         // Note: BASE_INVENTORY is preserved - inventory will reset to base values
         // Note: AUTO_BACKUP_ENABLED, STORAGE_PERMISSION_GRANTED, LAST_BACKUP_TIME are preserved
+        // Note: Notification settings are preserved
       ]);
 
       // Clear device ID from secure store
@@ -832,7 +830,7 @@ export class DatabaseService {
       }
 
       // Clear in-memory cache
-      this.clearCache();
+      DatabaseService.clearCache();
 
       return true;
     } catch (error) {
@@ -918,7 +916,7 @@ export class DatabaseService {
       // Remove the transaction
       const filteredTransactions = transactions.filter(t => t.id !== transactionId);
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filteredTransactions));
-      this.clearCache();
+      DatabaseService.clearCache();
 
       return { success: true };
     } catch (error) {

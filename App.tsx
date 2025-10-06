@@ -274,6 +274,13 @@ export default function App() {
       // Initialize notifications
       await NotificationService.initialize();
 
+      // Register background auto backup task if enabled
+      const isAutoBackupEnabled = await BackupService.isAutoBackupEnabled();
+      if (isAutoBackupEnabled) {
+        await BackupService.registerBackgroundTask();
+      }
+
+      // Check if immediate backup is needed
       const shouldBackup = await BackupService.shouldPerformAutoBackup();
       if (shouldBackup) {
         await BackupService.performAutoBackup();

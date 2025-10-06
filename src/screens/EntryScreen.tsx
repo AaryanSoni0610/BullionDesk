@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme';
-import { formatMoney, formatPureGold, formatPureSilver } from '../utils/formatting';
+import { formatMoney, formatPureGold, formatPureSilver, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry, ItemType } from '../types';
 
 interface EntryScreenProps {
@@ -701,7 +701,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                 style={styles.subtotalAmount}
               >
                 {subtotal >= 0 ? '+' : '-'}₹{
-                  parseFloat(formatMoney(Math.abs(subtotal).toString())).toLocaleString()
+                  formatIndianNumber(parseFloat(formatMoney(Math.abs(subtotal).toString())))
                 }
               </Text>
             </View>

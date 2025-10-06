@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme';
-import { formatWeight } from '../utils/formatting';
+import { formatWeight, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry } from '../types';
 
 interface SettlementSummaryScreenProps {
@@ -74,7 +74,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     const num = parseFloat(value);
     if (isNaN(num)) return 'Please enter a valid amount';
     if (num < 0) return 'Amount cannot be negative';
-    if (num > maxAmount * 1.1) return `Amount seems too high. Maximum expected: ₹${maxAmount.toLocaleString()}`;
+    if (num > maxAmount * 1.1) return `Amount seems too high. Maximum expected: ₹${formatIndianNumber(maxAmount)}`;
     if (num > 10000000) return 'Amount cannot exceed ₹1,00,00,000';
     return '';
   };
@@ -153,7 +153,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const formatEntryDetails = (entry: TransactionEntry): string => {
     if (entry.type === 'money') {
       const type = entry.moneyType === 'receive' ? 'Receive' : 'Give';
-      return `${type}: ₹${entry.amount?.toLocaleString()}`;
+      return `${type}: ₹${formatIndianNumber(entry.amount || 0)}`;
     }
 
     if (entry.itemType === 'rani') {
@@ -163,7 +163,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       const pureGold = entry.pureWeight || ((entry.weight || 0) * effectiveTouch) / 100;
       const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Cut: ${entry.cut || 0}%, Pure: ${formatWeight(pureGold, false)}`;
       if (entry.price !== undefined) {
-        return `${details}, Price: ₹${entry.price.toLocaleString()}/10g`;
+        return `${details}, Price: ₹${formatIndianNumber(entry.price)}/10g`;
       }
       return details;
     }
@@ -172,7 +172,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       const pureWeight = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
       const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureWeight, true)}`;
       if (entry.price !== undefined) {
-        return `${details}, Price: ₹${entry.price.toLocaleString()}/kg`;
+        return `${details}, Price: ₹${formatIndianNumber(entry.price)}/kg`;
       }
       return details;
     }
@@ -180,7 +180,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     // Regular metals
     const details = `Weight: ${entry.weight}g`;
     if (entry.price !== undefined) {
-      return `${details}, Price: ₹${entry.price.toLocaleString()}/${entry.itemType.startsWith('gold') ? '10g' : 'kg'}`;
+      return `${details}, Price: ₹${formatIndianNumber(entry.price)}/${entry.itemType.startsWith('gold') ? '10g' : 'kg'}`;
     }
     return details;
   };
@@ -368,7 +368,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           {formatEntryDetails(entry)}
         </Text>
         <Text variant="bodyMedium" style={styles.entrySubtotal}>
-          Total: {entry.subtotal >= 0 ? '+' : '-'}₹{Math.abs(entry.subtotal).toLocaleString()}
+          Total: {entry.subtotal >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(entry.subtotal))}
         </Text>
       </Card.Content>
     </Card>
@@ -458,7 +458,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                 {/* Show net money if negative (merchant owes customer) - only for non-metal-only */}
                 {!isMetalOnly && netAmount < 0 && (
                   <Text variant="bodyMedium" style={styles.summaryItem}>
-                    • Money: ₹{Math.abs(netAmount).toLocaleString()}
+                    • Money: ₹{formatIndianNumber(Math.abs(netAmount))}
                   </Text>
                 )}
                 {giveItems.length === 0 && (isMetalOnly || netAmount >= 0) && (
@@ -492,7 +492,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                 {/* Show net money if positive (customer owes merchant) - only for non-metal-only */}
                 {!isMetalOnly && netAmount > 0 && (
                   <Text variant="bodyMedium" style={styles.summaryItem}>
-                    • Money: ₹{netAmount.toLocaleString()}
+                    • Money: ₹{formatIndianNumber(netAmount)}
                   </Text>
                 )}
                 {takeItems.length === 0 && (isMetalOnly || netAmount <= 0) && (
@@ -522,7 +522,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                       { color: adjustedNetAmount > 0 ? theme.colors.sellColor : theme.colors.primary }
                     ]}
                   >
-                    ₹{Math.abs(adjustedNetAmount).toLocaleString()}
+                    ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}
                   </Text>
                 </View>
 
@@ -545,7 +545,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                       paymentError ? styles.inputError : null
                     ]}
                     error={!!paymentError}
-                    placeholder={`Suggested: ₹${Math.abs(adjustedNetAmount).toLocaleString()}`}
+                    placeholder={`Suggested: ₹${formatIndianNumber(Math.abs(adjustedNetAmount))}`}
                   />
                   {/* Discount/Extra Input */}
                   <View>
@@ -576,14 +576,14 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                       onPress={() => setReceivedAmount(Math.abs(adjustedNetAmount).toString())}
                       style={styles.amountChip}
                     >
-                      Full: ₹{Math.abs(adjustedNetAmount).toLocaleString()}
+                      Full: ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}
                     </Chip>
                     <Chip 
                       mode="outlined" 
                       onPress={() => setReceivedAmount((Math.abs(adjustedNetAmount) / 2).toString())}
                       style={styles.amountChip}
                     >
-                      Half: ₹{(Math.abs(adjustedNetAmount) / 2).toLocaleString()}
+                      Half: ₹{formatIndianNumber(Math.abs(adjustedNetAmount) / 2)}
                     </Chip>
                     <Chip 
                       mode="outlined" 
@@ -617,7 +617,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                       }
                     ]}
                   >
-                    ₹{Math.abs(finalBalance).toLocaleString()}
+                    ₹{formatIndianNumber(Math.abs(finalBalance))}
                   </Text>
                 </View>
               </Card.Content>
@@ -853,8 +853,8 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     margin: 16,
-    right: 0,
-    bottom: 16,
+    right: 10,
+    bottom: 32,
     backgroundColor: theme.colors.primary,
   },
   

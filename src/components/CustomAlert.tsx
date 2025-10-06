@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, View, StyleSheet, TouchableWithoutFeedback } from 'react-native';
-import { Surface, Text, Button } from 'react-native-paper';
+import { Surface, Text, Button, TextInput } from 'react-native-paper';
 import { theme } from '../theme';
 
 interface AlertButton {
@@ -9,11 +9,20 @@ interface AlertButton {
   style?: 'default' | 'cancel' | 'destructive';
 }
 
+interface AlertInput {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
+  placeholder?: string;
+}
+
 interface CustomAlertProps {
   visible: boolean;
   title: string;
   message: string;
   buttons?: AlertButton[];
+  inputs?: AlertInput[];
   onDismiss?: () => void;
 }
 
@@ -22,6 +31,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   title,
   message,
   buttons,
+  inputs,
   onDismiss,
 }) => {
   // Use default OK button only if buttons is undefined, not if it's an empty array
@@ -72,6 +82,23 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
               >
                 {message}
               </Text>
+              {inputs && inputs.length > 0 && (
+                <View style={styles.inputsContainer}>
+                  {inputs.map((input, index) => (
+                    <TextInput
+                      key={index}
+                      label={input.label}
+                      value={input.value}
+                      onChangeText={input.onChangeText}
+                      keyboardType={input.keyboardType || 'default'}
+                      placeholder={input.placeholder}
+                      mode="outlined"
+                      style={styles.input}
+                      theme={{ colors: { primary: theme.colors.primary } }}
+                    />
+                  ))}
+                </View>
+              )}
               {isDismissible && (
                 <View style={styles.buttonContainer}>
                   {finalButtons.map((button, index) => (
@@ -127,6 +154,13 @@ const styles = StyleSheet.create({
   },
   button: {
     minWidth: 64,
+  },
+  inputsContainer: {
+    marginTop: 16,
+    gap: 12,
+  },
+  input: {
+    marginBottom: 8,
   },
 });
 

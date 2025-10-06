@@ -6,7 +6,9 @@ import {
   Button,
   ActivityIndicator,
   Chip,
-  IconButton
+  IconButton,
+  FAB,
+  TextInput
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -18,6 +20,8 @@ import { formatWeight, formatCurrency, formatPureGoldPrecise } from '../utils/fo
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
+import CustomAlert from '../components/CustomAlert';
+import { InventoryInputDialog } from '../components/InventoryInputDialog';
 
 interface InventoryData {
   totalTransactions: number;
@@ -74,6 +78,7 @@ export const LedgerScreen: React.FC = () => {
   const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAdjustAlert, setShowAdjustAlert] = useState(false);
   const { navigateToSettings } = useAppContext();
   const navigation = useNavigation();
 
@@ -156,6 +161,102 @@ export const LedgerScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
+    }
+  };
+
+  const handleInventoryAdjustment = async (values: Record<string, any>) => {
+    try {
+      const gold999Value = values.gold999 || 0;
+      const gold995Value = values.gold995 || 0;
+      const silverValue = values.silver || 0;
+
+      // Create or get "Adjust" customer
+      let adjustCustomer = customers.find(c => c.name === 'Adjust');
+      if (!adjustCustomer) {
+        adjustCustomer = {
+          id: `adjust_${Date.now()}`,
+          name: 'Adjust',
+          balance: 0,
+          metalBalances: {}
+        };
+        await DatabaseService.saveCustomer(adjustCustomer);
+        // Refresh customers list
+        const updatedCustomers = await DatabaseService.getAllCustomers();
+        setCustomers(updatedCustomers);
+        adjustCustomer = updatedCustomers.find(c => c.name === 'Adjust')!;
+      }
+
+      // Create transaction entries
+      const entries: any[] = [];
+      let entryId = 1;
+
+      // Gold 999 adjustment
+      if (gold999Value !== 0) {
+        entries.push({
+          id: `entry_${entryId++}`,
+          type: gold999Value > 0 ? 'purchase' : 'sell',
+          itemType: 'gold999',
+          weight: Math.abs(gold999Value),
+          price: 0, // No price to avoid balance/debt
+          metalOnly: true,
+          subtotal: 0,
+          createdAt: new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString()
+        });
+      }
+
+      // Gold 995 adjustment
+      if (gold995Value !== 0) {
+        entries.push({
+          id: `entry_${entryId++}`,
+          type: gold995Value > 0 ? 'purchase' : 'sell',
+          itemType: 'gold995',
+          weight: Math.abs(gold995Value),
+          price: 0, // No price to avoid balance/debt
+          metalOnly: true,
+          subtotal: 0,
+          createdAt: new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString()
+        });
+      }
+
+      // Silver adjustment
+      if (silverValue !== 0) {
+        entries.push({
+          id: `entry_${entryId++}`,
+          type: silverValue > 0 ? 'purchase' : 'sell',
+          itemType: 'silver',
+          weight: Math.abs(silverValue),
+          price: 0, // No price to avoid balance/debt
+          metalOnly: true,
+          subtotal: 0,
+          createdAt: new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString()
+        });
+      }
+
+      // Save transaction
+      const result = await DatabaseService.saveTransaction(
+        adjustCustomer,
+        entries,
+        0, // receivedAmount
+        undefined, // existingTransactionId
+        0 // discountExtraAmount
+      );
+
+      if (!result.success) {
+        console.error('Failed to save adjustment transaction:', result.error);
+        return;
+      }
+
+      // Reset form and close alert
+      setShowAdjustAlert(false);
+
+      // Refresh data
+      await loadInventoryData(true);
+
+    } catch (error) {
+      console.error('Error creating inventory adjustment:', error);
     }
   };
 
@@ -839,6 +940,46 @@ export const LedgerScreen: React.FC = () => {
           )}
         </ScrollView>
       </View>
+
+      {/* Floating Action Button for Inventory Adjustment */}
+      <FAB
+        icon="delta"
+        style={styles.fab}
+        onPress={() => setShowAdjustAlert(true)}
+      />
+
+      {/* Custom Alert for Inventory Adjustment */}
+      <InventoryInputDialog
+        visible={showAdjustAlert}
+        title="Inventory Adjustment"
+        message="Enter the weight adjustments for inventory reconciliation:"
+        inputs={[
+          {
+            key: "gold999",
+            label: "Gold 999 (g)",
+            value: "",
+            keyboardType: "numeric",
+            placeholder: "0.000"
+          },
+          {
+            key: "gold995",
+            label: "Gold 995 (g)",
+            value: "",
+            keyboardType: "numeric",
+            placeholder: "0.000"
+          },
+          {
+            key: "silver",
+            label: "Silver (g)",
+            value: "",
+            keyboardType: "numeric",
+            placeholder: "0.000"
+          }
+        ]}
+        onCancel={() => setShowAdjustAlert(false)}
+        onSubmit={handleInventoryAdjustment}
+        requireAtLeastOneNumeric={true}
+      />
     </SafeAreaView>
   );
 };
@@ -1164,5 +1305,11 @@ const styles = StyleSheet.create({
   cardUnit: {
     marginTop: theme.spacing.xs / 2,
     opacity: 0.8,
+  },
+  fab: {
+    position: 'absolute',
+    margin: theme.spacing.md,
+    right: 0,
+    bottom: theme.spacing.md,
   },
 });

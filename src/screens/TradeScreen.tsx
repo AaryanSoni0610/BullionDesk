@@ -21,7 +21,7 @@ import { Image } from 'react-native';
 import { Trade } from '../types';
 import { theme } from '../theme';
 import { TradeService } from '../services/tradeService';
-import { formatFullDate } from '../utils/formatting';
+import { formatFullDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 
@@ -239,7 +239,7 @@ export const TradeScreen: React.FC = () => {
   const formatPrice = (price: number, itemType: string) => {
     const isGold = itemType.includes('gold') || itemType === 'rani';
     const unit = isGold ? '/10g' : '/kg';
-    return `₹${price.toLocaleString()}${unit}`;
+    return `₹${formatIndianNumber(price)}${unit}`;
   };
 
   const renderTradeItem = ({ item }: { item: Trade }) => {
@@ -520,7 +520,6 @@ const styles = StyleSheet.create({
     margin: theme.spacing.md,
     right: 0,
     bottom: theme.spacing.md,
-    backgroundColor: theme.colors.primary,
     borderRadius: 16,
   },
 });

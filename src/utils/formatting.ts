@@ -3,6 +3,29 @@
  */
 
 /**
+ * Formats numbers in Indian numbering system (e.g., 10,00,000)
+ * @param num - The number to format
+ * @returns Formatted number string in Indian format
+ */
+export const formatIndianNumber = (num: number): string => {
+  const numStr = Math.abs(num).toString();
+  const [integerPart, decimalPart] = numStr.split('.');
+
+  // Handle Indian numbering system
+  let lastThree = integerPart.substring(integerPart.length - 3);
+  const otherNumbers = integerPart.substring(0, integerPart.length - 3);
+  if (otherNumbers !== '') {
+    lastThree = ',' + lastThree;
+  }
+  const formattedInteger = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + lastThree;
+
+  // Add decimal part if exists
+  const result = decimalPart ? `${formattedInteger}.${decimalPart}` : formattedInteger;
+
+  return num < 0 ? `-${result}` : result;
+};
+
+/**
  * Formats weight values with appropriate decimal places based on item type
  * @param weight - The weight value to format
  * @param isSilver - Whether the item is silver (shows 1 decimal) or gold (shows 3 decimals)
@@ -20,7 +43,7 @@ export const formatWeight = (weight: number, isSilver: boolean = false): string 
  */
 export const formatCurrency = (amount: number): string => {
   const isNegative = amount < 0;
-  const formattedAmount = `₹${Math.abs(amount).toLocaleString()}`;
+  const formattedAmount = `₹${formatIndianNumber(Math.abs(amount))}`;
   return isNegative ? `-${formattedAmount}` : formattedAmount;
 };
 
@@ -123,7 +146,7 @@ export const formatTransactionAmount = (transaction: any): string => {
   }
   
   const label = isReceived ? '+' : '-';
-  return amount > 0 ? `${label}₹${amount.toLocaleString()}` : '₹0';
+  return amount > 0 ? `${label}₹${formatIndianNumber(amount)}` : '₹0';
 };
 
 /**

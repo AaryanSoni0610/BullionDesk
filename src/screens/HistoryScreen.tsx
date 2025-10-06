@@ -24,7 +24,7 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
+import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver, formatIndianNumber } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -377,11 +377,11 @@ export const HistoryScreen: React.FC = () => {
       if (hasRemainingBalance) {
         if (!isMoneyOnly) {
           const isDebt = transaction.total > 0;
-          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
           transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         } else {
           const isDebt = transaction.total < 0;
-          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
           transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         }
       } else {
@@ -467,7 +467,7 @@ export const HistoryScreen: React.FC = () => {
                     <Text variant="bodySmall" style={styles.entryDetails}>
                       {entry.weight && (() => {
                         // Special formatting for rani/rupu sell items
-                        if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+                        if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                           const weight = entry.weight || 0;
                           const touch = entry.touch || 100;
                           const pureWeight = (weight * touch) / 100;
@@ -475,20 +475,20 @@ export const HistoryScreen: React.FC = () => {
                             ? formatPureGoldPrecise(pureWeight) 
                             : formatPureSilver(pureWeight);
                           
-                          if (entry.itemType === 'rani') {
-                            // Rani: weight(3 decimals):touch(2 decimals)%:pureWeight(3 decimals)g
-                            return `${weight.toFixed(3)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(3)}g`;
+
+                          const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                          if (entry.type === 'sell') {
+                            return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
                           } else {
-                            // Rupu: weight(1 decimal):touch(2 decimals)%:pureWeight(1 decimal)g
-                            return `${weight.toFixed(1)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(1)}g`;
+                            return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}%`;
                           }
                         } else {
                           // Default formatting for other items
-                          const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                          const isGold = entry.itemType.includes('gold');
                           const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
                           return `${formattedWeight}g`;
                         }
-                      })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${entry.price.toLocaleString()}` : ''}
+                      })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
                     </Text>
                   </View>
                   
@@ -520,7 +520,7 @@ export const HistoryScreen: React.FC = () => {
                       Total
                     </Text>
                     <Text variant="bodySmall" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
-                      ₹{Math.abs(transaction.total).toLocaleString()}
+                      ₹{formatIndianNumber(Math.abs(transaction.total))}
                     </Text>
                   </View>
                 </>
@@ -530,7 +530,7 @@ export const HistoryScreen: React.FC = () => {
               <View style={styles.paymentRow}>
                 {!isMetalOnly && transaction.amountPaid > 0 && (
                   <Text variant="bodySmall" style={styles.paymentLabel}>
-                    {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+                    {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
                   </Text>
                 )}
                 {isMetalOnly && <View style={{ flex: 1 }} />}
@@ -584,7 +584,7 @@ export const HistoryScreen: React.FC = () => {
                         <Text variant="bodySmall" style={styles.entryDetails}>
                           {entry.weight && (() => {
                             // Special formatting for rani/rupu sell items
-                            if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+                            if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                               const weight = entry.weight || 0;
                               const touch = entry.touch || 100;
                               const pureWeight = (weight * touch) / 100;
@@ -592,20 +592,19 @@ export const HistoryScreen: React.FC = () => {
                                 ? formatPureGoldPrecise(pureWeight) 
                                 : formatPureSilver(pureWeight);
                               
-                              if (entry.itemType === 'rani') {
-                                // Rani: weight(3 decimals):touch(2 decimals)%:pureWeight(3 decimals)g
-                                return `${weight.toFixed(3)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(3)}g`;
+                              const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                              if (entry.type === 'sell') {
+                                return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
                               } else {
-                                // Rupu: weight(1 decimal):touch(2 decimals)%:pureWeight(1 decimals)g
-                                return `${weight.toFixed(1)}g:${touch.toFixed(2)}%:${formattedPureWeight.toFixed(1)}g`;
+                                return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}%`;
                               }
                             } else {
                               // Default formatting for other items
-                              const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+                              const isGold = entry.itemType.includes('gold');
                               const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
                               return `${formattedWeight}g`;
                             }
-                          })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${entry.price.toLocaleString()}` : ''}
+                          })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
                         </Text>
                       </View>
                       
@@ -637,7 +636,7 @@ export const HistoryScreen: React.FC = () => {
                           Total
                         </Text>
                         <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
-                          ₹{Math.abs(transaction.total).toLocaleString()}
+                          ₹{formatIndianNumber(Math.abs(transaction.total))}
                         </Text>
                       </View>
                     </>
@@ -647,7 +646,7 @@ export const HistoryScreen: React.FC = () => {
                   <View style={styles.paymentRow}>
                     {!isMetalOnly && transaction.amountPaid > 0 && (
                       <Text variant="bodySmall" style={styles.paymentLabel}>
-                        {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{transaction.amountPaid.toLocaleString()}
+                        {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
                       </Text>
                     )}
                     {isMetalOnly && <View style={{ flex: 1 }} />}

@@ -55,9 +55,7 @@ export interface TransactionEntry {
   lastUpdatedAt?: string; // ISO datetime when entry was last updated
 }
 
-export type MetalType = 'gold999' | 'gold995' | 'silver';
-export type ImpureMetalType = 'rani' | 'rupu';
-export type ItemType = MetalType | ImpureMetalType | 'money';
+export type ItemType = 'gold999' | 'gold995' | 'silver' | 'rani' | 'rupu' | 'money';
 
 // Trade Entry - separate from main transaction system
 export interface Trade {

@@ -22,6 +22,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Customer } from '../types';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
+import { formatIndianNumber } from '../utils/formatting';
 
 interface CustomerSelectionModalProps {
   visible: boolean;
@@ -202,8 +203,8 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
 
   const formatBalance = (balance: number) => {
     if (balance === 0) return 'Settled';
-    if (balance < 0) return `Balance: ₹${balance.toLocaleString()}`; // Merchant owes customer
-    else return `Debt: ₹${Math.abs(balance).toLocaleString()}`; // Customer owes merchant
+    if (balance < 0) return `Balance: ₹${formatIndianNumber(balance)}`; // Merchant owes customer
+    else return `Debt: ₹${formatIndianNumber(Math.abs(balance))}`; // Customer owes merchant
   };
 
   const formatMetalBalances = (customer: Customer) => {
@@ -251,9 +252,9 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     
     // Add money balance/debt first
     if (customer.balance > 0) {
-      parts.push(`Balance: ₹${Math.abs(customer.balance).toLocaleString()}`);
+      parts.push(`Balance: ₹${formatIndianNumber(Math.abs(customer.balance))}`);
     } else if (customer.balance < 0) {
-      parts.push(`Debt: ₹${Math.abs(customer.balance).toLocaleString()}`);
+      parts.push(`Debt: ₹${formatIndianNumber(Math.abs(customer.balance))}`);
     }
     
     // Add metal balance

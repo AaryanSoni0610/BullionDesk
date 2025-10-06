@@ -3,6 +3,8 @@ import * as SecureStore from 'expo-secure-store';
 import * as Device from 'expo-device';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Platform } from 'react-native';
 import JSZip from 'jszip';
@@ -10,6 +12,7 @@ import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database';
 import { RaniRupaStockService } from './raniRupaStockService';
 import { Customer, Transaction, TransactionEntry, RaniRupaStock } from '../types';
+import { STORAGE_KEYS } from './database';
 
 const SECURE_STORE_KEYS = {
   ENCRYPTION_KEY: 'backup_encryption_key',
@@ -21,6 +24,9 @@ const SECURE_STORE_KEYS = {
   FIRST_EXPORT_OR_AUTO_BACKUP: 'first_export_or_auto_backup',
   BACKUP_LOG_FILE_URI: 'backup_log_file_uri',
 };
+
+// Background task constants
+const AUTO_BACKUP_TASK = 'auto-backup-task';
 
 interface BackupData {
   exportType: 'manual' | 'auto';
@@ -44,6 +50,40 @@ interface BackupData {
 }
 
 type AlertFunction = (title: string, message: string, buttons?: any[]) => void;
+
+// Define the background task for auto backup
+TaskManager.defineTask(AUTO_BACKUP_TASK, async () => {
+  try {
+    console.log('Background auto backup task started');
+
+    // Check if auto backup is enabled
+    const isEnabled = await BackupService.isAutoBackupEnabled();
+    if (!isEnabled) {
+      console.log('Auto backup is disabled, skipping');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    // Check if it's time to perform backup
+    const shouldBackup = await BackupService.shouldPerformAutoBackup();
+    if (!shouldBackup) {
+      console.log('Auto backup not needed at this time');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    // Perform the backup
+    const success = await BackupService.performAutoBackup();
+    if (success) {
+      console.log('Background auto backup completed successfully');
+      return BackgroundFetch.BackgroundFetchResult.NewData;
+    } else {
+      console.log('Background auto backup failed');
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+  } catch (error) {
+    console.error('Error in background auto backup task:', error);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
 
 export class BackupService {
   // Static alert function that can be overridden
@@ -672,7 +712,7 @@ export class BackupService {
         // Save ledger entry directly to AsyncStorage
         const allLedger = await DatabaseService.getAllLedgerEntries();
         allLedger.push(ledgerEntry);
-        await AsyncStorage.setItem('@bulliondesk_ledger', JSON.stringify(allLedger));
+        await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(allLedger));
       }
     }
 
@@ -691,7 +731,7 @@ export class BackupService {
           // Add new stock item
           const allStock = await RaniRupaStockService.getAllStock();
           allStock.push(stockItem);
-          await AsyncStorage.setItem('rani_rupa_stock', JSON.stringify(allStock));
+          await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(allStock));
         }
       }
     }
@@ -711,7 +751,7 @@ export class BackupService {
       // Save the transaction directly first
       const allTransactions = await DatabaseService.getAllTransactions();
       allTransactions.push(transaction);
-      await AsyncStorage.setItem('@bulliondesk_transactions', JSON.stringify(allTransactions));
+      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(allTransactions));
       DatabaseService.clearCache();
 
       // Update customer balance based on transaction
@@ -880,6 +920,13 @@ export class BackupService {
         throw new Error('Failed to save auto backup setting');
       }
 
+      // Register or unregister background task based on enabled state
+      if (enabled) {
+        await this.registerBackgroundTask();
+      } else {
+        await this.unregisterBackgroundTask();
+      }
+
       // If enabling auto backup, check if we need to set up storage
       if (enabled) {
         const isFirstTime = await this.isFirstExportOrAutoBackup();
@@ -893,8 +940,9 @@ export class BackupService {
             // Mark first export/auto backup as done
             await this.markFirstExportOrAutoBackupDone();
           } else {
-            // User denied permission, disable auto backup
+            // User denied permission, disable auto backup and unregister task
             await DatabaseService.setAutoBackupEnabled(false);
+            await this.unregisterBackgroundTask();
             throw new Error('Storage permission required for auto backup');
           }
         }
@@ -1053,5 +1101,50 @@ export class BackupService {
    */
   private static updateImportProgressAlert(message: string): void {
     this.showAlert('Importing...', message, []);
+  }
+
+  /**
+   * Register the background auto backup task
+   */
+  static async registerBackgroundTask(): Promise<void> {
+    try {
+      // Check if task is already registered
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(AUTO_BACKUP_TASK);
+      if (isRegistered) {
+        console.log('Auto backup background task already registered');
+        return;
+      }
+
+      // Register the background fetch
+      await BackgroundFetch.registerTaskAsync(AUTO_BACKUP_TASK, {
+        minimumInterval: 24 * 60 * 60, // 24 hours in seconds
+        stopOnTerminate: false, // Continue when app is terminated
+        startOnBoot: true, // Start when device boots
+      });
+
+      console.log('Auto backup background task registered successfully');
+    } catch (error) {
+      console.error('Failed to register auto backup background task:', error);
+    }
+  }
+
+  /**
+   * Unregister the background auto backup task
+   */
+  static async unregisterBackgroundTask(): Promise<void> {
+    try {
+      // Check if task is registered
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(AUTO_BACKUP_TASK);
+      if (!isRegistered) {
+        console.log('Auto backup background task not registered');
+        return;
+      }
+
+      // Unregister the background fetch
+      await BackgroundFetch.unregisterTaskAsync(AUTO_BACKUP_TASK);
+      console.log('Auto backup background task unregistered successfully');
+    } catch (error) {
+      console.error('Failed to unregister auto backup background task:', error);
+    }
   }
 }

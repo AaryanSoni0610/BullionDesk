@@ -19,10 +19,12 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { Customer, LedgerEntry, Transaction } from '../types';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
-import { formatFullDate } from '../utils/formatting';
+import { formatFullDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 
 export const CustomerListScreen: React.FC = () => {
@@ -97,8 +99,8 @@ export const CustomerListScreen: React.FC = () => {
 
   const formatBalance = (balance: number) => {
     if (balance === 0) return 'Settled';
-    if (balance < 0) return `Balance: ₹${Math.abs(balance).toLocaleString()}`;
-    else return `Debt: ₹${Math.abs(balance).toLocaleString()}`;
+    if (balance < 0) return `Balance: ₹${formatIndianNumber(Math.abs(balance))}`;
+    else return `Debt: ₹${formatIndianNumber(Math.abs(balance))}`;
   };
 
   const formatMetalBalances = (customer: Customer) => {
@@ -156,6 +158,178 @@ export const CustomerListScreen: React.FC = () => {
     }
 
     return parts.join(' | ');
+  };
+
+  const exportCustomersToPDF = async () => {
+    try {
+      // Prepare data for PDF - export all customers with debt/balance
+      const pdfData: Array<{customer: string, balance: string, debt: string}> = [];
+      
+      // Filter customers to only include those with debt/balance
+      const customersWithBalances = customers.filter(customer => {
+        // Check money balance
+        if (customer.balance !== 0) return true;
+        
+        // Check metal balances
+        const metalBalances = customer.metalBalances || {};
+        return Object.values(metalBalances).some(balance => balance && Math.abs(balance) > 0.001);
+      });
+      
+      customersWithBalances.forEach(customer => {
+        const metalBalances = customer.metalBalances || {};
+        
+        // Process money balance/debt
+        if (customer.balance > 0) {
+          pdfData.push({
+            customer: customer.name,
+            balance: `₹${formatIndianNumber(customer.balance)}`,
+            debt: ''
+          });
+        } else if (customer.balance < 0) {
+          pdfData.push({
+            customer: customer.name,
+            balance: '',
+            debt: `₹${formatIndianNumber(Math.abs(customer.balance))}`
+          });
+        }
+        
+        // Process metal balances/debts
+        Object.entries(metalBalances).forEach(([type, balance]) => {
+          if (balance && Math.abs(balance) > 0.001) {
+            const isGold = type.includes('gold') || type === 'rani';
+            const displayName = {
+              gold999: 'Gold 999',
+              gold995: 'Gold 995',
+              rani: 'Rani',
+              silver: 'Silver',
+              silver98: 'Silver 98',
+              silver96: 'Silver 96',
+              rupu: 'Rupu',
+            }[type] || type;
+            
+            const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance)).toFixed(1);
+            const balanceText = `${displayName} ${formattedBalance}g`;
+            
+            if (balance > 0) {
+              pdfData.push({
+                customer: customer.name,
+                balance: balanceText,
+                debt: ''
+              });
+            } else {
+              pdfData.push({
+                customer: customer.name,
+                balance: '',
+                debt: balanceText
+              });
+            }
+          }
+        });
+      });
+      
+      // Generate HTML for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Customer List - BullionDesk</title>
+          <style>
+            body {
+              font-family: 'Helvetica', sans-serif;
+              margin: 20px;
+              color: #333;
+            }
+            h1 {
+              color: #1976d2;
+              text-align: center;
+              margin-bottom: 30px;
+              font-size: 24px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            th, td {
+              border: 1px solid #ddd;
+              padding: 12px;
+              text-align: left;
+              font-size: 14px;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+              color: #555;
+            }
+            tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .customer-name {
+              font-weight: 500;
+            }
+            .balance {
+              color: #2e7d32;
+            }
+            .debt {
+              color: #d32f2f;
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              font-size: 12px;
+              color: #666;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Customer List - BullionDesk</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Balance</th>
+                <th>Debt</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pdfData.map(row => `
+                <tr>
+                  <td class="customer-name">${row.customer}</td>
+                  <td class="balance">${row.balance}</td>
+                  <td class="debt">${row.debt}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
+        </body>
+        </html>
+      `;
+      
+      // Generate PDF
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false,
+      });
+      
+      // Share the PDF
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Customer List PDF',
+        });
+      } else {
+        setError('Sharing is not available on this device');
+      }
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      setError('Failed to generate PDF');
+    }
   };
 
   const fetchCustomerLedger = async (customerId: string): Promise<LedgerEntry[]> => {
@@ -253,10 +427,10 @@ export const CustomerListScreen: React.FC = () => {
     // Determine transaction type and details
     if (entry.amountReceived > 0) {
       transactionType = 'Receive';
-      details = `₹${entry.amountReceived.toLocaleString()}`;
+      details = `₹${formatIndianNumber(entry.amountReceived)}`;
     } else if (entry.amountGiven > 0) {
       transactionType = 'Give';
-      details = `₹${entry.amountGiven.toLocaleString()}`;
+      details = `₹${formatIndianNumber(entry.amountGiven)}`;
     } else {
       // Metal transaction - check entries for type
       const hasSell = entry.entries.some(e => e.type === 'sell');
@@ -387,6 +561,12 @@ export const CustomerListScreen: React.FC = () => {
             <Text variant="titleLarge" style={styles.appTitle}>
                 Customers
             </Text>
+            <IconButton
+                icon="tray-arrow-up"
+                size={24}
+                onPress={exportCustomersToPDF}
+                style={styles.exportButton}
+            />
             </View>
         </Surface>
 
@@ -446,7 +626,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  
   appTitleBar: {
     backgroundColor: theme.colors.surface,
     paddingVertical: theme.spacing.xs,
@@ -459,9 +638,14 @@ const styles = StyleSheet.create({
   appTitle: {
     color: theme.colors.primary,
     fontFamily: 'Roboto_700Bold',
+    flex: 1,
   },
   backButton: {
     marginRight: theme.spacing.sm,
+  },
+  exportButton: {
+    margin: 0,
+    marginRight: 10
   },
   content: {
     flex: 1,

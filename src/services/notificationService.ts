@@ -1,5 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DatabaseService } from './database';
 import { Customer } from '../types';
@@ -10,6 +12,9 @@ const STORAGE_KEYS = {
   NOTIFICATION_SCHEDULER_ACTIVE: '@bulliondesk_notification_scheduler_active',
 };
 
+// Background task constants
+const NOTIFICATION_TASK = 'notification-task';
+
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -19,6 +24,29 @@ Notifications.setNotificationHandler({
     shouldShowBanner: true,
     shouldShowList: true,
   }),
+});
+
+// Define the background task for notifications
+TaskManager.defineTask(NOTIFICATION_TASK, async () => {
+  try {
+    console.log('Background notification task started');
+
+    // Check if notifications are enabled
+    const isEnabled = await NotificationService.isNotificationsEnabled();
+    if (!isEnabled) {
+      console.log('Notifications are disabled, skipping');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    // Run the notification check
+    await NotificationService.checkAndScheduleNotifications();
+    console.log('Background notification check completed');
+
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch (error) {
+    console.error('Error in background notification task:', error);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
 });
 
 export class NotificationService {
@@ -75,6 +103,7 @@ export class NotificationService {
 
       await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_ENABLED, 'true');
       await this.startNotificationScheduler();
+      await this.registerBackgroundTask();
       return true;
     } catch (error) {
       console.error('Error enabling notifications:', error);
@@ -89,6 +118,7 @@ export class NotificationService {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATION_ENABLED, 'false');
       await this.stopNotificationScheduler();
+      await this.unregisterBackgroundTask();
       await Notifications.cancelAllScheduledNotificationsAsync();
     } catch (error) {
       console.error('Error disabling notifications:', error);
@@ -319,9 +349,55 @@ export class NotificationService {
       const isEnabled = await this.isNotificationsEnabled();
       if (isEnabled) {
         await this.startNotificationScheduler();
+        await this.registerBackgroundTask();
       }
     } catch (error) {
       console.error('Error initializing notification service:', error);
+    }
+  }
+
+  /**
+   * Register the background notification task
+   */
+  static async registerBackgroundTask(): Promise<void> {
+    try {
+      // Check if task is already registered
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(NOTIFICATION_TASK);
+      if (isRegistered) {
+        console.log('Notification background task already registered');
+        return;
+      }
+
+      // Register the background fetch (every 30 minutes)
+      await BackgroundFetch.registerTaskAsync(NOTIFICATION_TASK, {
+        minimumInterval: 30 * 60, // 30 minutes in seconds
+        stopOnTerminate: false, // Continue when app is terminated
+        startOnBoot: true, // Start when device boots
+      });
+
+      console.log('Notification background task registered successfully');
+    } catch (error) {
+      console.error('Failed to register notification background task:', error);
+    }
+  }
+
+  /**
+   * Unregister the background notification task
+   */
+  static async unregisterBackgroundTask(): Promise<void> {
+    try {
+      // Check if task is registered
+      const isRegistered = await TaskManager.isTaskRegisteredAsync(NOTIFICATION_TASK);
+      if (!isRegistered) {
+        console.log('Notification background task not registered');
+        return;
+      }
+
+      // Unregister the background fetch
+      await BackgroundFetch.unregisterTaskAsync(NOTIFICATION_TASK);
+      console.log('Notification background task unregistered successfully');
+    } catch (error) {
+      console.error('Failed to unregister notification background task:', error);
     }
   }
 }

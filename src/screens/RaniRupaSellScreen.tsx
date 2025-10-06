@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   itemsList: {
     flex: 1,
     backgroundColor: theme.colors.background,
-    marginLeft: 8,
+    marginLeft: 10,
   },
   listContent: {
     paddingBottom: 120, // Space for bottom navigation

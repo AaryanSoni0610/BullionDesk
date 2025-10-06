@@ -13,6 +13,7 @@ import { BackupService } from '../services/backupService';
 import { EncryptionService } from '../services/encryptionService';
 import { EncryptionKeyDialog } from '../components/EncryptionKeyDialog';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
+import { formatIndianNumber } from '../utils/formatting';
 
 export const SettingsScreen: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
@@ -25,6 +26,7 @@ export const SettingsScreen: React.FC = () => {
   const [keyDialogCallback, setKeyDialogCallback] = React.useState<((key: string | null) => void) | null>(null);
   const [customers, setCustomers] = React.useState<any[]>([]);
   const [baseInventory, setBaseInventory] = React.useState<any>(null);
+  const [openingBalanceEffects, setOpeningBalanceEffects] = React.useState<any>(null);
   const [isLoadingCustomers, setIsLoadingCustomers] = React.useState(true);
   const [isLoadingInventory, setIsLoadingInventory] = React.useState(true);
   const [showInventoryDialog, setShowInventoryDialog] = React.useState(false);
@@ -48,13 +50,15 @@ export const SettingsScreen: React.FC = () => {
         setAutoBackupEnabled(backupEnabled);
 
         // Load customers and base inventory
-        const [customersData, inventoryData] = await Promise.all([
+        const [customersData, inventoryData, effectsData] = await Promise.all([
           DatabaseService.getAllCustomers(),
-          DatabaseService.getBaseInventory()
+          DatabaseService.getBaseInventory(),
+          DatabaseService.calculateOpeningBalanceEffects()
         ]);
         
         setCustomers(customersData);
         setBaseInventory(inventoryData);
+        setOpeningBalanceEffects(effectsData);
         
         // Don't auto-initialize directories here
         // They will be created on demand when needed
@@ -110,6 +114,24 @@ export const SettingsScreen: React.FC = () => {
       keyDialogCallback(null);
       setKeyDialogCallback(null);
     }
+  };
+
+  const handleSetBaseInventoryWithWarning = () => {
+    showAlert(
+      '⚠️ Important Warning',
+      'Setting base inventory when there are existing customer balances or transactions can significantly affect your inventory calculations.\n\nPlease ensure that:\n• All customer balances represent opening balances only\n• No actual business transactions have been recorded yet\n• You understand that this will adjust your base inventory to account for existing balances\n\nThis action cannot be easily undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: handleSetBaseInventory,
+        },
+      ]
+    );
   };
 
   const handleSetBaseInventory = () => {
@@ -603,21 +625,28 @@ export const SettingsScreen: React.FC = () => {
             description={
               isLoadingInventory
                 ? "Loading..."
-                : `Gold: ${DatabaseService.roundInventoryValue((baseInventory?.gold999 + baseInventory?.gold995 || 0), 'gold999')}g, Silver: ${DatabaseService.roundInventoryValue(baseInventory?.silver || 0, 'silver')}g, Money: ₹${DatabaseService.roundInventoryValue(baseInventory?.money || 0, 'money').toLocaleString()}`
+                : `Gold: ${DatabaseService.roundInventoryValue((baseInventory?.gold999 + baseInventory?.gold995 || 0), 'gold999')}g, Silver: ${DatabaseService.roundInventoryValue(baseInventory?.silver || 0, 'silver')}g, Money: ₹${formatIndianNumber(DatabaseService.roundInventoryValue(baseInventory?.money || 0, 'money'))}`
             }
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="package-variant-closed" />}
             onPress={() => {
               if (baseInventory) {
+                let message = `Gold 999: ${DatabaseService.roundInventoryValue(baseInventory.gold999, 'gold999')}g\nGold 995: ${DatabaseService.roundInventoryValue(baseInventory.gold995, 'gold995')}g\nSilver: ${DatabaseService.roundInventoryValue(baseInventory.silver, 'silver')}g\nRani: ${DatabaseService.roundInventoryValue(baseInventory.rani, 'rani')}g\nRupu: ${DatabaseService.roundInventoryValue(baseInventory.rupu, 'rupu')}g\nMoney: ₹${formatIndianNumber(DatabaseService.roundInventoryValue(baseInventory.money, 'money'))}`;
+                
                 showAlert(
-                  'Current Base Inventory',
-                  `Gold 999: ${DatabaseService.roundInventoryValue(baseInventory.gold999, 'gold999')}g\nGold 995: ${DatabaseService.roundInventoryValue(baseInventory.gold995, 'gold995')}g\nSilver: ${DatabaseService.roundInventoryValue(baseInventory.silver, 'silver')}g\nRani: ${DatabaseService.roundInventoryValue(baseInventory.rani, 'rani')}g\nRupu: ${DatabaseService.roundInventoryValue(baseInventory.rupu, 'rupu')}g\nMoney: ₹${DatabaseService.roundInventoryValue(baseInventory.money, 'money').toLocaleString()}`,
+                  'Base Inventory',
+                  message,
                   [
                     { text: 'OK' },
                     { 
                       text: 'Set Custom Values', 
-                      onPress: handleSetBaseInventory 
+                      onPress: () => {
+                        // Use setTimeout to ensure the current alert is fully dismissed before showing the warning
+                        setTimeout(() => {
+                          handleSetBaseInventoryWithWarning();
+                        }, 100);
+                      }
                     }
                   ]
                 );
@@ -680,7 +709,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Version"
-            description="v1.0.0"
+            description="v1.1.1"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}

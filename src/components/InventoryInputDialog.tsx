@@ -21,6 +21,7 @@ interface InventoryInputDialogProps {
   onCancel: () => void;
   onSubmit: (values: Record<string, any>) => void;
   onRadioChange?: (key: string, value: string) => void;
+  requireAtLeastOneNumeric?: boolean;
 }
 
 export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
@@ -31,6 +32,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   onCancel,
   onSubmit,
   onRadioChange,
+  requireAtLeastOneNumeric = false,
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -121,6 +123,29 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
         }
       }
     });
+
+    // Check if at least one numeric field has a value when required
+    if (requireAtLeastOneNumeric) {
+      const hasAtLeastOneNumeric = inputs.some(input => {
+        if (input.type === 'text' && input.keyboardType === 'numeric') {
+          const value = values[input.key] || '';
+          const numValue = parseFloat(value);
+          return !isNaN(numValue) && numValue !== 0;
+        }
+        return false;
+      });
+
+      if (!hasAtLeastOneNumeric) {
+        // Add error to the first numeric field
+        const firstNumericInput = inputs.find(input => 
+          input.type === 'text' && input.keyboardType === 'numeric'
+        );
+        if (firstNumericInput) {
+          newErrors[firstNumericInput.key] = 'At least one field must have a value';
+          hasErrors = true;
+        }
+      }
+    }
 
     setErrors(newErrors);
     return !hasErrors;

@@ -8,7 +8,8 @@ import { Alert, Platform } from 'react-native';
 import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database';
-import { Customer, Transaction, TransactionEntry } from '../types';
+import { RaniRupaStockService } from './raniRupaStockService';
+import { Customer, Transaction, TransactionEntry, RaniRupaStock } from '../types';
 
 const SECURE_STORE_KEYS = {
   ENCRYPTION_KEY: 'backup_encryption_key',
@@ -38,6 +39,7 @@ interface BackupData {
       rupu: number;
       money: number;
     };
+    raniRupaStock: RaniRupaStock[];
   };
 }
 
@@ -305,13 +307,15 @@ export class BackupService {
     const transactions = await DatabaseService.getAllTransactions();
     const ledger = await DatabaseService.getAllLedgerEntries();
     const baseInventory = await DatabaseService.getBaseInventory();
+    const raniRupaStock = await RaniRupaStockService.getAllStock();
 
     return {
       customers,
       transactions,
       ledger,
       baseInventory,
-    };
+      raniRupaStock,
+    } as BackupData['records'];
   }
 
   /**
@@ -367,7 +371,10 @@ export class BackupService {
       this.updateProgressAlert('Loading inventory... 55%');
       const baseInventory = await DatabaseService.getBaseInventory();
       
-      const records = { customers, transactions, ledger, baseInventory };
+      this.updateProgressAlert('Loading stock... 58%');
+      const raniRupaStock = await RaniRupaStockService.getAllStock();
+      
+      const records = { customers, transactions, ledger, baseInventory, raniRupaStock };
       
       this.updateProgressAlert('Encrypting data... 60%');
       const deviceId = await this.getDeviceId();
@@ -378,7 +385,8 @@ export class BackupService {
         recordCount:
           records.customers.length +
           records.transactions.length +
-          records.ledger.length,
+          records.ledger.length +
+          records.raniRupaStock.length,
         deviceId,
         records
       };
@@ -673,6 +681,21 @@ export class BackupService {
       await DatabaseService.setBaseInventory(records.baseInventory);
     }
 
+    // Merge Rani-Rupa stock (by stock_id) - only add if doesn't exist
+    if (records.raniRupaStock) {
+      const existingStock = await RaniRupaStockService.getAllStock();
+      const stockMap = new Map(existingStock.map((s) => [s.stock_id, s]));
+
+      for (const stockItem of records.raniRupaStock) {
+        if (!stockMap.has(stockItem.stock_id)) {
+          // Add new stock item
+          const allStock = await RaniRupaStockService.getAllStock();
+          allStock.push(stockItem);
+          await AsyncStorage.setItem('rani_rupa_stock', JSON.stringify(allStock));
+        }
+      }
+    }
+
     // Clear caches to ensure fresh data
     DatabaseService.clearCache();
   }
@@ -786,7 +809,8 @@ export class BackupService {
         recordCount:
           records.customers.length +
           records.transactions.length +
-          records.ledger.length,
+          records.ledger.length +
+          records.raniRupaStock.length,
         deviceId,
         records,
       };

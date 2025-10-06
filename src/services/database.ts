@@ -668,6 +668,7 @@ export class DatabaseService {
   static async exportData(): Promise<{
     customers: Customer[];
     transactions: Transaction[];
+    ledger: LedgerEntry[];
     baseInventory: {
       gold999: number;
       gold995: number;
@@ -676,12 +677,15 @@ export class DatabaseService {
       rupu: number;
       money: number;
     };
+    raniRupaStock: any[];
   } | null> {
     try {
       const customers = await this.getAllCustomers();
       const transactions = await this.getAllTransactions();
+      const ledger = await this.getAllLedgerEntries();
       const baseInventory = await this.getBaseInventory();
-      return { customers, transactions, baseInventory };
+      const raniRupaStock = await RaniRupaStockService.getAllStock();
+      return { customers, transactions, ledger, baseInventory, raniRupaStock };
     } catch (error) {
       console.error('Error exporting data:', error);
       return null;
@@ -691,6 +695,7 @@ export class DatabaseService {
   static async importData(data: {
     customers: Customer[];
     transactions: Transaction[];
+    ledger?: LedgerEntry[];
     baseInventory?: {
       gold999: number;
       gold995: number;
@@ -699,12 +704,19 @@ export class DatabaseService {
       rupu: number;
       money: number;
     };
+    raniRupaStock?: any[];
   }): Promise<boolean> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(data.customers));
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
+      if (data.ledger) {
+        await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(data.ledger));
+      }
       if (data.baseInventory) {
         await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(data.baseInventory));
+      }
+      if (data.raniRupaStock) {
+        await AsyncStorage.setItem('rani_rupa_stock', JSON.stringify(data.raniRupaStock));
       }
       this.clearCache();
       return true;

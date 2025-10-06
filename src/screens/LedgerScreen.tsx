@@ -198,7 +198,6 @@ export const LedgerScreen: React.FC = () => {
           itemType: 'gold999',
           weight: Math.abs(gold999Value),
           price: 0, // No price to avoid balance/debt
-          metalOnly: true,
           subtotal: 0,
           createdAt: new Date().toISOString(),
           lastUpdatedAt: new Date().toISOString()
@@ -213,7 +212,6 @@ export const LedgerScreen: React.FC = () => {
           itemType: 'gold995',
           weight: Math.abs(gold995Value),
           price: 0, // No price to avoid balance/debt
-          metalOnly: true,
           subtotal: 0,
           createdAt: new Date().toISOString(),
           lastUpdatedAt: new Date().toISOString()
@@ -228,7 +226,6 @@ export const LedgerScreen: React.FC = () => {
           itemType: 'silver',
           weight: Math.abs(silverValue),
           price: 0, // No price to avoid balance/debt
-          metalOnly: true,
           subtotal: 0,
           createdAt: new Date().toISOString(),
           lastUpdatedAt: new Date().toISOString()

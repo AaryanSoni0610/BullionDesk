@@ -533,8 +533,7 @@ export const HistoryScreen: React.FC = () => {
                     {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
                   </Text>
                 )}
-                {isMetalOnly && <View style={{ flex: 1 }} />}
-                {isMoneyOnly && <View style={{ flex: 1 }} />}
+                {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
                 <Text variant="bodySmall" style={[styles.transactionBalance, 
                   { color: transactionBalanceColor }
                 ]}>
@@ -649,8 +648,7 @@ export const HistoryScreen: React.FC = () => {
                         {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
                       </Text>
                     )}
-                    {isMetalOnly && <View style={{ flex: 1 }} />}
-                    {isMoneyOnly && <View style={{ flex: 1 }} />}
+                    {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
                     <Text variant="bodySmall" style={[styles.transactionBalance, 
                       { color: transactionBalanceColor }
                     ]}>

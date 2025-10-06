@@ -367,7 +367,7 @@ export const HistoryScreen: React.FC = () => {
         ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
         : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
       
-      const hasRemainingBalance = transactionRemaining > 0;
+      const hasRemainingBalance = transactionRemaining !== 0;
       
       let isMoneyOnly = false;
       if (transaction.entries.every(entry => entry.itemType === 'money')) {
@@ -377,11 +377,11 @@ export const HistoryScreen: React.FC = () => {
       if (hasRemainingBalance) {
         if (!isMoneyOnly) {
           const isDebt = transaction.total > 0;
-          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
           transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         } else {
           const isDebt = transaction.total < 0;
-          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
           transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         }
       } else {

@@ -84,3 +84,13 @@ export interface LedgerEntry {
   notes?: string;
   createdAt: string; // Same as date for ledger entries
 }
+
+// Rani-Rupa Stock Entry - tracks individual stock items
+export interface RaniRupaStock {
+  stock_id: string; // Unique stock identifier
+  itemtype: 'rani' | 'rupu'; // Type of item
+  weight: number; // Weight in grams
+  touch: number; // Touch percentage (purity)
+  date: string; // Date when stock was added
+  createdAt: string; // ISO datetime when stock was created
+}

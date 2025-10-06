@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  ScrollView,
+  FlatList,
   BackHandler,
 } from 'react-native';
 import {
@@ -14,14 +14,15 @@ import {
   List,
   Checkbox,
   TextInput,
-  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import Icon from '@expo/vector-icons/MaterialCommunityIcons';
+import { formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
+import { RaniRupaStockService } from '../services/raniRupaStockService';
 import { useAppContext } from '../context/AppContext';
+import { RaniRupaStock } from '../types';
 
 interface InventoryItem {
   id: string;
@@ -29,6 +30,7 @@ interface InventoryItem {
   weight: number;
   touch?: number; // For Rani items
   pureWeight: number;
+  stock_id: string; // Reference to stock item
 }
 
 export const RaniRupaSellScreen: React.FC = () => {
@@ -48,43 +50,17 @@ export const RaniRupaSellScreen: React.FC = () => {
   const loadInventoryItems = async () => {
     try {
       setIsLoading(true);
-      const baseInventory = await DatabaseService.getBaseInventory();
+      const stockItems = await RaniRupaStockService.getStockByType(selectedType);
 
-      // For now, we'll create mock items based on inventory levels
-      // In a real implementation, you'd have actual inventory tracking
-      const items: InventoryItem[] = [];
-
-      if (selectedType === 'rani' && baseInventory.rani > 0) {
-        // Create sample Rani items
-        items.push({
-          id: 'rani_1',
-          name: 'Rani Item 1',
-          weight: 50,
-          touch: 85,
-          pureWeight: 42.5
-        });
-        items.push({
-          id: 'rani_2',
-          name: 'Rani Item 2',
-          weight: 75,
-          touch: 90,
-          pureWeight: 67.5
-        });
-      } else if (selectedType === 'rupu' && baseInventory.rupu > 0) {
-        // Create sample Rupu items
-        items.push({
-          id: 'rupu_1',
-          name: 'Rupu Item 1',
-          weight: 1000,
-          pureWeight: 950
-        });
-        items.push({
-          id: 'rupu_2',
-          name: 'Rupu Item 2',
-          weight: 1500,
-          pureWeight: 1425
-        });
-      }
+      // Convert stock items to inventory items format
+      const items: InventoryItem[] = stockItems.map((stock, index) => ({
+        id: stock.stock_id,
+        name: `${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} ${index + 1}`,
+        weight: stock.weight,
+        touch: stock.touch,
+        pureWeight: selectedType === 'rani' ? formatPureGoldPrecise((stock.weight * stock.touch) / 100) : formatPureSilver((stock.weight * stock.touch) / 100),
+        stock_id: stock.stock_id,
+      }));
 
       setInventoryItems(items);
       setSelectedItems(new Set());
@@ -135,22 +111,50 @@ export const RaniRupaSellScreen: React.FC = () => {
     return total + extra;
   };
 
-  const handleSell = () => {
+  const handleSell = async () => {
     const totalWeight = calculateTotalPureWeight();
     if (totalWeight === 0) {
       showAlert('No Items Selected', 'Please select items to sell or enter extra weight');
       return;
     }
 
-    // TODO: Implement sell logic
-    showAlert('Success', `Sold ${totalWeight.toFixed(2)}g of pure ${selectedType.toUpperCase()}`);
+    try {
+      // Remove selected stock items
+      for (const itemId of selectedItems) {
+        const item = inventoryItems.find(i => i.id === itemId);
+        if (item) {
+          const result = await RaniRupaStockService.removeStock(item.stock_id);
+          if (!result.success) {
+            showAlert('Error', `Failed to remove stock item: ${result.error}`);
+            return;
+          }
+        }
+      }
+
+      // Handle extra weight if entered (this would need to be handled differently)
+      // For now, we'll just show success message
+      const extra = parseFloat(extraWeight) || 0;
+      if (extra > 0) {
+        showAlert('Warning', 'Extra weight handling not implemented yet. Only selected items were removed from stock.');
+      }
+
+      showAlert('Success', `Sold ${totalWeight.toFixed(2)}g of pure ${selectedType.toUpperCase()}. ${selectedItems.size} items removed from stock.`);
+
+      // Reload inventory to reflect changes
+      await loadInventoryItems();
+      setSelectedItems(new Set());
+      setExtraWeight('');
+    } catch (error) {
+      console.error('Error during sell operation:', error);
+      showAlert('Error', 'Failed to complete sell operation');
+    }
   };
 
-  const renderInventoryItem = (item: InventoryItem) => (
+  const renderInventoryItem = ({ item }: { item: InventoryItem }) => (
     <List.Item
       key={item.id}
       title={item.name}
-      description={`Weight: ${item.weight}g${item.touch ? `, Touch: ${item.touch}%` : ''}, Pure: ${item.pureWeight}g`}
+      description={`Weight: ${item.weight}g${item.touch ? `, Touch: ${item.touch}%` : ''}, Pure: ${selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g`}
       left={() => (
         <Checkbox
           status={selectedItems.has(item.id) ? 'checked' : 'unchecked'}
@@ -158,70 +162,76 @@ export const RaniRupaSellScreen: React.FC = () => {
         />
       )}
       onPress={() => toggleItemSelection(item.id)}
+      style={[styles.listItem]}
+      titleStyle={[{ fontFamily: 'Roboto_500Medium' }]}
+      descriptionStyle={[{ fontFamily: 'Roboto_400Regular' }]}
     />
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <Surface style={styles.header}>
-        <View style={styles.headerContent}>
+      {/* App Title Bar */}
+      <Surface style={styles.appTitleBar} elevation={1}>
+        <View style={styles.appTitleContent}>
           <IconButton
             icon="arrow-left"
-            size={24}
+            size={20}
             onPress={navigateToSettings}
+            style={styles.backButton}
           />
-          <Text style={styles.headerTitle}>Rani/Rupa Bulk Sell</Text>
-          <View style={styles.headerSpacer} />
+          <Text variant="titleLarge" style={styles.appTitle}>
+            Rani/Rupa Bulk Sell
+          </Text>
         </View>
       </Surface>
 
-      <ScrollView style={styles.content}>
-        <Surface style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Type</Text>
-          <SegmentedButtons
-            value={selectedType}
-            onValueChange={(value) => setSelectedType(value as 'rani' | 'rupu')}
-            buttons={[
-              { value: 'rani', label: 'Rani' },
-              { value: 'rupu', label: 'Rupu' },
-            ]}
-            style={styles.segmentedButtons}
-          />
-        </Surface>
+      {/* Segmented Buttons */}
+      <View style={styles.segmentedContainer}>
+        <SegmentedButtons
+          value={selectedType}
+          onValueChange={(value) => setSelectedType(value as 'rani' | 'rupu')}
+          buttons={[
+            { value: 'rani', label: 'Rani' },
+            { value: 'rupu', label: 'Rupu' },
+          ]}
+          style={styles.segmentedButtons}
+        />
+      </View>
 
-        <Surface style={styles.section}>
-          <Text style={styles.sectionTitle}>Available {selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Items</Text>
-          {isLoading ? (
+      {/* Items List */}
+      <FlatList
+        data={inventoryItems}
+        renderItem={renderInventoryItem}
+        keyExtractor={(item) => item.id}
+        style={styles.itemsList}
+        contentContainerStyle={inventoryItems.length === 0 ? styles.emptyList : styles.listContent}
+        ListEmptyComponent={
+          isLoading ? (
             <Text style={styles.loadingText}>Loading items...</Text>
-          ) : inventoryItems.length === 0 ? (
-            <Text style={styles.emptyText}>No {selectedType} items available</Text>
           ) : (
-            inventoryItems.map(renderInventoryItem)
-          )}
-        </Surface>
+            <Text style={styles.emptyText}>No {selectedType} items available</Text>
+          )
+        }
+        showsVerticalScrollIndicator={false}
+      />
 
-        <Surface style={styles.section}>
-          <Text style={styles.sectionTitle}>Extra Weight</Text>
-          <TextInput
-            label={`Extra ${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Weight (g)`}
-            value={extraWeight}
-            onChangeText={setExtraWeight}
-            keyboardType="numeric"
-            style={styles.extraWeightInput}
-          />
-        </Surface>
-
-        <Surface style={styles.section}>
-          <Text style={styles.sectionTitle}>Summary</Text>
+      {/* Bottom Navigation Card */}
+      <View style={styles.bottomNavigation}>
+        <View style={styles.navigationContent}>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Selected Items:</Text>
-            <Text style={styles.summaryValue}>{selectedItems.size}</Text>
+            <Text style={styles.pureWeightLabel}>
+              Pure Weight: {selectedType === 'rani' ? calculateTotalPureWeight().toFixed(3) : calculateTotalPureWeight().toFixed(1)}g
+            </Text>
+            <TextInput
+              label="Extra (g)"
+              value={extraWeight}
+              onChangeText={setExtraWeight}
+              keyboardType="numeric"
+              style={styles.extraInput}
+              mode="outlined"
+              dense
+            />
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Pure Weight:</Text>
-            <Text style={styles.summaryValue}>{calculateTotalPureWeight().toFixed(2)}g</Text>
-          </View>
-          <Divider style={styles.divider} />
           <Button
             mode="contained"
             onPress={handleSell}
@@ -230,8 +240,8 @@ export const RaniRupaSellScreen: React.FC = () => {
           >
             Sell {selectedType.charAt(0).toUpperCase() + selectedType.slice(1)}
           </Button>
-        </Surface>
-      </ScrollView>
+        </View>
+      </View>
     </SafeAreaView>
   );
 };
@@ -241,43 +251,48 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  header: {
-    elevation: 4,
-    backgroundColor: theme.colors.primary,
+  appTitleBar: {
+    backgroundColor: theme.colors.surface,
+    paddingVertical: theme.spacing.xs,
   },
-  headerContent: {
+  appTitleContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: theme.spacing.sm,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.onPrimary,
-    marginLeft: 16,
-  },
-  headerSpacer: {
-    width: 48,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  section: {
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 8,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
+  appTitle: {
     color: theme.colors.primary,
+    fontFamily: 'Roboto_700Bold',
+  },
+  backButton: {
+    marginRight: theme.spacing.sm,
+  },
+  segmentedContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: theme.colors.background,
   },
   segmentedButtons: {
     marginBottom: 8,
+  },
+  itemsList: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    marginLeft: 8,
+  },
+  listContent: {
+    paddingBottom: 120, // Space for bottom navigation
+  },
+  emptyList: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 200,
+    paddingBottom: 120, // Space for bottom navigation
+  },
+  listItem: {
+    backgroundColor: 'transparent',
+    paddingVertical: 8,
   },
   loadingText: {
     textAlign: 'center',
@@ -288,26 +303,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.onSurfaceVariant,
   },
-  extraWeightInput: {
-    marginBottom: 8,
+  bottomNavigation: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: theme.colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.outlineVariant,
+    elevation: 8,
+  },
+  navigationContent: {
+    padding: 16,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  summaryLabel: {
+  pureWeightLabel: {
     fontSize: 16,
-    color: theme.colors.onSurface,
-  },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
     color: theme.colors.primary,
+    fontFamily: 'Roboto_500Medium',
   },
-  divider: {
-    marginVertical: 16,
+  extraInput: {
+    width: 120,
   },
   sellButton: {
     marginTop: 8,

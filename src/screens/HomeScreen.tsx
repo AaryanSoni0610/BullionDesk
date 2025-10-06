@@ -176,17 +176,15 @@ export const HomeScreen: React.FC = () => {
         ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
         : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
 
-      console.log('Transaction Remaining:', transactionRemaining);
-      const hasRemainingBalance = transactionRemaining > 0;
+      const hasRemainingBalance = transactionRemaining != 0;
+
       if (hasRemainingBalance && !isMoneyOnly) {
         const isDebt = transaction.total > 0 && transactionRemaining > 0;
-        console.log('Debt:', isDebt);
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       } else if (isMoneyOnly){
         const isDebt = transaction.total < 0;
-        console.log('Debt:', isDebt);
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${transactionRemaining.toLocaleString()}`;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${Math.abs(transactionRemaining).toLocaleString()}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       }
     }

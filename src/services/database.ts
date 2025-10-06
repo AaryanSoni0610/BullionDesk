@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Customer, Transaction, TransactionEntry, LedgerEntry } from '../types';
+import { RaniRupaStockService } from './raniRupaStockService';
 
 const STORAGE_KEYS = {
   CUSTOMERS: '@bulliondesk_customers',
@@ -579,6 +580,27 @@ export class DatabaseService {
 
       // Update last transaction ID
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
+
+      // INTEGRATE STOCK MANAGEMENT: Add stock for purchases, remove for sales
+      try {
+        for (const entry of entries) {
+          if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+            // Add stock for purchases
+            const touch = entry.touch || 100; // Default to 100% for rupu
+            const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
+            if (result.success) {
+              console.log(`📦 STOCK ADDED: ${entry.itemType} ${entry.weight}g @ ${touch}% touch (ID: ${result.stock_id})`);
+            } else {
+              console.error(`❌ STOCK ADD FAILED: ${result.error}`);
+            }
+          }
+          // Note: Stock removal for sales is handled in RaniRupaSellScreen.tsx
+          // This is because sales require selecting specific stock items, not just quantities
+        }
+      } catch (stockError) {
+        console.error('Error managing stock:', stockError);
+        // Don't fail the transaction if stock management fails
+      }
 
       // LOGGING: Transaction completion
       console.log('✅ TRANSACTION SAVED SUCCESSFULLY');

@@ -335,6 +335,7 @@ export class DatabaseService {
         finalBalance = netAmount >= 0
           ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
           : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
+        finalBalance *= -1;
       }
 
       let transaction: Transaction;

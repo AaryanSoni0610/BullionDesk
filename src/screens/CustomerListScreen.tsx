@@ -99,7 +99,7 @@ export const CustomerListScreen: React.FC = () => {
 
   const formatBalance = (balance: number) => {
     if (balance === 0) return 'Settled';
-    if (balance < 0) return `Balance: ₹${formatIndianNumber(Math.abs(balance))}`;
+    if (balance > 0) return `Balance: ₹${formatIndianNumber(Math.abs(balance))}`;
     else return `Debt: ₹${formatIndianNumber(Math.abs(balance))}`;
   };
 
@@ -182,7 +182,7 @@ export const CustomerListScreen: React.FC = () => {
         if (customer.balance > 0) {
           pdfData.push({
             customer: customer.name,
-            balance: `₹${formatIndianNumber(customer.balance)}`,
+            balance: `₹${formatIndianNumber(Math.abs(customer.balance))}`,
             debt: ''
           });
         } else if (customer.balance < 0) {

@@ -331,13 +331,6 @@ export const TradeScreen: React.FC = () => {
       <Text variant="bodyLarge" style={styles.emptyDescription}>
         Start by adding your first trade record
       </Text>
-      {!showTradeDialog && (
-        <FAB
-          icon="plus"
-          style={styles.emptyFab}
-          onPress={handleAddTrade}
-        />
-      )}
     </View>
   );
 
@@ -373,10 +366,10 @@ export const TradeScreen: React.FC = () => {
         )}
       </View>
 
-      {/* FAB for non-empty state */}
-      {trades.length > 0 && !showTradeDialog && (
+      {/* FAB */}
+      {!showTradeDialog && (
         <FAB
-          icon="plus"
+          icon="swap-vertical"
           style={styles.fab}
           onPress={handleAddTrade}
         />
@@ -506,14 +499,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: theme.spacing.lg,
     color: theme.colors.onSurfaceVariant,
-  },
-  emptyFab: {
-    position: 'absolute',
-    margin: theme.spacing.md,
-    right: 0,
-    bottom: theme.spacing.md,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 16,
   },
   fab: {
     position: 'absolute',

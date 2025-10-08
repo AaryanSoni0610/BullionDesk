@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, Alert, Platform } from 'react-native';
 import {
   Surface,
   Text,
@@ -14,9 +14,11 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../theme';
 import { formatWeight, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry } from '../types';
+import CustomAlert from '../components/CustomAlert';
 
 interface SettlementSummaryScreenProps {
   customer: Customer;
@@ -25,7 +27,7 @@ interface SettlementSummaryScreenProps {
   onAddMoreEntry: () => void;
   onDeleteEntry: (entryId: string) => void;
   onEditEntry: (entryId: string) => void;
-  onSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number) => void;
+  onSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null) => void;
   editingTransactionId?: string | null;
   lastGivenMoney?: number;
   transactionCreatedAt?: string | null;
@@ -49,7 +51,20 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const [discountExtra, setDiscountExtra] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
+  const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
+  const [showSaveDatePicker, setShowSaveDatePicker] = useState(false);
+  const [showDateWarning, setShowDateWarning] = useState(false);
+  const [pendingSaveDate, setPendingSaveDate] = useState<Date | null>(null);
+  const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);
   const isEditing = !!editingTransactionId;
+
+  // Format date for display in DD/MM/YYYY format
+  const formatDateDisplay = (date: Date): string => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
 
   // Handle hardware back button - same as X button in titlebar
   useFocusEffect(
@@ -66,6 +81,52 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       };
     }, [onBack])
   );
+
+  // Handle Select Save Date button press
+  const handleSelectSaveDatePress = () => {
+    if (isEditing) return; // Disabled for editing
+    setShowSaveDatePicker(true);
+  };
+
+  // Handle save date picker change
+  const handleSaveDateChange = (event: any, selectedDate?: Date) => {
+    const isConfirmed = event.type === 'set';
+    setShowSaveDatePicker(Platform.OS === 'ios' && isConfirmed); // Keep open on iOS only if confirmed
+    
+    if (isConfirmed && selectedDate) {
+      const today = new Date();
+      const isTodaySelected = selectedDate.getFullYear() === today.getFullYear() &&
+                             selectedDate.getMonth() === today.getMonth() &&
+                             selectedDate.getDate() === today.getDate();
+      
+      if (!isTodaySelected) {
+        // Show custom alert warning for non-today dates
+        setPendingSaveDate(selectedDate);
+        setShowDateWarningAlert(true);
+      } else {
+        // Today selected, no warning needed
+        setSelectedSaveDate(selectedDate);
+      }
+    } else if (event.type === 'dismissed') {
+      // User cancelled, don't change anything
+      setShowSaveDatePicker(false);
+    }
+  };
+
+  // Handle date warning alert continue
+  const handleDateWarningContinue = () => {
+    if (pendingSaveDate) {
+      setSelectedSaveDate(pendingSaveDate);
+      setPendingSaveDate(null);
+    }
+    setShowDateWarningAlert(false);
+  };
+
+  // Handle date warning alert cancel
+  const handleDateWarningCancel = () => {
+    setPendingSaveDate(null);
+    setShowDateWarningAlert(false);
+  };
 
   // Enhanced payment validation
   const validatePaymentAmount = (value: string, maxAmount: number): string => {
@@ -300,7 +361,22 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         ? received  // Sell: merchant receives amountPaid
         : received + discountExtraAmount; // Purchase: merchant gives amountPaid + extra
       
-      await onSaveTransaction(effectiveReceived, discountExtraAmount);
+      // Determine save date: null for today (use current date/time), or selected date with random time
+      const today = new Date();
+      const isTodaySelected = selectedSaveDate.getFullYear() === today.getFullYear() &&
+                             selectedSaveDate.getMonth() === today.getMonth() &&
+                             selectedSaveDate.getDate() === today.getDate();
+      
+      let saveDate: Date | null = null;
+      if (!isTodaySelected) {
+        // Create date with random time between 10:00 AM and 8:00 PM
+        const randomHour = Math.floor(Math.random() * 10) + 10; // 10 to 19 (10 AM to 9 PM)
+        const randomMinute = Math.floor(Math.random() * 60);
+        saveDate = new Date(selectedSaveDate);
+        saveDate.setHours(randomHour, randomMinute, 0, 0);
+      }
+      
+      await onSaveTransaction(effectiveReceived, discountExtraAmount, saveDate);
     } catch (error) {
       console.error('Failed to save transaction:', error);
     } finally {
@@ -426,6 +502,34 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           shouldShowFAB ? styles.scrollContentWithFAB : styles.scrollContentWithoutFAB
         ]}
       >
+        {/* Save Date Picker */}
+        <View style={styles.dateSection}>
+          <Text variant="titleSmall" style={styles.dateLabel}>
+            Save on: {formatDateDisplay(selectedSaveDate)}
+          </Text>
+          <Button
+            mode="text"
+            onPress={handleSelectSaveDatePress}
+            disabled={isEditing}
+            style={styles.dateButton}
+            contentStyle={styles.dateButtonContent}
+          >
+            Change Date
+          </Button>
+        </View>
+        <Divider style={styles.dateDivider} />
+
+        {/* Save Date Picker Modal */}
+        {showSaveDatePicker && (
+          <DateTimePicker
+            value={selectedSaveDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleSaveDateChange}
+            maximumDate={new Date()}
+          />
+        )}
+
         {/* Entry Cards */}
         <View style={styles.entriesSection}>
           {entries.map((entry, index) => renderEntryCard(entry, index))}
@@ -663,6 +767,18 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           onPress={onAddMoreEntry}
         />
       )}
+
+      {/* Date Warning Custom Alert */}
+      <CustomAlert
+        visible={showDateWarningAlert}
+        title="Date Selection Warning"
+        message="You have selected a date that is not today. This can lead to severe problems in accounting. Are you sure you want to continue?"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: handleDateWarningCancel },
+          { text: 'Continue', onPress: handleDateWarningContinue }
+        ]}
+        onDismiss={handleDateWarningCancel}
+      />
     </SafeAreaView>
   );
 };
@@ -882,5 +998,29 @@ const styles = StyleSheet.create({
   amountChip: {
     marginRight: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
+  },
+  dateCard: {
+    marginBottom: theme.spacing.md,
+    borderRadius: 12,
+  },
+  dateSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+  },
+  dateLabel: {
+    fontFamily: 'Roboto_500Medium',
+    flex: 1,
+  },
+  dateButton: {
+    marginLeft: theme.spacing.sm,
+  },
+  dateButtonContent: {
+    paddingHorizontal: theme.spacing.sm,
+  },
+  dateDivider: {
+    marginBottom: theme.spacing.md,
   },
 });

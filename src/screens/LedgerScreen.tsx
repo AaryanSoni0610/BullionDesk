@@ -769,7 +769,7 @@ export const LedgerScreen: React.FC = () => {
                     const touchNum = entry.touch || 0;
                     const weightNum = entry.weight || 0;
                     const pureGoldPrecise = (weightNum * touchNum) / 100;
-                    return `${weightNum.toFixed(3)}g, ${touchNum}%, ${formatPureGoldPrecise(pureGoldPrecise)}`;
+                    return `${weightNum.toFixed(3)}g, ${touchNum}%, ${formatPureGoldPrecise(pureGoldPrecise)}g`;
                   }
                   return `${formatWeight(weight, false)}`;
                 };
@@ -819,7 +819,7 @@ export const LedgerScreen: React.FC = () => {
                     const touchNum = entry.touch || 0;
                     const weightNum = entry.weight || 0;
                     const pureSilverPrecise = (weightNum * touchNum) / 100;
-                    return `${weightNum.toFixed(3)}g, ${touchNum}%, ${pureSilverPrecise.toFixed(3)}g`;
+                    return `${weightNum.toFixed(1)}g, ${touchNum}%, ${pureSilverPrecise.toFixed(1)}g`;
                   }
                   return `${formatWeight(weight, true)}`;
                 };

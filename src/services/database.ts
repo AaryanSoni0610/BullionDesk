@@ -306,7 +306,8 @@ export class DatabaseService {
     entries: TransactionEntry[],
     receivedAmount: number = 0,
     existingTransactionId?: string,  // If provided, update existing transaction
-    discountExtraAmount: number = 0
+    discountExtraAmount: number = 0,
+    saveDate?: Date | null
   ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
     try {
       // Validate input
@@ -314,7 +315,9 @@ export class DatabaseService {
         return { success: false, error: 'Invalid customer or entries data' };
       }
 
-      const now = new Date().toISOString();
+      // Use provided saveDate or current date
+      const transactionDate = saveDate ? saveDate.toISOString() : new Date().toISOString();
+      const now = new Date().toISOString(); // Keep current time for createdAt/lastUpdatedAt when updating
       const isUpdate = !!existingTransactionId;
 
       // Calculate totals
@@ -493,7 +496,7 @@ export class DatabaseService {
           deviceId,
           customerId: customer.id,
           customerName: customer.name.trim(),
-          date: now,
+          date: transactionDate,
           entries: mappedEntries,
           discount: 0,
           discountExtraAmount,
@@ -524,7 +527,7 @@ export class DatabaseService {
       if (deltaAmount !== 0 || isMoneyOnly) {
         // For money-only transactions, use the transaction total as delta if no payment made
         const ledgerDelta = isMoneyOnly && deltaAmount === 0 ? netAmount : deltaAmount;
-        await this.createLedgerEntry(transaction, ledgerDelta, now);
+        await this.createLedgerEntry(transaction, ledgerDelta, transactionDate);
       }
 
       // Check if any entry is metal-only

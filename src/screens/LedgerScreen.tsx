@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Platform, BackHandler } from 'react-native';
 import {
   Surface,
   Text,
@@ -7,8 +7,7 @@ import {
   ActivityIndicator,
   Chip,
   IconButton,
-  FAB,
-  TextInput
+  FAB
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -20,7 +19,6 @@ import { formatWeight, formatCurrency, formatPureGoldPrecise } from '../utils/fo
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
-import CustomAlert from '../components/CustomAlert';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 
 interface InventoryData {

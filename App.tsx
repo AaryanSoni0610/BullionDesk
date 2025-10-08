@@ -54,10 +54,7 @@ const AppContent: React.FC<AppContentProps> = ({
   appState,
   onNavigateToEntry,
   onNavigateToSettlement,
-  onNavigateToSettings,
   onNavigateToTabs,
-  onNavigateToCustomers,
-  onNavigateToTrade,
 }) => {
   const {
     currentCustomer,
@@ -95,7 +92,7 @@ const AppContent: React.FC<AppContentProps> = ({
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused, size }) => {
+        tabBarIcon: ({ focused }) => {
           let iconName: keyof typeof Icon.glyphMap;
           
           switch (route.name) {

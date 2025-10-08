@@ -331,7 +331,6 @@ export const HistoryScreen: React.FC = () => {
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const shareableCardRef = useRef<View>(null);
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
-    const isMoneyOnly = transaction.entries.every(entry => entry.type === 'money');
     
     // Calculate transaction-specific remaining balance
     let transactionBalanceLabel = 'Settled';

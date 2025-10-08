@@ -4,7 +4,6 @@ import {
   StyleSheet,
   FlatList,
   ScrollView,
-  Animated,
   BackHandler,
 } from 'react-native';
 import {
@@ -16,12 +15,11 @@ import {
   IconButton,
   Divider,
 } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Customer, LedgerEntry, Transaction } from '../types';
+import { Customer, LedgerEntry } from '../types';
 import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
 import { formatFullDate, formatIndianNumber } from '../utils/formatting';

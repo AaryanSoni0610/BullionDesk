@@ -50,6 +50,7 @@ export interface TransactionEntry {
   silverWeight?: number; // For Rupu silver return
   netWeight?: number; // For Rupu silver return calculation
   metalOnly?: boolean; // For metal-only transactions (no money involved)
+  stock_id?: string; // For Rani/Rupu entries - links to stock item
   subtotal: number;
   createdAt?: string; // ISO datetime when entry was created
   lastUpdatedAt?: string; // ISO datetime when entry was last updated

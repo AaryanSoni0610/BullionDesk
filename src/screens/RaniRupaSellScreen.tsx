@@ -38,6 +38,7 @@ export const RaniRupaSellScreen: React.FC = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [extraWeight, setExtraWeight] = useState('');
+  const [cutValue, setCutValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isWaitingForCustomerSelection, setIsWaitingForCustomerSelection] = useState(false);
@@ -47,6 +48,13 @@ export const RaniRupaSellScreen: React.FC = () => {
   // Load inventory items based on selected type
   useEffect(() => {
     loadInventoryItems();
+  }, [selectedType]);
+
+  // Reset cut value when switching away from rani
+  useEffect(() => {
+    if (selectedType !== 'rani') {
+      setCutValue('');
+    }
   }, [selectedType]);
 
   // Handle customer selection completion
@@ -116,10 +124,19 @@ export const RaniRupaSellScreen: React.FC = () => {
 
   const calculateTotalPureWeight = () => {
     let total = 0;
+    const cut = parseFloat(cutValue) || 0;
+
     selectedItems.forEach(itemId => {
       const item = inventoryItems.find(i => i.id === itemId);
       if (item) {
-        total += item.pureWeight;
+        if (selectedType === 'rani' && cut > 0) {
+          // Recalculate pure weight with cut applied
+          const effectiveTouch = Math.max(0, (item.touch || 0) - cut);
+          const pureWeight = (item.weight * effectiveTouch) / 100;
+          total += formatPureGoldPrecise(pureWeight);
+        } else {
+          total += item.pureWeight;
+        }
       }
     });
 
@@ -177,6 +194,7 @@ export const RaniRupaSellScreen: React.FC = () => {
             pureWeight: item.pureWeight,
             price: 0, // No price for bulk exchange
             subtotal: 0, // No money involved in this exchange
+            stock_id: item.stock_id, // Reference to stock item being sold
             createdAt: new Date().toISOString(),
           });
         }
@@ -209,23 +227,22 @@ export const RaniRupaSellScreen: React.FC = () => {
         return;
       }
 
-      // Remove selected stock items
       for (const itemId of selectedItems) {
         const item = inventoryItems.find(i => i.id === itemId);
         if (item) {
           const stockResult = await RaniRupaStockService.removeStock(item.stock_id);
-          if (!stockResult.success) {
+          if(!stockResult.success) {
             showAlert('Warning', `Transaction created but failed to remove stock item: ${stockResult.error}`);
-            // Continue with other items
+          } else {
+            showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`);
           }
         }
       }
 
-      showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`);
-
       // Reset state
       setSelectedItems(new Set());
       setExtraWeight('');
+      setCutValue('');
       await loadInventoryItems();
       
     } catch (error) {
@@ -306,15 +323,34 @@ export const RaniRupaSellScreen: React.FC = () => {
             <Text style={styles.pureWeightLabel}>
               Pure Weight: {selectedType === 'rani' ? calculateTotalPureWeight().toFixed(3) : calculateTotalPureWeight().toFixed(1)}g
             </Text>
-            <TextInput
-              label="Extra (g)"
-              value={extraWeight}
-              onChangeText={setExtraWeight}
-              keyboardType="numeric"
-              style={styles.extraInput}
-              mode="outlined"
-              dense
-            />
+            <View style={styles.inputsRow}>
+              {selectedType === 'rani' && (
+                <TextInput
+                  label="Cut"
+                  value={cutValue}
+                  onChangeText={(value) => {
+                    // Allow only values between 0.00 and 1.00
+                    const num = parseFloat(value);
+                    if (value === '' || (num >= 0 && num <= 1.00)) {
+                      setCutValue(value);
+                    }
+                  }}
+                  keyboardType="decimal-pad"
+                  style={styles.cutInput}
+                  mode="outlined"
+                  dense
+                />
+              )}
+              <TextInput
+                label="Extra (g)"
+                value={extraWeight}
+                onChangeText={setExtraWeight}
+                keyboardType="numeric"
+                style={styles.extraInput}
+                mode="outlined"
+                dense
+              />
+            </View>
           </View>
           <Button
             mode="contained"
@@ -382,10 +418,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Roboto_400Regular',
   },
   emptyText: {
     textAlign: 'center',
     color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Roboto_400Regular',
   },
   bottomNavigation: {
     position: 'absolute',
@@ -406,13 +444,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  inputsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   pureWeightLabel: {
     fontSize: 16,
     color: theme.colors.primary,
     fontFamily: 'Roboto_500Medium',
   },
+  cutInput: {
+    width: 80,
+  },
   extraInput: {
-    width: 120,
+    width: 80,
   },
   sellButton: {
     marginTop: 8,

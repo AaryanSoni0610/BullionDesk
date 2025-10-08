@@ -402,9 +402,47 @@ export class DatabaseService {
         }
         
         // Update transaction with new values
+        const mappedEntries = entries.map(e => ({ ...e, lastUpdatedAt: now }));
+        
+        // TODO: Handle stock reversal for old entries and stock management for new entries
+        // For now, just apply stock management to new entries
+        try {
+          console.log('[STOCK] Starting stock management for updated transaction:', existingTransactionId);
+          for (const entry of mappedEntries) {
+            console.log(`[STOCK] Processing entry: ${entry.id}, type: ${entry.type}, itemType: ${entry.itemType}, stock_id: ${entry.stock_id}`);
+            if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Add stock for purchases
+              const touch = entry.touch || 100; // Default to 100% for rupu
+              console.log(`[STOCK] Adding stock for purchase: ${entry.itemType}, weight: ${entry.weight}, touch: ${touch}`);
+              const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
+              if (result.success && result.stock_id) {
+                entry.stock_id = result.stock_id;
+                console.log(`[STOCK] Stock added successfully, stock_id: ${result.stock_id}`);
+              } else {
+                console.error(`[STOCK] Failed to add stock: ${result.error}`);
+              }
+            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.stock_id) {
+              // Remove stock for sales
+              console.log(`[STOCK] Removing stock for sale: stock_id: ${entry.stock_id}`);
+              const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
+              if (removeResult.success) {
+                console.log(`[STOCK] Stock removed successfully for sale`);
+              } else {
+                console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
+              }
+            } else {
+              console.log(`[STOCK] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
+            }
+          }
+          console.log('[STOCK] Stock management completed for updated transaction:', existingTransactionId);
+        } catch (stockError) {
+          console.error('[STOCK] Error managing stock for update:', stockError);
+          return { success: false, error: 'Error managing stock' };
+        }
+        
         transaction = {
           ...existingTransaction,
-          entries: entries.map(e => ({ ...e, lastUpdatedAt: now })),
+          entries: mappedEntries,
           discount: 0,
           discountExtraAmount,
           subtotal: Math.abs(subtotal),
@@ -429,6 +467,44 @@ export class DatabaseService {
           deviceId = `device_${Date.now()}`;
           await SecureStore.setItemAsync('device_id', deviceId);
         }
+
+        // Create mapped entries first
+        const mappedEntries = entries.map(e => ({ ...e, createdAt: now, lastUpdatedAt: now }));
+
+        // INTEGRATE STOCK MANAGEMENT: Add stock for purchases, remove for sales
+        try {
+          console.log('[STOCK] Starting stock management for transaction:', transactionId);
+          for (const entry of mappedEntries) {
+            console.log(`[STOCK] Processing entry: ${entry.id}, type: ${entry.type}, itemType: ${entry.itemType}, stock_id: ${entry.stock_id}`);
+            if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Add stock for purchases
+              const touch = entry.touch || 100; // Default to 100% for rupu
+              console.log(`[STOCK] Adding stock for purchase: ${entry.itemType}, weight: ${entry.weight}, touch: ${touch}`);
+              const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
+              if (result.success && result.stock_id) {
+                entry.stock_id = result.stock_id;
+                console.log(`[STOCK] Stock added successfully, stock_id: ${result.stock_id}`);
+              } else {
+                console.error(`[STOCK] Failed to add stock: ${result.error}`);
+              }
+            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.stock_id) {
+              // Remove stock for sales
+              console.log(`[STOCK] Removing stock for sale: stock_id: ${entry.stock_id}`);
+              const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
+              if (removeResult.success) {
+                console.log(`[STOCK] Stock removed successfully for sale`);
+              } else {
+                console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
+              }
+            } else {
+              console.log(`[STOCK] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
+            }
+          }
+          console.log('[STOCK] Stock management completed for transaction:', transactionId);
+        } catch (stockError) {
+          console.error('[STOCK] Error managing stock:', stockError);
+          return { success: false, error: 'Error managing stock' };
+        }
         
         transaction = {
           id: transactionId,
@@ -436,7 +512,7 @@ export class DatabaseService {
           customerId: customer.id,
           customerName: customer.name.trim(),
           date: now,
-          entries: entries.map(e => ({ ...e, createdAt: now, lastUpdatedAt: now })),
+          entries: mappedEntries,
           discount: 0,
           discountExtraAmount,
           subtotal: Math.abs(subtotal),
@@ -592,20 +668,6 @@ export class DatabaseService {
 
       // Update last transaction ID
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
-
-      // INTEGRATE STOCK MANAGEMENT: Add stock for purchases, remove for sales
-      try {
-        for (const entry of entries) {
-          if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-            // Add stock for purchases
-            const touch = entry.touch || 100; // Default to 100% for rupu
-            await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
-          }
-        }
-      } catch (stockError) {
-        console.error('Error managing stock:', stockError);
-        return { success: false, error: 'Error managing stock' };
-      }
 
       return { success: true, transactionId: transaction.id };
     } catch (error) {
@@ -808,9 +870,10 @@ export class DatabaseService {
   // Clear all data (preserves base inventory)
   static async clearAllData(): Promise<boolean> {
     try {
+      console.log('[CLEAR_DATA] Starting clear all data');
 
       // Clear all main data storage keys
-      await AsyncStorage.multiRemove([
+      const keysToRemove = [
         STORAGE_KEYS.CUSTOMERS,
         STORAGE_KEYS.TRANSACTIONS,
         STORAGE_KEYS.LEDGER,
@@ -821,21 +884,27 @@ export class DatabaseService {
         // Note: BASE_INVENTORY is preserved - inventory will reset to base values
         // Note: AUTO_BACKUP_ENABLED, STORAGE_PERMISSION_GRANTED, LAST_BACKUP_TIME are preserved
         // Note: Notification settings are preserved
-      ]);
+      ];
+      console.log('[CLEAR_DATA] Removing keys:', keysToRemove);
+      await AsyncStorage.multiRemove(keysToRemove);
 
       // Clear device ID from secure store
       try {
         await SecureStore.deleteItemAsync('device_id');
+        console.log('[CLEAR_DATA] Device ID cleared from secure store');
       } catch (error) {
+        console.log('[CLEAR_DATA] Device ID not found in secure store (this is normal)');
         // Ignore if device_id doesn't exist
       }
 
       // Clear in-memory cache
       DatabaseService.clearCache();
+      console.log('[CLEAR_DATA] Cache cleared');
 
+      console.log('[CLEAR_DATA] Clear all data completed successfully');
       return true;
     } catch (error) {
-      console.error('Error clearing all data:', error);
+      console.error('[CLEAR_DATA] Error clearing all data:', error);
       return false;
     }
   }
@@ -843,13 +912,22 @@ export class DatabaseService {
   // Delete transaction and reverse inventory changes
   static async deleteTransaction(transactionId: string): Promise<{ success: boolean; error?: string }> {
     try {
+      console.log(`[DELETE_TRANSACTION] Starting deletion of transaction: ${transactionId}`);
       // Get the transaction to delete
       const transactions = await this.getAllTransactions();
       const transaction = transactions.find(t => t.id === transactionId);
       
       if (!transaction) {
+        console.error(`[DELETE_TRANSACTION] Transaction not found: ${transactionId}`);
         return { success: false, error: 'Transaction not found' };
       }
+
+      console.log(`[DELETE_TRANSACTION] Found transaction: ${transaction.id}, customer: ${transaction.customerName}, entries: ${transaction.entries.length}`);
+      const raniRupaEntries = transaction.entries.filter(entry => entry.itemType === 'rani' || entry.itemType === 'rupu');
+      console.log(`[DELETE_TRANSACTION] Rani/Rupa entries found: ${raniRupaEntries.length}`);
+      transaction.entries.forEach((entry, index) => {
+        console.log(`[DELETE_TRANSACTION] Entry ${index}: ${entry.id}, type: ${entry.type}, itemType: ${entry.itemType}, stock_id: ${entry.stock_id}`);
+      });
 
       // Note: Base inventory should remain unchanged. Current inventory is calculated as:
       // base_inventory + sum of all transaction effects
@@ -876,6 +954,7 @@ export class DatabaseService {
           finalBalance = netAmount >= 0 
             ? netAmount - transaction.amountPaid - transaction.discountExtraAmount          // SELL: customer payment reduces customer debt
             : transaction.amountPaid - Math.abs(netAmount) - transaction.discountExtraAmount; // PURCHASE: merchant payment reduces merchant debt
+          finalBalance *= -1;
         }
         
         // Check if transaction was metal-only
@@ -909,6 +988,45 @@ export class DatabaseService {
         await this.saveCustomer(customer);
       }
 
+      // Reverse stock changes for rani/rupa entries
+      try {
+        console.log('[STOCK_DELETE] Starting stock reversal for transaction:', transactionId);
+        for (const entry of transaction.entries) {
+          console.log(`[STOCK_DELETE] Processing entry: ${entry.id}, type: ${entry.type}, itemType: ${entry.itemType}, stock_id: ${entry.stock_id}`);
+          if (entry.stock_id) {
+            if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Remove stock for purchases that were added
+              console.log(`[STOCK_DELETE] Removing stock for purchase reversal: stock_id: ${entry.stock_id}`);
+              const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
+              if (removeResult.success) {
+                console.log(`[STOCK_DELETE] Stock removed successfully for purchase reversal`);
+              } else {
+                console.error(`[STOCK_DELETE] Failed to remove stock for purchase reversal: ${removeResult.error}`);
+              }
+            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Add back stock for sales that were removed
+              // We need to recreate the stock item based on the entry data
+              const touch = entry.touch || 100; // Default to 100% for rupu
+              console.log(`[STOCK_DELETE] Adding back stock for sale reversal: ${entry.itemType}, weight: ${entry.weight}, touch: ${touch}`);
+              const addResult = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
+              if (addResult.success && addResult.stock_id) {
+                console.log(`[STOCK_DELETE] Stock added back successfully for sale reversal, new stock_id: ${addResult.stock_id}`);
+              } else {
+                console.error(`[STOCK_DELETE] Failed to add back stock for sale reversal: ${addResult.error}`);
+              }
+            } else {
+              console.log(`[STOCK_DELETE] Skipping entry - not a Rani/Rupa stock operation`);
+            }
+          } else {
+            console.log(`[STOCK_DELETE] Skipping entry - no stock_id found`);
+          }
+        }
+        console.log('[STOCK_DELETE] Stock reversal completed for transaction:', transactionId);
+      } catch (stockError) {
+        console.error('[STOCK_DELETE] Error reversing stock changes:', stockError);
+        // Continue with deletion even if stock reversal fails
+      }
+
       // Remove all ledger entries for this transaction
       const ledgerEntries = await this.getAllLedgerEntries();
       const filteredLedger = ledgerEntries.filter(entry => entry.transactionId !== transactionId);
@@ -919,6 +1037,7 @@ export class DatabaseService {
       await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filteredTransactions));
       DatabaseService.clearCache();
 
+      console.log(`[DELETE_TRANSACTION] Transaction ${transactionId} deleted successfully`);
       return { success: true };
     } catch (error) {
       console.error('Error deleting transaction:', error);

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RaniRupaStock } from '../types';
 
 const STORAGE_KEYS = {
-  RANI_RUPA_STOCK: 'rani_rupa_stock',
+  RANI_RUPA_STOCK: '@bulliondesk_rani_rupa_stock',
 };
 
 export class RaniRupaStockService {
@@ -20,6 +20,7 @@ export class RaniRupaStockService {
   // Add new stock item
   static async addStock(itemtype: 'rani' | 'rupu', weight: number, touch: number): Promise<{ success: boolean; stock_id?: string; error?: string }> {
     try {
+      console.log(`[RaniRupaStockService] Adding stock: ${itemtype}, weight: ${weight}, touch: ${touch}`);
       const stock = await this.getAllStock();
       const stock_id = `stock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -33,11 +34,13 @@ export class RaniRupaStockService {
       };
 
       stock.push(newStock);
+      console.log(`[RaniRupaStockService] New stock item created:`, newStock);
       await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
+      console.log(`[RaniRupaStockService] Stock saved, new count: ${stock.length}`);
 
       return { success: true, stock_id };
     } catch (error) {
-      console.error('Error adding stock:', error);
+      console.error('[RaniRupaStockService] Error adding stock:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
@@ -45,19 +48,30 @@ export class RaniRupaStockService {
   // Remove stock item by stock_id
   static async removeStock(stock_id: string): Promise<{ success: boolean; error?: string }> {
     try {
+      console.log(`[RaniRupaStockService] Removing stock item: ${stock_id}`);
       const stock = await this.getAllStock();
+      console.log(`[RaniRupaStockService] Current stock count: ${stock.length}, looking for: ${stock_id}`);
+      
+      // Log all stock IDs for debugging
+      stock.forEach((item, index) => {
+        console.log(`[RaniRupaStockService] Stock ${index}: ${item.stock_id} (${item.itemtype}, ${item.weight}g)`);
+      });
+      
       const index = stock.findIndex(item => item.stock_id === stock_id);
 
       if (index === -1) {
+        console.error(`[RaniRupaStockService] Stock item not found: ${stock_id}`);
         return { success: false, error: 'Stock item not found' };
       }
 
       const removedItem = stock.splice(index, 1)[0];
+      console.log(`[RaniRupaStockService] Removed stock item:`, removedItem);
       await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
+      console.log(`[RaniRupaStockService] Stock saved, new count: ${stock.length}`);
 
       return { success: true };
     } catch (error) {
-      console.error('Error removing stock:', error);
+      console.error('[RaniRupaStockService] Error removing stock:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }

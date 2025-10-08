@@ -54,17 +54,6 @@ export const HistoryScreen: React.FC = () => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertButtons, setAlertButtons] = useState<AlertButton[]>([]);
   
-  // Helper function to check if transaction can be deleted (same day only)
-  const canDeleteTransaction = (transactionDate: string): boolean => {
-    const transDate = new Date(transactionDate);
-    const today = new Date();
-    
-    // Check if transaction is on the same calendar day
-    return transDate.getDate() === today.getDate() &&
-           transDate.getMonth() === today.getMonth() &&
-           transDate.getFullYear() === today.getFullYear();
-  };
-
   // Helper function to check if transaction is settled and old (cannot be edited)
   const isSettledAndOld = (transaction: Transaction): boolean => {
     if (!transaction.lastUpdatedAt) return false;
@@ -396,14 +385,12 @@ export const HistoryScreen: React.FC = () => {
             
             {/* Action Buttons Row */}
             <View style={styles.editButtonRow}>
-              {canDeleteTransaction(transaction.date) && (
-                <TouchableOpacity 
-                  style={[styles.actionButton, styles.deleteButton]}
-                  onPress={() => handleDeleteTransaction(transaction)}
-                >
-                  <Icon name="delete" size={16} color={theme.colors.error} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={() => handleDeleteTransaction(transaction)}
+              >
+                <Icon name="delete" size={16} color={theme.colors.error} />
+              </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.actionButton, styles.shareButton]}
                 onPress={() => handleShareTransaction(transaction, shareableCardRef)}
@@ -873,7 +860,6 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     marginRight: theme.spacing.sm,
-    height: 32,
   },
   loadingContainer: {
     flex: 1,

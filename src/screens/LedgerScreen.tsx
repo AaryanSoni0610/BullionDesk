@@ -14,6 +14,9 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
 import { formatWeight, formatCurrency, formatPureGoldPrecise } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
@@ -52,6 +55,7 @@ interface EntryData {
   transactionId: string;
   customerName: string;
   entry: any; // TransactionEntry
+  date: string; // Date for sorting
 }
 
 interface InventoryCardProps {
@@ -76,6 +80,8 @@ export const LedgerScreen: React.FC = () => {
   const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showExportDatePicker, setShowExportDatePicker] = useState(false);
+  const [exportDate, setExportDate] = useState<Date>(new Date());
   const [showAdjustAlert, setShowAdjustAlert] = useState(false);
   const { navigateToSettings } = useAppContext();
   const navigation = useNavigation();
@@ -99,6 +105,20 @@ export const LedgerScreen: React.FC = () => {
     } else if (event.type === 'dismissed') {
       // User cancelled, don't change anything
       setShowDatePicker(false);
+    }
+  };
+
+  // Handle export date picker change
+  const handleExportDateChange = (event: any, selectedDate?: Date) => {
+    const isConfirmed = event.type === 'set';
+    setShowExportDatePicker(Platform.OS === 'ios' && isConfirmed); // Keep open on iOS only if confirmed
+    
+    if (isConfirmed && selectedDate) {
+      setExportDate(selectedDate);
+      exportLedgerToPDF(selectedDate);
+    } else if (event.type === 'dismissed') {
+      // User cancelled, don't change anything
+      setShowExportDatePicker(false);
     }
   };
 
@@ -318,8 +338,6 @@ export const LedgerScreen: React.FC = () => {
   const calculateInventoryData = async (transactions: Transaction[], customers: Customer[], ledgerEntries: LedgerEntry[]): Promise<InventoryData> => {
     let totalSales = 0;
     let totalPurchases = 0;
-    let totalIn = 0;  // Cash received from customers
-    let totalOut = 0; // Cash paid to customers
     let pendingTransactions = 0;
 
     const goldInventory = { gold999: 0, gold995: 0, rani: 0, total: 0 };
@@ -338,18 +356,6 @@ export const LedgerScreen: React.FC = () => {
     transactions.forEach(transaction => {
       if (transaction.status === 'pending') {
         pendingTransactions++;
-      }
-
-      // Cash flow calculation based on transaction type:
-      // For SELL: amountPaid = cash received FROM customer (money IN)
-      // For PURCHASE: amountPaid = cash paid TO customer (money OUT)
-      // Check transaction.total to determine type: positive = SELL, negative = PURCHASE
-      if (transaction.total >= 0) {
-        // SELL transaction: money flows IN from customer
-        totalIn += transaction.amountPaid;
-      } else {
-        // PURCHASE transaction: money flows OUT to customer
-        totalOut += transaction.amountPaid;
       }
 
       transaction.entries.forEach(entry => {
@@ -458,6 +464,460 @@ export const LedgerScreen: React.FC = () => {
     };
   };
 
+  const exportLedgerToPDF = async (date: Date) => {
+    try {
+      // Get data for the selected date
+      const [transactions, allLedgerEntries] = await Promise.all([
+        DatabaseService.getAllTransactions(),
+        DatabaseService.getAllLedgerEntries()
+      ]);
+
+      // Filter transactions and ledger for the date
+      const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+      const filteredTrans = transactions.filter(t => {
+        const transDate = new Date(t.date);
+        return transDate >= selectedDate && transDate <= endOfSelectedDay;
+      });
+
+      const filteredLedger = allLedgerEntries.filter(e => {
+        const entryDate = new Date(e.date);
+        return entryDate >= selectedDate && entryDate <= endOfSelectedDay;
+      });
+
+      // Calculate inventory data
+      const data = await calculateInventoryData(filteredTrans, customers, filteredLedger);
+
+      // Get entries for each subledger
+      const goldEntries: EntryData[] = [];
+      const silverEntries: EntryData[] = [];
+      const moneyEntries: EntryData[] = [];
+
+      // Gold entries
+      filteredTrans.forEach(transaction => {
+        const customer = customers.find(c => c.id === transaction.customerId);
+        const customerName = customer?.name || 'Unknown Customer';
+        transaction.entries.forEach(entry => {
+          if (entry.type === 'money') return;
+          if (entry.itemType.startsWith('gold') || entry.itemType === 'rani') {
+            if (entry.itemType === 'rani' && entry.type === 'purchase' && entry.actualGoldGiven) {
+              goldEntries.push({
+                transactionId: transaction.id,
+                customerName,
+                entry: {
+                  ...entry,
+                  type: 'sell',
+                  itemType: 'gold999',
+                  weight: entry.actualGoldGiven,
+                  subtotal: 0
+                },
+                date: transaction.date
+              });
+            }
+            goldEntries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry,
+              date: transaction.date
+            });
+          }
+        });
+      });
+
+      // Silver entries
+      filteredTrans.forEach(transaction => {
+        const customer = customers.find(c => c.id === transaction.customerId);
+        const customerName = customer?.name || 'Unknown Customer';
+        transaction.entries.forEach(entry => {
+          if (entry.type === 'money') return;
+          if (entry.itemType.startsWith('silver') || entry.itemType === 'rupu') {
+            if (entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver') {
+              if (entry.silverWeight && entry.silverWeight > 0) {
+                silverEntries.push({
+                  transactionId: transaction.id,
+                  customerName,
+                  entry: {
+                    ...entry,
+                    type: 'sell',
+                    itemType: 'silver',
+                    weight: entry.silverWeight,
+                    subtotal: 0
+                  },
+                  date: transaction.date
+                });
+              }
+            }
+            silverEntries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry,
+              date: transaction.date
+            });
+          }
+        });
+      });
+
+      // Money entries
+      filteredLedger.forEach(ledgerEntry => {
+        if (ledgerEntry.amountReceived > 0 || ledgerEntry.amountGiven > 0) {
+          moneyEntries.push({
+            transactionId: ledgerEntry.transactionId,
+            customerName: ledgerEntry.customerName,
+            entry: {
+              ...ledgerEntry.entries[0],
+              _ledgerEntry: ledgerEntry,
+            },
+            date: ledgerEntry.date
+          });
+        }
+      });
+
+      // Sort all entries by date ascending
+      goldEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      silverEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      moneyEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Calculate opening balances for gold and silver
+      // Opening = Current + sum(sold weights) - sum(purchased weights)
+      const goldOpeningBalances = {
+        gold999: data.goldInventory.gold999,
+        gold995: data.goldInventory.gold995,
+        rani: data.goldInventory.rani
+      };
+
+      const silverOpeningBalances = {
+        silver: data.silverInventory.silver,
+        rupu: data.silverInventory.rupu
+      };
+
+      // Calculate gold opening balances
+      goldEntries.forEach(entry => {
+        const isPurchase = entry.entry.type === 'purchase';
+        let weight = entry.entry.pureWeight || entry.entry.weight || 0;
+        if (entry.entry.itemType === 'rani') {
+          const touchNum = entry.entry.touch || 0;
+          const weightNum = entry.entry.weight || 0;
+          const pureGoldPrecise = (weightNum * touchNum) / 100;
+          weight = formatPureGoldPrecise(pureGoldPrecise);
+        }
+
+        if (isPurchase) {
+          // Purchase = received, so subtract from opening
+          switch (entry.entry.itemType) {
+            case 'gold999':
+              goldOpeningBalances.gold999 -= weight;
+              break;
+            case 'gold995':
+              goldOpeningBalances.gold995 -= weight;
+              break;
+            case 'rani':
+              goldOpeningBalances.rani -= weight;
+              break;
+          }
+        } else {
+          // Sell = given, so add to opening
+          switch (entry.entry.itemType) {
+            case 'gold999':
+              goldOpeningBalances.gold999 += weight;
+              break;
+            case 'gold995':
+              goldOpeningBalances.gold995 += weight;
+              break;
+            case 'rani':
+              goldOpeningBalances.rani += weight;
+              break;
+          }
+        }
+      });
+
+      // Calculate silver opening balances
+      silverEntries.forEach(entry => {
+        const isPurchase = entry.entry.type === 'purchase';
+        const weight = entry.entry.weight || 0;
+
+        if (isPurchase) {
+          // Purchase = received, so subtract from opening
+          switch (entry.entry.itemType) {
+            case 'silver':
+              silverOpeningBalances.silver -= weight;
+              break;
+            case 'rupu':
+              silverOpeningBalances.rupu -= weight;
+              break;
+          }
+        } else {
+          // Sell = given, so add to opening
+          switch (entry.entry.itemType) {
+            case 'silver':
+              silverOpeningBalances.silver += weight;
+              break;
+            case 'rupu':
+              silverOpeningBalances.rupu += weight;
+              break;
+          }
+        }
+      });
+
+      // Apply rounding to opening balances
+      goldOpeningBalances.gold999 = DatabaseService.roundInventoryValue(goldOpeningBalances.gold999, 'gold999');
+      goldOpeningBalances.gold995 = DatabaseService.roundInventoryValue(goldOpeningBalances.gold995, 'gold995');
+      goldOpeningBalances.rani = DatabaseService.roundInventoryValue(goldOpeningBalances.rani, 'rani');
+      silverOpeningBalances.silver = DatabaseService.roundInventoryValue(silverOpeningBalances.silver, 'silver');
+      silverOpeningBalances.rupu = DatabaseService.roundInventoryValue(silverOpeningBalances.rupu, 'rupu');
+
+      // Generate HTML
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Ledger Report - ${formatDateDisplay(date)}</title>
+          <style>
+            body {
+              font-family: 'Helvetica', sans-serif;
+              margin: 20px;
+              color: #333;
+            }
+            h1 {
+              color: #1976d2;
+              text-align: center;
+              margin-bottom: 30px;
+              font-size: 24px;
+            }
+            h3 {
+              color: #455A64;
+              margin-top: 20px;
+              margin-bottom: 10px;
+              font-size: 16px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 20px;
+            }
+            th, td {
+              border: 1px solid #ddd;
+              padding: 8px;
+              text-align: left;
+              font-size: 12px;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+            }
+            td {
+              align-items: center;
+              width: 33.33%;
+            }
+            .footer {
+              margin-top: 20px;
+              text-align: center;
+              font-size: 10px;
+              color: #666;
+            }
+            .chips {
+              margin-bottom: 10px;
+            }
+            .chip {
+              display: inline-block;
+              padding: 4px 8px;
+              margin-right: 10px;
+              background-color: #e0e0e0;
+              border-radius: 4px;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="footer">
+            Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
+          <h1>Ledger Report - ${formatDateDisplay(date)}</h1>
+
+          <!-- Gold Subledger -->
+          <h3 style="color: #E65100;">Gold Subledger</h3>
+          <div class="chips">
+            <span class="chip">Gold 999: ${formatWeight(goldOpeningBalances.gold999)}</span>
+            <span class="chip">Gold 995: ${formatWeight(goldOpeningBalances.gold995)}</span>
+            <span class="chip">Rani: ${goldOpeningBalances.rani.toFixed(3)}g</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Purchase</th>
+                <th>Sell</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${goldEntries.map(entry => {
+                const isPurchase = entry.entry.type === 'purchase';
+                let weight = entry.entry.pureWeight || entry.entry.weight || 0;
+                if (entry.entry.itemType === 'rani') {
+                  const touchNum = entry.entry.touch || 0;
+                  const weightNum = entry.entry.weight || 0;
+                  const pureGoldPrecise = (weightNum * touchNum) / 100;
+                  weight = formatPureGoldPrecise(pureGoldPrecise);
+                }
+                const purchaseWeight = isPurchase ? weight : 0;
+                const sellWeight = isPurchase ? 0 : weight;
+                
+                // Format detailed info for Rani entries
+                const formatRaniDetails = (entry: any, weight: number) => {
+                  if (entry.itemType === 'rani') {
+                    const touchNum = entry.touch || 0;
+                    const weightNum = entry.weight || 0;
+                    const pureGoldPrecise = (weightNum * touchNum) / 100;
+                    return `${weightNum.toFixed(3)}g, ${touchNum}%, ${formatPureGoldPrecise(pureGoldPrecise)}`;
+                  }
+                  return `${formatWeight(weight, false)}`;
+                };
+                
+                return `
+                  <tr>
+                    <td>${entry.customerName}</td>
+                    <td>${purchaseWeight > 0 ? formatRaniDetails(entry.entry, purchaseWeight) : '-'}</td>
+                    <td>${sellWeight > 0 ? formatRaniDetails(entry.entry, sellWeight) : '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          <div class="chips">
+            <span class="chip">Gold 999: ${formatWeight(data.goldInventory.gold999)}</span>
+            <span class="chip">Gold 995: ${formatWeight(data.goldInventory.gold995)}</span>
+            <span class="chip">Rani: ${data.goldInventory.rani.toFixed(3)}g</span>
+          </div>
+          
+          <hr/>
+          
+          <!-- Silver Subledger -->
+          <h3 style="color: #B0BEC5;">Silver Subledger</h3>
+          <div class="chips">
+            <span class="chip">Silver: ${formatWeight(silverOpeningBalances.silver, true)}</span>
+            <span class="chip">Rupu: ${formatWeight(silverOpeningBalances.rupu, true)}</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Purchase</th>
+                <th>Sell</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${silverEntries.map(entry => {
+                const isPurchase = entry.entry.type === 'purchase';
+                const weight = entry.entry.weight || 0;
+                const purchaseWeight = isPurchase ? weight : 0;
+                const sellWeight = isPurchase ? 0 : weight;
+                
+                // Format detailed info for Rupu entries
+                const formatRupuDetails = (entry: any, weight: number) => {
+                  if (entry.itemType === 'rupu') {
+                    const touchNum = entry.touch || 0;
+                    const weightNum = entry.weight || 0;
+                    const pureSilverPrecise = (weightNum * touchNum) / 100;
+                    return `${weightNum.toFixed(3)}g, ${touchNum}%, ${pureSilverPrecise.toFixed(3)}g`;
+                  }
+                  return `${formatWeight(weight, true)}`;
+                };
+                
+                return `
+                  <tr>
+                    <td>${entry.customerName}</td>
+                    <td>${purchaseWeight > 0 ? formatRupuDetails(entry.entry, purchaseWeight) : '-'}</td>
+                    <td>${sellWeight > 0 ? formatRupuDetails(entry.entry, sellWeight) : '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          <div class="chips">
+            <span class="chip">Silver: ${formatWeight(data.silverInventory.silver, true)}</span>
+            <span class="chip">Rupu: ${formatWeight(data.silverInventory.rupu, true)}</span>
+          </div>
+
+          <hr/>
+
+          <!-- Money Subledger -->
+          <h3 style="color: #2E7D32;">Money Subledger</h3>
+          <div class="chips">
+            <span class="chip">Opening: ${formatCurrency(data.cashFlow.moneyIn + data.cashFlow.totalOut - data.cashFlow.totalIn)}</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Received</th>
+                <th>Given</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${moneyEntries.map(entry => {
+                const ledgerEntry = entry.entry._ledgerEntry;
+                const receivedAmount = ledgerEntry?.amountReceived || 0;
+                const givenAmount = ledgerEntry?.amountGiven || 0;
+                return `
+                  <tr>
+                    <td>${entry.customerName}</td>
+                    <td>${receivedAmount > 0 ? formatCurrency(receivedAmount) : '-'}</td>
+                    <td>${givenAmount > 0 ? formatCurrency(givenAmount) : '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          <div class="chips">
+            <span class="chip">In: ${formatCurrency(data.cashFlow.totalIn)}</span>
+            <span class="chip">Out: ${formatCurrency(data.cashFlow.totalOut)}</span>
+            <span class="chip">Net: ${formatCurrency(data.cashFlow.moneyIn - data.cashFlow.totalOut)}</span>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Generate PDF
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false,
+      });
+
+      const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+      const fileName = `Ledger_Report_${dateStr}.pdf`;
+      const newUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri,
+      });
+
+      // Share the PDF
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(newUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Ledger Report PDF',
+        });
+      } else {
+        console.error('Sharing is not available on this device');
+      }
+
+      // Delete after 2 minutes
+      setTimeout(async () => {
+        try {
+          await FileSystem.deleteAsync(newUri);
+        } catch (error) {
+          console.error('Error deleting PDF:', error);
+        }
+      }, 120000); // 2 minutes
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    }
+  };
+
   const onRefresh = () => {
     loadInventoryData(true);
   };
@@ -476,7 +936,8 @@ export const LedgerScreen: React.FC = () => {
             entry: {
               ...ledgerEntry.entries[0], // Use first entry as placeholder
               _ledgerEntry: ledgerEntry, // Store full ledger entry for money display
-            }
+            },
+            date: ledgerEntry.date
           });
         }
       });
@@ -507,7 +968,8 @@ export const LedgerScreen: React.FC = () => {
                   itemType: 'gold999',
                   weight: entry.actualGoldGiven,
                   subtotal: 0 // Not shown in subledger
-                }
+                },
+                date: transaction.date
               });
             }
           }
@@ -526,7 +988,8 @@ export const LedgerScreen: React.FC = () => {
                     itemType: 'silver',
                     weight: entry.silverWeight,
                     subtotal: 0
-                  }
+                  },
+                  date: transaction.date
                 });
               }
             }
@@ -536,12 +999,16 @@ export const LedgerScreen: React.FC = () => {
             entries.push({
               transactionId: transaction.id,
               customerName,
-              entry
+              entry,
+              date: transaction.date
             });
           }
         });
       });
     }
+    
+    // Sort by date ascending (oldest first)
+    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     return entries;
   }, [selectedInventory, filteredLedgerEntries, filteredTransactions, customers]);
@@ -737,12 +1204,23 @@ export const LedgerScreen: React.FC = () => {
           <Text variant="titleLarge" style={styles.appTitle}>
             Ledger
           </Text>
-          <IconButton
-            icon="cog-outline"
-            size={24}
-            onPress={navigateToSettings}
-            style={styles.settingsButton}
-          />
+          {/* add both icons into single row*/}
+          <View style={styles.appBarButtons}>
+            <IconButton
+              icon="tray-arrow-up"
+              size={24}
+              onPress={() => setShowExportDatePicker(true)}
+              style={styles.exportButton}
+            />
+
+            <IconButton
+              icon="cog-outline"
+              size={24}
+              onPress={navigateToSettings}
+              style={styles.settingsButton}
+            />
+          </View>
+
         </View>
       </Surface>
 
@@ -782,6 +1260,17 @@ export const LedgerScreen: React.FC = () => {
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             onChange={handleDateChange}
+            maximumDate={new Date()}
+          />
+        )}
+
+        {/* Export Date Picker */}
+        {showExportDatePicker && (
+          <DateTimePicker
+            value={exportDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleExportDateChange}
             maximumDate={new Date()}
           />
         )}
@@ -828,8 +1317,8 @@ export const LedgerScreen: React.FC = () => {
         </ScrollView>
 
 
-        {/* Metal Inventory Chips - Only show for gold and silver subledgers */}
-        {selectedInventory !== 'money' && inventoryData && (
+        {/* Metal Inventory Chips - Show for all subledgers */}
+        {inventoryData && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inventoryChipsContainer}>
             {selectedInventory === 'gold' ? (
               <>
@@ -870,6 +1359,30 @@ export const LedgerScreen: React.FC = () => {
                   textStyle={{ color: '#455A64' }}
                 >
                   Rupu: {formatWeight(inventoryData.silverInventory.rupu, true)}
+                </Chip>
+              </>
+            ) : selectedInventory === 'money' ? (
+              <>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#E8F5E8' }]}
+                  textStyle={{ color: '#2E7D32' }}
+                >
+                  Opening: {formatCurrency(inventoryData.cashFlow.moneyIn + inventoryData.cashFlow.totalOut - inventoryData.cashFlow.totalIn)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#E8F5E8' }]}
+                  textStyle={{ color: '#2E7D32' }}
+                >
+                  In: {formatCurrency(inventoryData.cashFlow.totalIn)}
+                </Chip>
+                <Chip 
+                  mode="flat" 
+                  style={[styles.inventoryChip, { backgroundColor: '#E8F5E8' }]}
+                  textStyle={{ color: '#2E7D32' }}
+                >
+                  Out: {formatCurrency(inventoryData.cashFlow.totalOut)}
                 </Chip>
               </>
             ) : null}
@@ -1000,6 +1513,14 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     margin: 0,
+  },
+  appBarButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  exportButton: {
+    margin: 0,
+    marginRight: 0,
   },
   header: {
     paddingHorizontal: theme.spacing.md,

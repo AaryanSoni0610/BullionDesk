@@ -258,9 +258,15 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const received = parseFloat(receivedAmount) || 0;
   const discountExtraAmount = parseFloat(discountExtra) || 0;
   
-  // Safety feature: Lock entry modifications for old transactions
-  const isOldTransaction = transactionCreatedAt 
-    ? (Date.now() - new Date(transactionCreatedAt).getTime()) > (24 * 60 * 60 * 1000)
+  // Safety feature: Lock entry modifications for transactions created on previous dates
+  const isOldTransaction = transactionCreatedAt
+    ? (() => {
+        const today = new Date();
+        const transactionDate = new Date(transactionCreatedAt);
+        return today.getFullYear() !== transactionDate.getFullYear() ||
+               today.getMonth() !== transactionDate.getMonth() ||
+               today.getDate() !== transactionDate.getDate();
+      })()
     : false;
   
   // Check if there are any money-only entries
@@ -324,7 +330,11 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     }
   }
 
-  const renderEntryCard = (entry: TransactionEntry, index: number) => (
+  const renderEntryCard = (entry: TransactionEntry, index: number) => {
+    // Check if this specific entry should be locked
+    const isEntryLocked = areEntriesLocked || (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu'));
+    
+    return (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">
       <Card.Content style={styles.entryCardContent}>
         <View style={styles.entryHeader}>
@@ -344,19 +354,19 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           <View style={styles.actionButtons}>
             <IconButton
               icon="pencil"
-              iconColor={areEntriesLocked ? theme.colors.onSurfaceDisabled : theme.colors.primary}
+              iconColor={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.primary}
               size={20}
               onPress={() => onEditEntry(entry.id)}
               style={styles.editButton}
-              disabled={areEntriesLocked}
+              disabled={isEntryLocked}
             />
             <IconButton
               icon="delete"
-              iconColor={areEntriesLocked ? theme.colors.onSurfaceDisabled : theme.colors.error}
+              iconColor={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.error}
               size={20}
               onPress={() => onDeleteEntry(entry.id)}
               style={styles.deleteButton}
-              disabled={areEntriesLocked}
+              disabled={isEntryLocked}
             />
           </View>
         </View>
@@ -372,6 +382,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       </Card.Content>
     </Card>
   );
+};
 
   return (
     <SafeAreaView style={styles.container}>

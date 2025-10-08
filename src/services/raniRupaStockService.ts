@@ -51,6 +51,7 @@ export class RaniRupaStockService {
         return { success: false, error: 'Stock item not found' };
       }
 
+      stock.splice(index, 1); // Remove the item from the array
       await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
 
       return { success: true };

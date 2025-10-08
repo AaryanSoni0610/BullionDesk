@@ -407,9 +407,31 @@ export class DatabaseService {
         // Update transaction with new values
         const mappedEntries = entries.map(e => ({ ...e, lastUpdatedAt: now }));
         
-        // TODO: Handle stock reversal for old entries and stock management for new entries
-        // For now, just apply stock management to new entries
+        // Handle stock reversal for old entries and stock management for new entries
         try {
+          // First, reverse stock changes from existing transaction entries
+          for (const entry of existingTransaction.entries) {
+            if (entry.stock_id) {
+              if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+                // Remove stock for purchases that were added
+                const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
+                if (!removeResult.success) {
+                  console.error(`[STOCK_UPDATE] Failed to remove stock for purchase reversal: ${removeResult.error}`);
+                }
+              } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+                // Add back stock for sales that were removed
+                const touch = entry.touch || 100; // Default to 100% for rupu
+                const addResult = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
+                if (!(addResult.success && addResult.stock_id)) {
+                  console.error(`[STOCK_UPDATE] Failed to add back stock for sale reversal: ${addResult.error}`);
+                }
+              }
+            } else {
+              console.error(`[STOCK_UPDATE] Skipping old entry reversal - no stock_id found`);
+            }
+          }
+          
+          // Then apply stock management to new entries
           for (const entry of mappedEntries) {
             if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
               // Add stock for purchases
@@ -418,20 +440,34 @@ export class DatabaseService {
               if (result.success && result.stock_id) {
                 entry.stock_id = result.stock_id;
               } else {
-                console.error(`[STOCK] Failed to add stock: ${result.error}`);
+                console.error(`[STOCK_UPDATE] Failed to add stock: ${result.error}`);
               }
-            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.stock_id) {
-              // Remove stock for sales
-              const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
+            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Remove stock for sales - use existing stock_id or find stock to remove
+              let stockIdToRemove = entry.stock_id;
+              if (!stockIdToRemove) {
+                // Find stock to remove for new/modified sell entries
+                const stockOfType = await RaniRupaStockService.getStockByType(entry.itemType);
+                if (stockOfType.length > 0) {
+                  // Sort by creation date (oldest first) and take the first one
+                  const oldestStock = stockOfType.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0];
+                  stockIdToRemove = oldestStock.stock_id;
+                  entry.stock_id = oldestStock.stock_id; // Set it on the entry for future reference
+                } else {
+                  console.error(`[STOCK_UPDATE] No stock available for sale of ${entry.itemType}`);
+                  continue;
+                }
+              }
+              const removeResult = await RaniRupaStockService.removeStock(stockIdToRemove);
               if (!removeResult.success) {
-                console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
+                console.error(`[STOCK_UPDATE] Failed to remove stock for sale: ${removeResult.error}`);
               }
             } else {
-              console.error(`[STOCK] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
+              console.error(`[STOCK_UPDATE] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
             }
           }
         } catch (stockError) {
-          console.error('[STOCK] Error managing stock for update:', stockError);
+          console.error('[STOCK_UPDATE] Error managing stock for update:', stockError);
           return { success: false, error: 'Error managing stock' };
         }
         
@@ -464,7 +500,25 @@ export class DatabaseService {
         }
 
         // Create mapped entries first
-        const mappedEntries = entries.map(e => ({ ...e, createdAt: now, lastUpdatedAt: now }));
+        // If saveDate is provided and it's not today, use selected date with current time for entry timestamps
+        let entryTimestamp = now;
+        if (saveDate) {
+          const today = new Date();
+          const selectedDate = new Date(saveDate);
+          
+          // Check if selected date is different from today (compare date parts only)
+          const isDifferentDate = 
+            selectedDate.getFullYear() !== today.getFullYear() ||
+            selectedDate.getMonth() !== today.getMonth() ||
+            selectedDate.getDate() !== today.getDate();
+          
+          if (isDifferentDate) {
+            const entryDateTime = saveDate;
+            entryTimestamp = entryDateTime.toISOString();
+          }
+        }
+        
+        const mappedEntries = entries.map(e => ({ ...e, createdAt: entryTimestamp, lastUpdatedAt: entryTimestamp }));
 
         // INTEGRATE STOCK MANAGEMENT: Add stock for purchases, remove for sales
         try {
@@ -478,11 +532,19 @@ export class DatabaseService {
               } else {
                 console.error(`[STOCK] Failed to add stock: ${result.error}`);
               }
-            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.stock_id) {
-              // Remove stock for sales
-              const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
-              if (!removeResult.success) {
-                console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
+            } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Remove stock for sales - find and remove the oldest stock of this type
+              const stockOfType = await RaniRupaStockService.getStockByType(entry.itemType);
+              if (stockOfType.length > 0) {
+                // Sort by creation date (oldest first) and take the first one
+                const oldestStock = stockOfType.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0];
+                entry.stock_id = oldestStock.stock_id;
+                const removeResult = await RaniRupaStockService.removeStock(oldestStock.stock_id);
+                if (!removeResult.success) {
+                  console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
+                }
+              } else {
+                console.error(`[STOCK] No stock available for sale of ${entry.itemType}`);
               }
             }
           }
@@ -525,9 +587,23 @@ export class DatabaseService {
       
       // Create ledger entry for money changes or money-only transactions
       if (deltaAmount !== 0 || isMoneyOnly) {
+        // For money-only transactions, use the transaction date (when transaction was saved)
+        // For non-money-only transactions, use the earliest entry's createdAt timestamp
+        let ledgerTimestamp = transactionDate;
+        if (!isMoneyOnly) {
+          // Find the earliest entry creation time
+          const entryTimestamps = entries
+            .map(entry => entry.createdAt)
+            .filter((timestamp): timestamp is string => timestamp !== undefined) // Filter out undefined timestamps
+            .sort();
+          if (entryTimestamps.length > 0) {
+            ledgerTimestamp = entryTimestamps[0]; // Use the earliest entry creation time
+          }
+        }
+        
         // For money-only transactions, use the transaction total as delta if no payment made
         const ledgerDelta = isMoneyOnly && deltaAmount === 0 ? netAmount : deltaAmount;
-        await this.createLedgerEntry(transaction, ledgerDelta, transactionDate);
+        await this.createLedgerEntry(transaction, ledgerDelta, ledgerTimestamp);
       }
 
       // Check if any entry is metal-only
@@ -942,7 +1018,26 @@ export class DatabaseService {
         for (const entry of transaction.entries) {
           if (entry.metalOnly) {
             const itemType = entry.itemType;
-            const weight = entry.weight || 0;
+            let metalAmount = 0;
+
+            // Use the same logic as saveTransaction for determining metal amount
+            if (entry.itemType === 'rani') {
+              metalAmount = entry.pureWeight || 0;
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+            } else if (entry.itemType === 'rupu') {
+              if (entry.rupuReturnType === 'silver' && entry.netWeight !== undefined) {
+                metalAmount = entry.netWeight;
+              } else {
+                metalAmount = entry.pureWeight || 0;
+                // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
+                metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+              }
+            } else {
+              // Regular metals: use actual weight
+              metalAmount = entry.weight || 0;
+              // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
+            }
             
             if (!customer.metalBalances) {
               customer.metalBalances = {} as any;
@@ -950,9 +1045,8 @@ export class DatabaseService {
             
             const currentBalance = (customer.metalBalances as any)[itemType] || 0;
             
-            // Reverse the metal balance change
-            const balanceDelta = entry.type === 'sell' ? -weight : weight;
-            (customer.metalBalances as any)[itemType] = currentBalance - balanceDelta;
+            // Reverse the metal balance change (subtract what was added)
+            (customer.metalBalances as any)[itemType] = currentBalance - metalAmount;
           }
         }
         

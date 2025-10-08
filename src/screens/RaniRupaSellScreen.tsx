@@ -255,7 +255,7 @@ export const RaniRupaSellScreen: React.FC = () => {
     <List.Item
       key={item.id}
       title={item.name}
-      description={`Weight: ${item.weight}g${item.touch ? `, Touch: ${item.touch}%` : ''}, Pure: ${selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g`}
+      description={`Weight: ${selectedType === 'rani' ? item.weight.toFixed(3) : item.weight.toFixed(1)}g${item.touch ? `, Touch: ${item.touch.toFixed(2)}%` : ''}, Pure: ${selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g`}
       left={() => (
         <Checkbox
           status={selectedItems.has(item.id) ? 'checked' : 'unchecked'}

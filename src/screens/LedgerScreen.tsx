@@ -18,7 +18,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatWeight, formatCurrency, formatPureGoldPrecise } from '../utils/formatting';
+import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -1040,6 +1040,9 @@ export const LedgerScreen: React.FC = () => {
             <Text variant="bodyMedium" style={styles.customerName}>
               {customerName}
             </Text>
+            <Text variant="bodySmall" style={styles.transactionDate}>
+              {formatFullTime(entryData.date)}
+            </Text>
           </View>
           <View style={styles.transactionCell}>
             <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
@@ -1076,6 +1079,9 @@ export const LedgerScreen: React.FC = () => {
           <View style={styles.transactionCell}>
             <Text variant="bodyMedium" style={styles.customerName}>
               {customerName}
+            </Text>
+            <Text variant="bodySmall" style={styles.transactionDate}>
+              {formatFullTime(entryData.date)}
             </Text>
           </View>
           <View style={styles.transactionCell}>

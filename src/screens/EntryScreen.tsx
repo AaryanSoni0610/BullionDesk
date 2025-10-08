@@ -126,9 +126,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   // Reset itemType to valid option when switching to sell tab with rani/rupu selected
   useEffect(() => {
-    if (transactionType === 'sell' && (itemType === 'rani' || itemType === 'rupu')) {
-      setItemType('gold999');
-    }
+    // No longer needed - rani/rupu are now allowed in sell transactions
   }, [transactionType, itemType]);
   
   // Auto-select valid transaction type when available types change
@@ -141,6 +139,14 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     }
   }, [availableTypes, transactionType]);
 
+  // Ensure Rupu sell transactions use money return only
+  useEffect(() => {
+    if (transactionType === 'sell' && itemType === 'rupu' && rupuReturnType === 'silver') {
+      setRupuReturnType('money');
+      setSilverWeight('');
+    }
+  }, [transactionType, itemType, rupuReturnType]);
+
   const getItemOptions = () => {
     const allOptions = [
       { label: 'Gold 999', value: 'gold999' },
@@ -150,11 +156,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       { label: 'Rupu (Impure Silver)', value: 'rupu' },
     ];
     
-    // Filter out rani and rupu from sell transactions
-    if (transactionType === 'sell') {
-      return allOptions.filter(option => option.value !== 'rani' && option.value !== 'rupu');
-    }
-    
+    // All options are now available for all transaction types
     return allOptions;
   };
   
@@ -277,6 +279,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           amount: parseFloat(amount),
           subtotal,
           itemType: 'money', // Correct itemType for money entries
+          createdAt: editingEntry?.createdAt || new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString(),
         };
       } else {
         // Create regular entry
@@ -309,6 +313,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           })() : undefined,
           metalOnly,
           subtotal,
+          createdAt: editingEntry?.createdAt || new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString(),
         };
       }
 
@@ -399,8 +405,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             />
           </View>
           <TextInput
-            label="Pure Gold Equivalent"
-            value={`${formattedPureGold.toFixed(3)}g`}
+            label="Pure Gold (g)"
+            value={`${formattedPureGold !== 0 ? `${formattedPureGold.toFixed(3)}g` : ''}`}
             mode="outlined"
             editable={false}
             style={styles.input}
@@ -466,13 +472,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             style={styles.input}
           />
 
-          <View style={styles.calculationDisplay}>
-            <Text variant="bodySmall">Pure Silver: {formattedPureSilver}g</Text>
-            {extraWeight > 0 && (
-              <Text variant="bodySmall">Bonus: {formatPureSilver((formattedPureSilver * extraWeight) / 1000)}g</Text>
-            )}
-            <Text variant="bodySmall">Total Weight: {formattedTotalPureWithExtra}g</Text>
-          </View>
+          <TextInput
+            label="Pure Weight + Extra (g)"
+            value={`${formattedTotalPureWithExtra !== 0 ? `${formattedTotalPureWithExtra.toFixed(1)}g` : ''}`}
+            mode="outlined"
+            editable={false}
+            style={styles.input}
+          />
           
           {/* Metal Only Toggle */}
           <View style={styles.metalOnlyContainer}>
@@ -495,40 +501,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             />
           )}
           
-          {/* Return Type Selection */}
-          {!metalOnly && (
-            <View style={styles.segmentedButtons}>
-              <SegmentedButtons
-                value={rupuReturnType}
-                onValueChange={setRupuReturnType as any}
-                buttons={[
-                  { value: 'money', label: 'Money Return' },
-                  { value: 'silver', label: 'Silver Return' },
-                ]}
-              />
-            </View>
-          )}
-          
-          {!metalOnly && rupuReturnType === 'silver' && (
-            <>
-              <TextInput
-                label="Silver Return (g)"
-                value={silverWeight}
-                onChangeText={setSilverWeight}
-                mode="outlined"
-                keyboardType="numeric"
-                style={styles.input}
-              />
-              <View style={styles.calculationDisplay}>
-                <Text variant="bodySmall">Net Weight: {(() => {
-                  const silverNum = parseFloat(silverWeight) || 0;
-                  const rawNet = formattedTotalPureWithExtra - silverNum;
-                  const net = formatPureSilver(rawNet);
-                  return `${net}g`;
-                })()}</Text>
-              </View>
-            </>
-          )}
         </>
       );
     }
@@ -834,12 +806,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onPrimaryContainer,
     textAlign: 'center',
     fontFamily: 'Roboto_400Regular_Italic',
-  },
-  calculationDisplay: {
-    backgroundColor: theme.colors.surfaceVariant,
-    padding: theme.spacing.md,
-    borderRadius: 8,
-    marginBottom: theme.spacing.md,
   },
   metalOnlyContainer: {
     flexDirection: 'row',

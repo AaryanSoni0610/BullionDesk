@@ -188,6 +188,20 @@ export const formatFullDate = (dateString: string): string => {
     minute: '2-digit'
   });
 };
+
+/**
+ * Formats date with full details for history display
+ * @param dateString - The date string
+ * @returns Formatted date string with time
+ */
+export const formatFullTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 /**
  * Formats date with full details including seconds
  * @param dateString - The date string

@@ -408,8 +408,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => {
     // Check if this specific entry should be locked
-    const isEntryLocked = areEntriesLocked || (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu'));
-    
+    let isEntryLocked = entries.some(e => (e.metalOnly === true));
+    isEntryLocked = isEntryLocked && areEntriesLocked;
+    const hasRaniRupaEntry = entries.some(e => (e.itemType === 'rani' || e.itemType === 'rupu'));
+    console.log('hasRaniRupaEntry', hasRaniRupaEntry);
+    console.log('isEntryLocked', isEntryLocked);
+
     return (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">
       <Card.Content style={styles.entryCardContent}>
@@ -442,7 +446,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               size={20}
               onPress={() => onDeleteEntry(entry.id)}
               style={styles.deleteButton}
-              disabled={isEntryLocked}
+              disabled={isEntryLocked || hasRaniRupaEntry}
             />
           </View>
         </View>

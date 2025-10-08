@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, StyleSheet, TouchableWithoutFeedback } from 'react-native';
+import { Modal, View, StyleSheet, TouchableWithoutFeedback, ScrollView } from 'react-native';
 import { Surface, Text, Button, TextInput } from 'react-native-paper';
 import { theme } from '../theme';
 
@@ -24,6 +24,7 @@ interface CustomAlertProps {
   buttons?: AlertButton[];
   inputs?: AlertInput[];
   onDismiss?: () => void;
+  maxHeight?: number;
 }
 
 const CustomAlert: React.FC<CustomAlertProps> = ({
@@ -33,6 +34,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   buttons,
   inputs,
   onDismiss,
+  maxHeight,
 }) => {
   // Use default OK button only if buttons is undefined, not if it's an empty array
   const finalButtons = buttons === undefined ? [{ text: 'OK' }] : buttons;
@@ -68,20 +70,29 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
     >
       <TouchableWithoutFeedback onPress={isDismissible ? onDismiss : undefined}>
         <View style={styles.overlay}>
-          <TouchableWithoutFeedback>
-            <Surface style={[styles.alertContainer, { backgroundColor: theme.colors.surface }]}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <Surface style={[styles.alertContainer, { backgroundColor: theme.colors.surface }, maxHeight ? { maxHeight } : {}]}>
               <Text
                 variant="headlineSmall"
                 style={[styles.title, { color: theme.colors.onSurface }]}
               >
                 {title}
               </Text>
-              <Text
-                variant="bodyMedium"
-                style={[styles.message, { color: theme.colors.onSurfaceVariant }]}
+              <ScrollView
+                style={styles.messageContainer}
+                showsVerticalScrollIndicator={true}
+                bounces={false}
+                scrollEnabled={true}
+                nestedScrollEnabled={true}
+                contentContainerStyle={styles.messageContent}
               >
-                {message}
-              </Text>
+                <Text
+                  variant="bodyMedium"
+                  style={[styles.message, { color: theme.colors.onSurfaceVariant }]}
+                >
+                  {message}
+                </Text>
+              </ScrollView>
               {inputs && inputs.length > 0 && (
                 <View style={styles.inputsContainer}>
                   {inputs.map((input, index) => (
@@ -134,7 +145,7 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: 12,
     elevation: 6,
-    minWidth: 280,
+    minWidth: 400,
     maxWidth: 400,
   },
   title: {
@@ -142,15 +153,19 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     fontFamily: 'Roboto_500Medium',
   },
+  messageContainer: {
+    marginBottom: 8,
+  },
+  messageContent: {
+    paddingVertical: 4,
+  },
   message: {
-    marginBottom: 24,
     textAlign: 'left',
     lineHeight: 20,
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 8,
   },
   button: {
     minWidth: 64,

@@ -13,6 +13,7 @@ import { BackupService } from '../services/backupService';
 import { EncryptionService } from '../services/encryptionService';
 import { EncryptionKeyDialog } from '../components/EncryptionKeyDialog';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
+import CustomAlert from '../components/CustomAlert';
 import { formatIndianNumber } from '../utils/formatting';
 
 export const SettingsScreen: React.FC = () => {
@@ -33,6 +34,9 @@ export const SettingsScreen: React.FC = () => {
   const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
   const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
   const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
+  const [showTermsOfService, setShowTermsOfService] = React.useState(false);
+  const [showAbout, setShowAbout] = React.useState(false);
   const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell } = useAppContext();
 
   // Check notification and backup status on mount
@@ -708,22 +712,10 @@ export const SettingsScreen: React.FC = () => {
           <List.Subheader style={styles.sectionHeader}>About</List.Subheader>
 
           <List.Item
-            title="Version"
-            description="v1.2.6"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
-            left={props => <List.Icon {...props} icon="information-outline" />}
-          />
-
-          <Divider />
-
-          <List.Item
             title="Privacy Policy"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="shield-check-outline" />}
-            onPress={() => {
-              // TODO: Open privacy policy
-            }}
+            onPress={() => setShowPrivacyPolicy(true)}
           />
 
           <Divider />
@@ -732,9 +724,16 @@ export const SettingsScreen: React.FC = () => {
             title="Terms of Service"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="file-document-outline" />}
-            onPress={() => {
-              // TODO: Open terms of service
-            }}
+            onPress={() => setShowTermsOfService(true)}
+          />
+
+          <Divider />
+
+          <List.Item
+            title="About"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="information-outline" />}
+            onPress={() => setShowAbout(true)}
           />
         </List.Section>
       </ScrollView>
@@ -781,6 +780,128 @@ export const SettingsScreen: React.FC = () => {
         inputs={inventoryInputs}
         onSubmit={handleInventoryDialogSubmit}
         onCancel={handleInventoryDialogCancel}
+      />
+
+      {/* Privacy Policy Dialog */}
+      <CustomAlert
+        visible={showPrivacyPolicy}
+        title="Privacy Policy"
+        message={`Privacy Policy for BullionDesk
+
+Last Updated: October 9, 2025
+
+1. Information We Collect
+BullionDesk collects and stores the following information locally on your device:
+- Customer information (names, contact details, balances)
+- Transaction records and history
+- Inventory data and business records
+- App settings and preferences
+
+2. Data Storage
+All data is stored locally on your device using secure storage mechanisms. We do not transmit any of your business data to external servers or third parties.
+
+3. Data Security
+Your data is protected using industry-standard encryption when backed up to external storage. The app uses secure local storage APIs provided by your device's operating system.
+
+4. Data Sharing
+We do not share, sell, or transmit your personal or business data to any third parties. Your data remains entirely on your device.
+
+5. Backup and Restore
+When you choose to backup your data, it is encrypted and stored in a location you specify. Only you have access to your backup files.
+
+6. Contact Information
+If you have any questions about this Privacy Policy, please contact the developer.
+
+7. Changes to This Policy
+This privacy policy may be updated as needed. Continued use of the app constitutes acceptance of any changes.`}
+        maxHeight={400}
+        buttons={[{ text: 'OK', onPress: () => setShowPrivacyPolicy(false) }]}
+        onDismiss={() => setShowPrivacyPolicy(false)}
+      />
+
+      {/* Terms of Service Dialog */}
+      <CustomAlert
+        visible={showTermsOfService}
+        title="Terms of Service"
+        message={`Terms of Service for BullionDesk
+
+Last Updated: October 9, 2025
+
+1. Acceptance of Terms
+By downloading and using BullionDesk, you agree to these terms of service.
+
+2. Use License
+BullionDesk is licensed to you for personal or business use. You may not:
+- Modify, reverse engineer, or decompile the app
+- Distribute or sell the app
+- Use the app for any illegal purposes
+
+3. Data Responsibility
+You are responsible for:
+- The accuracy of data entered into the app
+- Regular backups of your business data
+- Compliance with local laws and regulations regarding your business records
+
+4. Service Availability
+The app is provided "as is" without warranties. We strive for reliability but cannot guarantee uninterrupted service.
+
+5. Limitation of Liability
+The developer is not liable for any direct, indirect, incidental, or consequential damages arising from the use of this app.
+
+6. Updates
+The app may receive updates that change functionality. Continued use after updates constitutes acceptance of changes.
+
+7. Termination
+You may stop using the app at any time. The developer reserves the right to discontinue support for the app.
+
+8. Governing Law
+These terms are governed by applicable local laws.
+
+9. Contact
+For support or questions, please contact the developer.`}
+        maxHeight={400}
+        buttons={[{ text: 'OK', onPress: () => setShowTermsOfService(false) }]}
+        onDismiss={() => setShowTermsOfService(false)}
+      />
+
+      {/* About Dialog */}
+      <CustomAlert
+        visible={showAbout}
+        title="About BullionDesk"
+        message={`BullionDesk v1.2.6
+
+A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
+
+Features:
+• Customer management with balance tracking
+• Transaction recording and history
+• Inventory management for gold, silver, and money
+• Detailed ledger and reporting
+• Secure data backup and restore
+• Rani/Rupa stock management
+
+Developer: Aaryan Soni
+A passionate developer focused on creating practical business solutions. BullionDesk was built to help bullion businesses manage their operations efficiently and accurately.
+
+If you find this app helpful and would like to support its continued development, consider making a donation. Your support helps maintain and improve the app!
+
+Contact: For feedback, suggestions, or support, please reach out to the developer.`}
+        maxHeight={400}
+        buttons={[
+          { text: 'Donate', onPress: () => {
+            setShowAbout(false);
+            // Show donation information
+            setTimeout(() => {
+              showAlert(
+                'Support BullionDesk',
+                'Thank you for considering a donation!\n\nYou can support the development through:\n\n• UPI: imaaryan3563-1@okhdfcbank\n• UPI Mobile number: 7043414570\n\nEvery contribution, no matter the size, is greatly appreciated and helps keep the app free and improved!',
+                [{ text: 'Close' }]
+              );
+            }, 300);
+          }},
+          { text: 'OK', onPress: () => setShowAbout(false) }
+        ]}
+        onDismiss={() => setShowAbout(false)}
       />
     </SafeAreaView>
   );

@@ -1,164 +1,23 @@
-import Realm, { ObjectSchema } from 'realm';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Customer, Transaction, TransactionEntry, LedgerEntry } from '../types';
 import { RaniRupaStockService } from './raniRupaStockService';
 
-// Realm Schema Definitions
-
-// Embedded object for metal balances
-const MetalBalancesSchema: ObjectSchema = {
-  name: 'MetalBalances',
-  embedded: true,
-  properties: {
-    gold999: 'double?',
-    gold995: 'double?',
-    rani: 'double?',
-    silver: 'double?',
-    rupu: 'double?',
-  },
+export const STORAGE_KEYS = {
+  CUSTOMERS: '@bulliondesk_customers',
+  TRANSACTIONS: '@bulliondesk_transactions',
+  LEDGER: '@bulliondesk_ledger',
+  LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
+  TRADES: '@bulliondesk_trades',
+  LAST_TRADE_ID: '@bulliondesk_last_trade_id',
+  BASE_INVENTORY: '@bulliondesk_base_inventory',
+  AUTO_BACKUP_ENABLED: '@bulliondesk_auto_backup_enabled',
+  STORAGE_PERMISSION_GRANTED: '@bulliondesk_storage_permission_granted',
+  LAST_BACKUP_TIME: '@bulliondesk_last_backup_time',
+  RANI_RUPA_STOCK: '@bulliondesk_rani_rupa_stock'
 };
 
-// Customer schema
-const CustomerSchema: ObjectSchema = {
-  name: 'Customer',
-  primaryKey: 'id',
-  properties: {
-    id: 'string',
-    name: { type: 'string', indexed: true },
-    lastTransaction: 'string?',
-    balance: { type: 'double', default: 0 },
-    metalBalances: 'MetalBalances?',
-    avatar: 'string?',
-  },
-};
-
-// Embedded object for transaction entries
-const TransactionEntrySchema: ObjectSchema = {
-  name: 'TransactionEntry',
-  embedded: true,
-  properties: {
-    id: 'string',
-    type: 'string',
-    itemType: 'string',
-    weight: 'double?',
-    price: 'double?',
-    touch: 'double?',
-    cut: 'double?',
-    extraPerKg: 'double?',
-    pureWeight: 'double?',
-    actualGoldGiven: 'double?',
-    moneyType: 'string?',
-    amount: 'double?',
-    rupuReturnType: 'string?',
-    silverWeight: 'double?',
-    metalOnly: 'bool?',
-    stock_id: 'string?',
-    subtotal: 'double',
-    createdAt: 'string?',
-    lastUpdatedAt: 'string?',
-    netWeight: 'double?',
-  },
-};
-
-// Transaction schema
-const TransactionSchema: ObjectSchema = {
-  name: 'Transaction',
-  primaryKey: 'id',
-  properties: {
-    id: 'string',
-    deviceId: 'string?',
-    customerId: { type: 'string', indexed: true },
-    customerName: 'string',
-    date: { type: 'string', indexed: true },
-    entries: 'TransactionEntry[]',
-    discount: { type: 'double', default: 0 },
-    discountExtraAmount: { type: 'double', default: 0 },
-    subtotal: { type: 'double', default: 0 },
-    total: { type: 'double', default: 0 },
-    amountPaid: { type: 'double', default: 0 },
-    lastGivenMoney: { type: 'double', default: 0 },
-    lastToLastGivenMoney: { type: 'double', default: 0 },
-    settlementType: 'string',
-    status: 'string',
-    createdAt: 'string',
-    lastUpdatedAt: 'string',
-  },
-};
-
-// LedgerEntry schema
-const LedgerEntrySchema: ObjectSchema = {
-  name: 'LedgerEntry',
-  primaryKey: 'id',
-  properties: {
-    id: 'string',
-    transactionId: { type: 'string', indexed: true },
-    customerId: { type: 'string', indexed: true },
-    customerName: 'string',
-    date: { type: 'string', indexed: true },
-    amountReceived: { type: 'double', default: 0 },
-    amountGiven: { type: 'double', default: 0 },
-    entries: 'TransactionEntry[]',
-    notes: 'string?',
-    createdAt: 'string',
-  },
-};
-
-// BaseInventory schema (singleton)
-const BaseInventorySchema: ObjectSchema = {
-  name: 'BaseInventory',
-  primaryKey: 'id',
-  properties: {
-    id: 'string',
-    gold999: { type: 'double', default: 0 },
-    gold995: { type: 'double', default: 0 },
-    silver: { type: 'double', default: 0 },
-    rani: { type: 'double', default: 0 },
-    rupu: { type: 'double', default: 0 },
-    money: { type: 'double', default: 0 },
-  },
-};
-
-// Settings schema
-const SettingsSchema: ObjectSchema = {
-  name: 'Settings',
-  primaryKey: 'id',
-  properties: {
-    id: 'string',
-    autoBackupEnabled: 'bool?',
-    storagePermissionGranted: 'bool?',
-    lastBackupTime: 'int?',
-    lastTransactionId: 'string?',
-    lastTradeId: 'string?',
-  },
-};
-
-// Configuration
-const realmConfig: Realm.Configuration = {
-  schema: [
-    CustomerSchema,
-    MetalBalancesSchema,
-    TransactionSchema,
-    TransactionEntrySchema,
-    LedgerEntrySchema,
-    BaseInventorySchema,
-    SettingsSchema,
-  ],
-  schemaVersion: 1,
-  path: 'bulliondesk.realm',
-};
-
-// Singleton Realm instance
-let realmInstance: Realm | null = null;
-
-const getRealm = async (): Promise<Realm> => {
-  if (realmInstance) {
-    return realmInstance;
-  }
-  realmInstance = await Realm.open(realmConfig);
-  return realmInstance;
-};
-
-// Simple in-memory cache for performance optimization (kept for compatibility)
+// Simple in-memory cache for performance optimization
 let customersCache: Customer[] | null = null;
 let transactionsCache: Transaction[] | null = null;
 let cacheTimestamp = 0;
@@ -184,17 +43,6 @@ export class DatabaseService {
     cacheTimestamp = 0;
   }
 
-  // Helper to convert Realm object to plain JS object
-  private static toPlainObject<T>(realmObject: any): T {
-    return JSON.parse(JSON.stringify(realmObject));
-  }
-
-  // Helper to convert Realm List to Array
-  private static listToArray<T>(list: Realm.List<any> | undefined): T[] {
-    if (!list) return [];
-    return Array.from(list).map(item => this.toPlainObject<T>(item));
-  }
-
   // Calculate net opening balance effects on inventory
   static async calculateOpeningBalanceEffects(): Promise<{
     gold999: number;
@@ -217,8 +65,12 @@ export class DatabaseService {
       };
 
       for (const customer of customers) {
+        // Money balance: Positive = customer owes merchant (merchant has received money)
+        // So positive balance reduces base inventory (inflow)
         effects.money += customer.balance;
 
+        // Metal balances: Positive = merchant owes customer (merchant has given out metal)
+        // So positive balance reduces base inventory (outflow)
         if (customer.metalBalances) {
           effects.gold999 += customer.metalBalances.gold999 || 0;
           effects.gold995 += customer.metalBalances.gold995 || 0;
@@ -245,18 +97,17 @@ export class DatabaseService {
   // Customer operations
   static async getAllCustomers(): Promise<Customer[]> {
     try {
+      // Check cache first
       const now = Date.now();
       if (customersCache !== null && (now - cacheTimestamp) < CACHE_DURATION) {
         return [...customersCache];
       }
 
-      const realm = await getRealm();
-      const customers = realm.objects('Customer');
+      const customersJson = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+      const customers: Customer[] = customersJson ? JSON.parse(customersJson) : [];
       
-      customersCache = Array.from(customers).map(c => ({
-        ...this.toPlainObject<Customer>(c),
-        name: (c as any).name.trim()
-      }));
+      // Ensure all customer names are trimmed
+      customersCache = customers.map(customer => ({ ...customer, name: customer.name.trim() }));
       cacheTimestamp = now;
       
       return [...customersCache];
@@ -269,15 +120,23 @@ export class DatabaseService {
 
   static async saveCustomer(customer: Customer): Promise<boolean> {
     try {
-      const realm = await getRealm();
+      const customers = await this.getAllCustomers();
+      const existingIndex = customers.findIndex(c => c.id === customer.id);
       
+      // Ensure customer name is trimmed
       const trimmedCustomer = { ...customer, name: customer.name.trim() };
       
-      realm.write(() => {
-        realm.create('Customer', trimmedCustomer, Realm.UpdateMode.Modified);
-      });
+      if (existingIndex >= 0) {
+        customers[existingIndex] = trimmedCustomer;
+      } else {
+        customers.push(trimmedCustomer);
+      }
       
-      this.clearCache();
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+      
+      // Clear cache since data has changed
+      DatabaseService.clearCache();
+      
       return true;
     } catch (error) {
       console.error('Error saving customer:', error);
@@ -287,12 +146,8 @@ export class DatabaseService {
 
   static async getCustomerById(id: string): Promise<Customer | null> {
     try {
-      const realm = await getRealm();
-      const customer = realm.objectForPrimaryKey('Customer', id);
-      
-      if (!customer) return null;
-      
-      return this.toPlainObject<Customer>(customer);
+      const customers = await this.getAllCustomers();
+      return customers.find(c => c.id === id) || null;
     } catch (error) {
       console.error('Error getting customer by ID:', error);
       return null;
@@ -338,13 +193,10 @@ export class DatabaseService {
   // Ledger operations
   static async getAllLedgerEntries(): Promise<LedgerEntry[]> {
     try {
-      const realm = await getRealm();
-      const entries = realm.objects('LedgerEntry').sorted('date', true);
-      
-      return Array.from(entries).map(entry => ({
-        ...this.toPlainObject<LedgerEntry>(entry),
-        entries: this.listToArray<TransactionEntry>((entry as any).entries)
-      }));
+      const ledgerJson = await AsyncStorage.getItem(STORAGE_KEYS.LEDGER);
+      const entries: LedgerEntry[] = ledgerJson ? JSON.parse(ledgerJson) : [];
+      // Sort by date (most recent first)
+      return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } catch (error) {
       console.error('Error getting ledger entries:', error);
       return [];
@@ -353,14 +205,11 @@ export class DatabaseService {
 
   static async getLedgerEntriesByDate(startDate: Date, endDate: Date): Promise<LedgerEntry[]> {
     try {
-      const realm = await getRealm();
-      const entries = realm.objects('LedgerEntry')
-        .filtered('date >= $0 AND date <= $1', startDate.toISOString(), endDate.toISOString());
-      
-      return Array.from(entries).map(entry => ({
-        ...this.toPlainObject<LedgerEntry>(entry),
-        entries: this.listToArray<TransactionEntry>((entry as any).entries)
-      }));
+      const allEntries = await this.getAllLedgerEntries();
+      return allEntries.filter(entry => {
+        const entryDate = new Date(entry.date);
+        return entryDate >= startDate && entryDate <= endDate;
+      });
     } catch (error) {
       console.error('Error getting ledger entries by date:', error);
       return [];
@@ -369,14 +218,8 @@ export class DatabaseService {
 
   static async getLedgerEntriesByTransactionId(transactionId: string): Promise<LedgerEntry[]> {
     try {
-      const realm = await getRealm();
-      const entries = realm.objects('LedgerEntry')
-        .filtered('transactionId == $0', transactionId);
-      
-      return Array.from(entries).map(entry => ({
-        ...this.toPlainObject<LedgerEntry>(entry),
-        entries: this.listToArray<TransactionEntry>((entry as any).entries)
-      }));
+      const allEntries = await this.getAllLedgerEntries();
+      return allEntries.filter(entry => entry.transactionId === transactionId);
     } catch (error) {
       console.error('Error getting ledger entries by transaction ID:', error);
       return [];
@@ -385,14 +228,8 @@ export class DatabaseService {
 
   static async getLedgerEntriesByCustomerId(customerId: string): Promise<LedgerEntry[]> {
     try {
-      const realm = await getRealm();
-      const entries = realm.objects('LedgerEntry')
-        .filtered('customerId == $0', customerId);
-      
-      return Array.from(entries).map(entry => ({
-        ...this.toPlainObject<LedgerEntry>(entry),
-        entries: this.listToArray<TransactionEntry>((entry as any).entries)
-      }));
+      const allEntries = await this.getAllLedgerEntries();
+      return allEntries.filter(entry => entry.customerId === customerId);
     } catch (error) {
       console.error('Error getting ledger entries by customer ID:', error);
       return [];
@@ -405,11 +242,10 @@ export class DatabaseService {
     timestamp: string
   ): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      
+      // Use timestamp with milliseconds for unique ID
       const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      const ledgerEntry = {
+      const ledgerEntry: LedgerEntry = {
         id: ledgerId,
         transactionId: transaction.id,
         customerId: transaction.customerId,
@@ -421,9 +257,10 @@ export class DatabaseService {
         createdAt: timestamp,
       };
 
-      realm.write(() => {
-        realm.create('LedgerEntry', ledgerEntry);
-      });
+      const ledgerEntries = await this.getAllLedgerEntries();
+      
+      ledgerEntries.push(ledgerEntry);
+      await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(ledgerEntries));
       
       return true;
     } catch (error) {
@@ -435,21 +272,18 @@ export class DatabaseService {
   // Transaction operations
   static async getAllTransactions(): Promise<Transaction[]> {
     try {
+      // Check cache first
       const now = Date.now();
       if (transactionsCache !== null && (now - cacheTimestamp) < CACHE_DURATION) {
-        return [...transactionsCache];
+        return [...transactionsCache]; // Return a copy to prevent external mutations
       }
 
-      const realm = await getRealm();
-      const transactions = realm.objects('Transaction');
-      
-      transactionsCache = Array.from(transactions).map(t => ({
-        ...this.toPlainObject<Transaction>(t),
-        entries: this.listToArray<TransactionEntry>((t as any).entries)
-      }));
+      const transactionsJson = await AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+      const transactions = transactionsJson ? JSON.parse(transactionsJson) : [];
+      transactionsCache = transactions;
       cacheTimestamp = now;
       
-      return [...transactionsCache];
+      return [...transactions];
     } catch (error) {
       console.error('Error getting transactions:', error);
       transactionsCache = [];
@@ -459,14 +293,8 @@ export class DatabaseService {
 
   static async getTransactionsByCustomerId(customerId: string): Promise<Transaction[]> {
     try {
-      const realm = await getRealm();
-      const transactions = realm.objects('Transaction')
-        .filtered('customerId == $0', customerId);
-      
-      return Array.from(transactions).map(t => ({
-        ...this.toPlainObject<Transaction>(t),
-        entries: this.listToArray<TransactionEntry>((t as any).entries)
-      }));
+      const transactions = await this.getAllTransactions();
+      return transactions.filter(t => t.customerId === customerId);
     } catch (error) {
       console.error('Error getting transactions by customer ID:', error);
       return [];
@@ -477,7 +305,7 @@ export class DatabaseService {
     customer: Customer,
     entries: TransactionEntry[],
     receivedAmount: number = 0,
-    existingTransactionId?: string,
+    existingTransactionId?: string,  // If provided, update existing transaction
     discountExtraAmount: number = 0
   ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
     try {
@@ -498,11 +326,15 @@ export class DatabaseService {
       // Final balance calculation (from MERCHANT's perspective):
       let finalBalance: number;
       if (isMoneyOnlyTransaction) {
+        // For money-only transactions:
+        // Positive netAmount (receive) = merchant receives money = customer has credit
+        // Negative netAmount (give) = merchant gives money = customer owes more
         finalBalance = netAmount;
       } else {
+        // For sell/purchase transactions:
         finalBalance = netAmount >= 0
-          ? netAmount - receivedAmount - discountExtraAmount
-          : receivedAmount - Math.abs(netAmount) - discountExtraAmount;
+          ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
+          : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
         finalBalance *= -1;
       }
 
@@ -512,31 +344,36 @@ export class DatabaseService {
 
       if (isUpdate) {
         // UPDATE existing transaction
-        const existingTransaction = await this.getTransactionById(existingTransactionId);
+        const transactions = await this.getAllTransactions();
+        const existingIndex = transactions.findIndex(t => t.id === existingTransactionId);
         
-        if (!existingTransaction) {
+        if (existingIndex === -1) {
           return { success: false, error: 'Transaction not found' };
         }
 
+        const existingTransaction = transactions[existingIndex];
         previousAmountPaid = existingTransaction.lastGivenMoney;
         
-        // Calculate old transaction's balance effect
+        // Calculate old transaction's balance effect (only for non-metal-only transactions)
         const isOldMetalOnly = existingTransaction.entries.some((entry: TransactionEntry) => entry.metalOnly === true);
         if (!isOldMetalOnly) {
           const oldNetAmount = existingTransaction.total;
           const oldReceivedAmount = existingTransaction.amountPaid;
           oldBalanceEffect = oldNetAmount >= 0 
-            ? oldReceivedAmount - oldNetAmount - existingTransaction.discountExtraAmount
-            : Math.abs(oldNetAmount) - oldReceivedAmount - existingTransaction.discountExtraAmount;
+            ? oldReceivedAmount - oldNetAmount - existingTransaction.discountExtraAmount          // SELL: customer payment reduces customer debt
+            : Math.abs(oldNetAmount) - oldReceivedAmount - existingTransaction.discountExtraAmount; // PURCHASE: merchant payment reduces merchant debt
         }
         
-        // REVERSE old metal balances
+        // REVERSE old metal balances from previous transaction state
+        // This is crucial when entries change from metal-only to regular transactions
         if (existingTransaction.entries.some((entry: TransactionEntry) => entry.metalOnly === true)) {
+          
           existingTransaction.entries.forEach(oldEntry => {
             if (oldEntry.metalOnly && oldEntry.type !== 'money') {
               const itemType = oldEntry.itemType;
               let metalAmount = 0;
 
+              // Calculate the metal amount that was previously added
               if (oldEntry.itemType === 'rani') {
                 metalAmount = oldEntry.pureWeight || 0;
                 metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
@@ -548,15 +385,18 @@ export class DatabaseService {
                   metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
                 }
               } else {
+                // Regular metals
                 metalAmount = oldEntry.weight || 0;
                 metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
               }
 
+              // Reverse the metal balance (subtract what was added, add what was subtracted)
               if (!customer.metalBalances) {
                 customer.metalBalances = {};
               }
               const currentBalance = customer.metalBalances[itemType as keyof typeof customer.metalBalances] || 0;
               customer.metalBalances[itemType as keyof typeof customer.metalBalances] = currentBalance - metalAmount;
+              
             }
           });
         }
@@ -564,11 +404,13 @@ export class DatabaseService {
         // Update transaction with new values
         const mappedEntries = entries.map(e => ({ ...e, lastUpdatedAt: now }));
         
-        // Handle stock management
+        // TODO: Handle stock reversal for old entries and stock management for new entries
+        // For now, just apply stock management to new entries
         try {
           for (const entry of mappedEntries) {
             if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-              const touch = entry.touch || 100;
+              // Add stock for purchases
+              const touch = entry.touch || 100; // Default to 100% for rupu
               const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
               if (result.success && result.stock_id) {
                 entry.stock_id = result.stock_id;
@@ -576,10 +418,13 @@ export class DatabaseService {
                 console.error(`[STOCK] Failed to add stock: ${result.error}`);
               }
             } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.stock_id) {
+              // Remove stock for sales
               const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
               if (!removeResult.success) {
                 console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
               }
+            } else {
+              console.error(`[STOCK] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
             }
           }
         } catch (stockError) {
@@ -601,28 +446,29 @@ export class DatabaseService {
           lastUpdatedAt: now,
         };
 
-        const realm = await getRealm();
-        realm.write(() => {
-          realm.create('Transaction', transaction, Realm.UpdateMode.Modified);
-        });
-        this.clearCache();
+        transactions[existingIndex] = transaction;
+        await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+        DatabaseService.clearCache();
       } else {
         // CREATE new transaction
         const transactionId = `txn_${Date.now()}`;
         
+        // Get device ID for conflict-free merging
         let deviceId = await SecureStore.getItemAsync('device_id');
         if (!deviceId) {
           deviceId = `device_${Date.now()}`;
           await SecureStore.setItemAsync('device_id', deviceId);
         }
 
+        // Create mapped entries first
         const mappedEntries = entries.map(e => ({ ...e, createdAt: now, lastUpdatedAt: now }));
 
-        // Handle stock management
+        // INTEGRATE STOCK MANAGEMENT: Add stock for purchases, remove for sales
         try {
           for (const entry of mappedEntries) {
             if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-              const touch = entry.touch || 100;
+              // Add stock for purchases
+              const touch = entry.touch || 100; // Default to 100% for rupu
               const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
               if (result.success && result.stock_id) {
                 entry.stock_id = result.stock_id;
@@ -630,10 +476,13 @@ export class DatabaseService {
                 console.error(`[STOCK] Failed to add stock: ${result.error}`);
               }
             } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.stock_id) {
+              // Remove stock for sales
               const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
               if (!removeResult.success) {
                 console.error(`[STOCK] Failed to remove stock for sale: ${removeResult.error}`);
               }
+            } else {
+              console.error(`[STOCK] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
             }
           }
         } catch (stockError) {
@@ -661,19 +510,21 @@ export class DatabaseService {
           lastUpdatedAt: now,
         };
 
-        const realm = await getRealm();
-        realm.write(() => {
-          realm.create('Transaction', transaction);
-        });
-        this.clearCache();
+        const transactions = await this.getAllTransactions();
+        transactions.push(transaction);
+        await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+        DatabaseService.clearCache();
       }
 
       // Calculate the delta amount for ledger entry
       const deltaAmount = receivedAmount - previousAmountPaid;
       
+      // Check if this is a money-only transaction
       const isMoneyOnly = entries.some(entry => entry.type === 'money');
       
+      // Create ledger entry for money changes or money-only transactions
       if (deltaAmount !== 0 || isMoneyOnly) {
+        // For money-only transactions, use the transaction total as delta if no payment made
         const ledgerDelta = isMoneyOnly && deltaAmount === 0 ? netAmount : deltaAmount;
         await this.createLedgerEntry(transaction, ledgerDelta, now);
       }
@@ -681,11 +532,13 @@ export class DatabaseService {
       // Check if any entry is metal-only
       const isMetalOnly = entries.some((entry: TransactionEntry) => entry.metalOnly === true);
 
-      // Update customer balance
+      // Update customer balance based on transaction type
       let newBalance = customer.balance;
       if (!isMetalOnly) {
+        // For regular transactions: reverse old effect and apply new effect
         newBalance = customer.balance - oldBalanceEffect + finalBalance;
       }
+      // For metal-only transactions: balance remains unchanged (only metal balances are affected)
 
       const updatedCustomer: Customer = {
         ...customer,
@@ -694,13 +547,14 @@ export class DatabaseService {
         metalBalances: customer.metalBalances || {},
       };
 
-      // Apply NEW metal balances for metal-only entries
+      // Apply NEW metal balances for metal-only entries in updated transaction
       if (isMetalOnly) {
         entries.forEach(entry => {
           if (entry.metalOnly && entry.type !== 'money') {
             const itemType = entry.itemType;
             let metalAmount = 0;
 
+            // Determine metal balance change based on entry type and item
             if (entry.itemType === 'rani') {
               metalAmount = entry.pureWeight || 0;
               metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
@@ -709,13 +563,17 @@ export class DatabaseService {
                 metalAmount = entry.netWeight;
               } else {
                 metalAmount = entry.pureWeight || 0;
+                // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
                 metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
               }
             } else {
+              // Regular metals: use actual weight
               metalAmount = entry.weight || 0;
+              // Sell = customer owes merchant (negative), Purchase = merchant owes customer (positive)
               metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
             }
 
+            // Update the metal balance
             if (!updatedCustomer.metalBalances) {
               updatedCustomer.metalBalances = {};
             }
@@ -725,9 +583,11 @@ export class DatabaseService {
         });
       }
 
-      await this.saveCustomer(updatedCustomer);
+      const customerSaved = await this.saveCustomer(updatedCustomer);
+      if (!customerSaved) {
+      }
 
-      // Calculate and log inventory (keeping original logic)
+      // Calculate current inventory for logging
       const allTransactions = await this.getAllTransactions();
       const baseInventory = await this.getBaseInventory();
       const inventoryBefore = {
@@ -739,9 +599,13 @@ export class DatabaseService {
         money: baseInventory.money,
       };
 
+      // Update inventory based on all transactions
       allTransactions.forEach(trans => {
         trans.entries.forEach(entry => {
           if (entry.type === 'money') {
+            // Money entries affect money inventory
+            // moneyType 'receive' = merchant receives money = increase money inventory
+            // moneyType 'give' = merchant gives money = decrease money inventory
             const moneyChange = entry.moneyType === 'receive' ? (entry.amount || 0) : -(entry.amount || 0);
             inventoryBefore.money += moneyChange;
           } else if (entry.type === 'sell') {
@@ -766,6 +630,8 @@ export class DatabaseService {
             }
           }
         });
+        // Update money inventory based on payments (only for non-money-only transactions)
+        // For money-only transactions, inventory is already updated via entry.type === 'money'
         const transactionHasMoneyEntry = trans.entries.some(e => e.type === 'money');
         if (!transactionHasMoneyEntry) {
           if (trans.total >= 0) {
@@ -776,7 +642,7 @@ export class DatabaseService {
         }
       });
 
-      // Apply rounding
+      // Apply rounding to inventory values to prevent floating point precision issues
       inventoryBefore.gold999 = this.roundInventoryValue(inventoryBefore.gold999, 'gold999');
       inventoryBefore.gold995 = this.roundInventoryValue(inventoryBefore.gold995, 'gold995');
       inventoryBefore.rani = this.roundInventoryValue(inventoryBefore.rani, 'rani');
@@ -784,11 +650,8 @@ export class DatabaseService {
       inventoryBefore.rupu = this.roundInventoryValue(inventoryBefore.rupu, 'rupu');
       inventoryBefore.money = this.roundInventoryValue(inventoryBefore.money, 'money');
 
-      // Update settings
-      const realm = await getRealm();
-      realm.write(() => {
-        realm.create('Settings', { id: 'default', lastTransactionId: transaction.id }, Realm.UpdateMode.Modified);
-      });
+      // Update last transaction ID
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_TRANSACTION_ID, transaction.id);
 
       return { success: true, transactionId: transaction.id };
     } catch (error) {
@@ -799,15 +662,8 @@ export class DatabaseService {
 
   static async getTransactionById(id: string): Promise<Transaction | null> {
     try {
-      const realm = await getRealm();
-      const transaction = realm.objectForPrimaryKey('Transaction', id);
-      
-      if (!transaction) return null;
-      
-      return {
-        ...this.toPlainObject<Transaction>(transaction),
-        entries: this.listToArray<TransactionEntry>((transaction as any).entries)
-      };
+      const transactions = await this.getAllTransactions();
+      return transactions.find(t => t.id === id) || null;
     } catch (error) {
       console.error('Error getting transaction by ID:', error);
       return null;
@@ -816,9 +672,12 @@ export class DatabaseService {
 
   // Utility functions
   private static calculateTransactionTotals(entries: TransactionEntry[]) {
-    let netMoneyFlow = 0;
+    let netMoneyFlow = 0; // Net money from merchant perspective
 
     entries.forEach(entry => {
+      // Keep the sign from entry.subtotal as it already has correct direction:
+      // Positive subtotal = SELL (merchant expects to receive money)
+      // Negative subtotal = PURCHASE (merchant expects to pay money)
       netMoneyFlow += entry.subtotal;
     });
 
@@ -827,7 +686,7 @@ export class DatabaseService {
     return { 
       totalGive: netMoneyFlow < 0 ? Math.abs(netMoneyFlow) : 0, 
       totalTake: netMoneyFlow > 0 ? netMoneyFlow : 0, 
-      netAmount: netMoneyFlow,
+      netAmount: netMoneyFlow, // Positive = merchant expects to receive (SELL), Negative = merchant expects to pay (PURCHASE)
       subtotal 
     };
   }
@@ -874,41 +733,18 @@ export class DatabaseService {
     raniRupaStock?: any[];
   }): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      
-      realm.write(() => {
-        // Import customers
-        data.customers.forEach(customer => {
-          realm.create('Customer', customer, Realm.UpdateMode.Modified);
-        });
-        
-        // Import transactions
-        data.transactions.forEach(transaction => {
-          realm.create('Transaction', transaction, Realm.UpdateMode.Modified);
-        });
-        
-        // Import ledger
-        if (data.ledger) {
-          data.ledger.forEach(entry => {
-            realm.create('LedgerEntry', entry, Realm.UpdateMode.Modified);
-          });
-        }
-        
-        // Import base inventory
-        if (data.baseInventory) {
-          realm.create('BaseInventory', { id: 'default', ...data.baseInventory }, Realm.UpdateMode.Modified);
-        }
-      });
-      
-      // Import Rani/Rupa stock (handled by RaniRupaStockService)
-      if (data.raniRupaStock) {
-        // Import each stock item individually
-        for (const stock of data.raniRupaStock) {
-          await RaniRupaStockService.addStock(stock.itemtype, stock.weight, stock.touch);
-        }
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(data.customers));
+      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
+      if (data.ledger) {
+        await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(data.ledger));
       }
-      
-      this.clearCache();
+      if (data.baseInventory) {
+        await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(data.baseInventory));
+      }
+      if (data.raniRupaStock) {
+        await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(data.raniRupaStock));
+      }
+      DatabaseService.clearCache();
       return true;
     } catch (error) {
       console.error('Error importing data:', error);
@@ -926,26 +762,31 @@ export class DatabaseService {
     money: number;
   }> {
     try {
-      const realm = await getRealm();
-      let inventory: any = realm.objectForPrimaryKey('BaseInventory', 'default');
-      
-      if (!inventory) {
-        const defaultInventory = {
-          id: 'default',
-          gold999: 300,
-          gold995: 100,
-          silver: 10000,
-          rani: 0,
-          rupu: 0,
-          money: 3000000
-        };
-        
-        realm.write(() => {
-          inventory = realm.create('BaseInventory', defaultInventory);
-        });
+      const baseInventoryJson = await AsyncStorage.getItem(STORAGE_KEYS.BASE_INVENTORY);
+      if (baseInventoryJson) {
+        const inventory = JSON.parse(baseInventoryJson);
+        // Migrate old inventory by combining silver98 and silver96 into silver
+        if (inventory.silver98 || inventory.silver96) {
+          inventory.silver = (inventory.silver || 0) + (inventory.silver98 || 0) + (inventory.silver96 || 0);
+          delete inventory.silver98;
+          delete inventory.silver96;
+          await this.setBaseInventory(inventory);
+        }
+        return inventory;
       }
       
-      return this.toPlainObject<any>(inventory);
+      // Initialize with default values
+      const defaultInventory = {
+        gold999: 300,
+        gold995: 100,
+        silver: 10000,
+        rani: 0,
+        rupu: 0,
+        money: 3000000
+      };
+      
+      await this.setBaseInventory(defaultInventory);
+      return defaultInventory;
     } catch (error) {
       console.error('Error getting base inventory:', error);
       return {
@@ -968,10 +809,13 @@ export class DatabaseService {
     money: number;
   }): Promise<boolean> {
     try {
+      // Calculate opening balance effects
       const openingEffects = await this.calculateOpeningBalanceEffects();
 
+      // Adjust base inventory based on opening balance effects
+      // Positive opening effect = merchant has received (inflow) = reduce base inventory
+      // Negative opening effect = merchant has given (outflow) = increase base inventory
       const adjustedInventory = {
-        id: 'default',
         gold999: inventory.gold999 - openingEffects.gold999,
         gold995: inventory.gold995 - openingEffects.gold995,
         silver: inventory.silver - openingEffects.silver,
@@ -980,11 +824,7 @@ export class DatabaseService {
         money: inventory.money - openingEffects.money
       };
 
-      const realm = await getRealm();
-      realm.write(() => {
-        realm.create('BaseInventory', adjustedInventory, Realm.UpdateMode.Modified);
-      });
-      
+      await AsyncStorage.setItem(STORAGE_KEYS.BASE_INVENTORY, JSON.stringify(adjustedInventory));
       return true;
     } catch (error) {
       console.error('Error setting base inventory:', error);
@@ -1014,33 +854,32 @@ export class DatabaseService {
   // Clear all data (preserves base inventory)
   static async clearAllData(): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      
-      realm.write(() => {
-        // Delete all customers, transactions, and ledger entries
-        realm.delete(realm.objects('Customer'));
-        realm.delete(realm.objects('Transaction'));
-        realm.delete(realm.objects('LedgerEntry'));
-        
-        // Reset settings
-        const settings: any = realm.objectForPrimaryKey('Settings', 'default');
-        if (settings) {
-          settings.lastTransactionId = undefined;
-          settings.lastTradeId = undefined;
-        }
-      });
+      // Clear all main data storage keys
+      const keysToRemove = [
+        STORAGE_KEYS.CUSTOMERS,
+        STORAGE_KEYS.TRANSACTIONS,
+        STORAGE_KEYS.LEDGER,
+        STORAGE_KEYS.LAST_TRANSACTION_ID,
+        STORAGE_KEYS.TRADES,
+        STORAGE_KEYS.LAST_TRADE_ID,
+        STORAGE_KEYS.RANI_RUPA_STOCK, // Rani/Rupa stock data
+        // Note: BASE_INVENTORY is preserved - inventory will reset to base values
+        // Note: AUTO_BACKUP_ENABLED, STORAGE_PERMISSION_GRANTED, LAST_BACKUP_TIME are preserved
+        // Note: Notification settings are preserved
+      ];
+      await AsyncStorage.multiRemove(keysToRemove);
 
       // Clear device ID from secure store
       try {
         await SecureStore.deleteItemAsync('device_id');
       } catch (error) {
         console.error('[CLEAR_DATA] Device ID not found in secure store (this is normal)');
+        // Ignore if device_id doesn't exist
       }
 
-      // Clear Rani/Rupa stock
-      await RaniRupaStockService.clearAllStock();
+      // Clear in-memory cache
+      DatabaseService.clearCache();
 
-      this.clearCache();
       return true;
     } catch (error) {
       console.error('[CLEAR_DATA] Error clearing all data:', error);
@@ -1051,32 +890,47 @@ export class DatabaseService {
   // Delete transaction and reverse inventory changes
   static async deleteTransaction(transactionId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const transaction = await this.getTransactionById(transactionId);
+      // Get the transaction to delete
+      const transactions = await this.getAllTransactions();
+      const transaction = transactions.find(t => t.id === transactionId);
       
       if (!transaction) {
         console.error(`[DELETE_TRANSACTION] Transaction not found: ${transactionId}`);
         return { success: false, error: 'Transaction not found' };
       }
 
+      // Note: Base inventory should remain unchanged. Current inventory is calculated as:
+      // base_inventory + sum of all transaction effects
+      // When a transaction is deleted, it's automatically removed from the calculation
+
       // Reverse customer balance changes
       const customer = await this.getCustomerById(transaction.customerId);
       if (customer) {
+        // Calculate what the finalBalance was for this transaction to reverse it
         const { netAmount } = this.calculateTransactionTotals(transaction.entries);
         
+        // Check if this was a money-only transaction
         const isMoneyOnlyTransaction = transaction.entries.every(entry => entry.type === 'money');
         
         let finalBalance: number;
         if (isMoneyOnlyTransaction) {
+          // For money-only transactions
           finalBalance = -netAmount;
         } else {
+          // For sell/purchase transactions
+          //finalBalance = netAmount >= 0
+          // ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
+          // : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
           finalBalance = netAmount >= 0 
-            ? netAmount - transaction.amountPaid - transaction.discountExtraAmount
-            : transaction.amountPaid - Math.abs(netAmount) - transaction.discountExtraAmount;
+            ? netAmount - transaction.amountPaid - transaction.discountExtraAmount          // SELL: customer payment reduces customer debt
+            : transaction.amountPaid - Math.abs(netAmount) - transaction.discountExtraAmount; // PURCHASE: merchant payment reduces merchant debt
           finalBalance *= -1;
         }
         
+        // Check if transaction was metal-only
         const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
         
+        // Reverse the balance change
         customer.balance = isMetalOnly
           ? customer.balance
           : netAmount >= 0
@@ -1094,6 +948,8 @@ export class DatabaseService {
             }
             
             const currentBalance = (customer.metalBalances as any)[itemType] || 0;
+            
+            // Reverse the metal balance change
             const balanceDelta = entry.type === 'sell' ? -weight : weight;
             (customer.metalBalances as any)[itemType] = currentBalance - balanceDelta;
           }
@@ -1102,44 +958,46 @@ export class DatabaseService {
         await this.saveCustomer(customer);
       }
 
-      // Reverse stock changes
+      // Reverse stock changes for rani/rupa entries
       try {
         for (const entry of transaction.entries) {
           if (entry.stock_id) {
             if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+              // Remove stock for purchases that were added
               const removeResult = await RaniRupaStockService.removeStock(entry.stock_id);
               if (!removeResult.success) {
                 console.error(`[STOCK_DELETE] Failed to remove stock for purchase reversal: ${removeResult.error}`);
               }
             } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-              const touch = entry.touch || 100;
+              // Add back stock for sales that were removed
+              // We need to recreate the stock item based on the entry data
+              const touch = entry.touch || 100; // Default to 100% for rupu
               const addResult = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
-              if (!(addResult.success && addResult.stock_id)) {
+              if (! (addResult.success && addResult.stock_id)) {
                 console.error(`[STOCK_DELETE] Failed to add back stock for sale reversal: ${addResult.error}`);
               }
+            } else {
+              console.error(`[STOCK_DELETE] Skipping entry - not a Rani/Rupa stock operation`);
             }
+          } else {
+            console.error(`[STOCK_DELETE] Skipping entry - no stock_id found`);
           }
         }
       } catch (stockError) {
         console.error('[STOCK_DELETE] Error reversing stock changes:', stockError);
+        // Continue with deletion even if stock reversal fails
       }
 
-      // Delete from Realm
-      const realm = await getRealm();
-      realm.write(() => {
-        // Remove ledger entries
-        const ledgerEntries = realm.objects('LedgerEntry')
-          .filtered('transactionId == $0', transactionId);
-        realm.delete(ledgerEntries);
-        
-        // Remove transaction
-        const transactionObj = realm.objectForPrimaryKey('Transaction', transactionId);
-        if (transactionObj) {
-          realm.delete(transactionObj);
-        }
-      });
-      
-      this.clearCache();
+      // Remove all ledger entries for this transaction
+      const ledgerEntries = await this.getAllLedgerEntries();
+      const filteredLedger = ledgerEntries.filter(entry => entry.transactionId !== transactionId);
+      await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(filteredLedger));
+
+      // Remove the transaction
+      const filteredTransactions = transactions.filter(t => t.id !== transactionId);
+      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filteredTransactions));
+      DatabaseService.clearCache();
+
       return { success: true };
     } catch (error) {
       console.error('Error deleting transaction:', error);
@@ -1147,19 +1005,12 @@ export class DatabaseService {
     }
   }
 
-  // Settings operations
+  // Backup settings operations
   static async getAutoBackupEnabled(): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      let settings: any = realm.objectForPrimaryKey('Settings', 'default');
-      
-      if (!settings) {
-        realm.write(() => {
-          settings = realm.create('Settings', { id: 'default' });
-        });
-      }
-      
-      return settings?.autoBackupEnabled || false;
+      const enabledJson = await AsyncStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED);
+      const result = enabledJson ? JSON.parse(enabledJson) : false;
+      return result;
     } catch (error) {
       console.error('Error getting auto backup enabled:', error);
       return false;
@@ -1168,10 +1019,8 @@ export class DatabaseService {
 
   static async setAutoBackupEnabled(enabled: boolean): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      realm.write(() => {
-        realm.create('Settings', { id: 'default', autoBackupEnabled: enabled }, Realm.UpdateMode.Modified);
-      });
+      await AsyncStorage.setItem(STORAGE_KEYS.AUTO_BACKUP_ENABLED, JSON.stringify(enabled));
+      
       return true;
     } catch (error) {
       console.error('Error setting auto backup enabled:', error);
@@ -1181,9 +1030,8 @@ export class DatabaseService {
 
   static async getStoragePermissionGranted(): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      const settings: any = realm.objectForPrimaryKey('Settings', 'default');
-      return settings?.storagePermissionGranted || false;
+      const grantedJson = await AsyncStorage.getItem(STORAGE_KEYS.STORAGE_PERMISSION_GRANTED);
+      return grantedJson ? JSON.parse(grantedJson) : false;
     } catch (error) {
       console.error('Error getting storage permission granted:', error);
       return false;
@@ -1192,10 +1040,7 @@ export class DatabaseService {
 
   static async setStoragePermissionGranted(granted: boolean): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      realm.write(() => {
-        realm.create('Settings', { id: 'default', storagePermissionGranted: granted }, Realm.UpdateMode.Modified);
-      });
+      await AsyncStorage.setItem(STORAGE_KEYS.STORAGE_PERMISSION_GRANTED, JSON.stringify(granted));
       return true;
     } catch (error) {
       console.error('Error setting storage permission granted:', error);
@@ -1205,9 +1050,8 @@ export class DatabaseService {
 
   static async getLastBackupTime(): Promise<number | null> {
     try {
-      const realm = await getRealm();
-      const settings: any = realm.objectForPrimaryKey('Settings', 'default');
-      return settings?.lastBackupTime || null;
+      const timeJson = await AsyncStorage.getItem(STORAGE_KEYS.LAST_BACKUP_TIME);
+      return timeJson ? JSON.parse(timeJson) : null;
     } catch (error) {
       console.error('Error getting last backup time:', error);
       return null;
@@ -1216,10 +1060,7 @@ export class DatabaseService {
 
   static async setLastBackupTime(time: number): Promise<boolean> {
     try {
-      const realm = await getRealm();
-      realm.write(() => {
-        realm.create('Settings', { id: 'default', lastBackupTime: time }, Realm.UpdateMode.Modified);
-      });
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_BACKUP_TIME, JSON.stringify(time));
       return true;
     } catch (error) {
       console.error('Error setting last backup time:', error);
@@ -1227,18 +1068,3 @@ export class DatabaseService {
     }
   }
 }
-
-// Export storage keys for backward compatibility (not used in Realm version)
-export const STORAGE_KEYS = {
-  CUSTOMERS: '@bulliondesk_customers',
-  TRANSACTIONS: '@bulliondesk_transactions',
-  LEDGER: '@bulliondesk_ledger',
-  LAST_TRANSACTION_ID: '@bulliondesk_last_transaction_id',
-  TRADES: '@bulliondesk_trades',
-  LAST_TRADE_ID: '@bulliondesk_last_trade_id',
-  BASE_INVENTORY: '@bulliondesk_base_inventory',
-  AUTO_BACKUP_ENABLED: '@bulliondesk_auto_backup_enabled',
-  STORAGE_PERMISSION_GRANTED: '@bulliondesk_storage_permission_granted',
-  LAST_BACKUP_TIME: '@bulliondesk_last_backup_time',
-  RANI_RUPA_STOCK: '@bulliondesk_rani_rupa_stock'
-};

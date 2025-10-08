@@ -43,7 +43,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   editingTransactionId,
   lastGivenMoney = 0,
   transactionCreatedAt,
-  transactionLastUpdatedAt,
 }) => {
   const [receivedAmount, setReceivedAmount] = useState(lastGivenMoney > 0 ? lastGivenMoney.toString() : '');
   const [paymentError, setPaymentError] = useState('');

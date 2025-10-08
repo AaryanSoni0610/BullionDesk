@@ -559,7 +559,7 @@ export const LedgerScreen: React.FC = () => {
 
   // Entry Row Component
   const EntryRow: React.FC<{ entryData: EntryData }> = ({ entryData }) => {
-    const { customerName, entry, transactionId } = entryData;
+    const { customerName, entry } = entryData;
     
     if (selectedInventory === 'money') {
       // For money subledger: use ledger entry data

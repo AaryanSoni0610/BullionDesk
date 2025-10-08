@@ -3,8 +3,6 @@ import {
   View,
   StyleSheet,
   FlatList,
-  Animated,
-  ScrollView,
 } from 'react-native';
 import {
   Surface,
@@ -17,7 +15,6 @@ import {
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { Image } from 'react-native';
 import { Trade } from '../types';
 import { theme } from '../theme';
 import { TradeService } from '../services/tradeService';

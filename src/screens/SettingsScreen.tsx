@@ -33,7 +33,7 @@ export const SettingsScreen: React.FC = () => {
   const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
   const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
   const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
-  const { navigateToTabs, showAlert, navigateToCustomers, navigateToTrade, navigateToRaniRupaSell } = useAppContext();
+  const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell } = useAppContext();
 
   // Check notification and backup status on mount
   React.useEffect(() => {

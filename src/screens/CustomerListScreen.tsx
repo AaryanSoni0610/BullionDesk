@@ -24,6 +24,7 @@ import { theme } from '../theme';
 import { DatabaseService } from '../services/database';
 import { formatFullDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
+import * as FileSystem from 'expo-file-system';
 
 export const CustomerListScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -273,7 +274,7 @@ export const CustomerListScreen: React.FC = () => {
               color: #d32f2f;
             }
             .footer {
-              margin-top: 30px;
+              margin-top: 10px;
               text-align: center;
               font-size: 12px;
               color: #666;
@@ -281,6 +282,9 @@ export const CustomerListScreen: React.FC = () => {
           </style>
         </head>
         <body>
+          <div class="footer">
+            Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
           <h1>Customer List - BullionDesk</h1>
           <table>
             <thead>
@@ -300,9 +304,6 @@ export const CustomerListScreen: React.FC = () => {
               `).join('')}
             </tbody>
           </table>
-          <div class="footer">
-            Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
-          </div>
         </body>
         </html>
       `;
@@ -313,10 +314,23 @@ export const CustomerListScreen: React.FC = () => {
         base64: false,
       });
       
+      const date = new Date();
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      const dateStr = `${day}-${month}-${year}`; // e.g., "08-10-2025"
+      
+      // Save the PDF to file system
+      const newUri = `${FileSystem.documentDirectory}BullionDesk_CustomerBalance_${dateStr}.pdf`;
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri,
+      });
+
       // Share the PDF
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(uri, {
+        await Sharing.shareAsync(newUri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Share Customer List PDF',
         });
@@ -324,6 +338,179 @@ export const CustomerListScreen: React.FC = () => {
         setError('Sharing is not available on this device');
       }
       
+      setTimeout(async () => {
+        try {
+          await FileSystem.deleteAsync(newUri, { idempotent: true });
+        } catch (error) {
+          console.error('Could not clean up pdf file:', error);
+        }
+      }, 120000); // 2 minute delay
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      setError('Failed to generate PDF');
+    }
+  };
+
+  const exportCustomerTransactionHistoryToPDF = async (customer: Customer) => {
+    try {
+      // Fetch ledger data if not cached
+      let ledgerData = ledgerCache.get(customer.id)?.data;
+      if (!ledgerData) {
+        ledgerData = await fetchCustomerLedger(customer.id);
+      }
+
+      // Generate HTML for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Transaction History - ${customer.name}</title>
+          <style>
+            body {
+              font-family: 'Helvetica', sans-serif;
+              margin: 20px;
+              color: #333;
+            }
+            h1 {
+              color: #1976d2;
+              text-align: center;
+              margin-bottom: 30px;
+              font-size: 24px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            th, td {
+              border: 1px solid #ddd;
+              padding: 12px;
+              text-align: left;
+              font-size: 14px;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+              color: #555;
+            }
+            tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .footer {
+              margin-top: 10px;
+              text-align: center;
+              font-size: 12px;
+              color: #666;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="footer">
+            Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
+          <h1>Transaction History - ${customer.name}</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ledgerData.map(entry => {
+                const date = formatFullDate(entry.date);
+                let transactionType = '';
+                let details = '';
+
+                if (entry.amountReceived > 0) {
+                  transactionType = 'Receive';
+                  details = `₹${formatIndianNumber(entry.amountReceived)}`;
+                } else if (entry.amountGiven > 0) {
+                  transactionType = 'Give';
+                  details = `₹${formatIndianNumber(entry.amountGiven)}`;
+                } else {
+                  const hasSell = entry.entries.some(e => e.type === 'sell');
+                  const hasPurchase = entry.entries.some(e => e.type === 'purchase');
+
+                  if (hasSell) {
+                    transactionType = 'Sell';
+                  } else if (hasPurchase) {
+                    transactionType = 'Purchase';
+                  }
+
+                  const metalDetails: string[] = [];
+                  entry.entries.forEach(e => {
+                    if (e.type !== 'money') {
+                      const isGold = e.itemType.includes('gold') || e.itemType === 'rani';
+                      const weight = isGold ? e.weight?.toFixed(3) : Math.floor(e.weight || 0).toFixed(1);
+                      const typeName = e.itemType === 'gold999' ? 'Gold 999' :
+                                      e.itemType === 'gold995' ? 'Gold 995' :
+                                      e.itemType === 'rani' ? 'Rani' :
+                                      e.itemType === 'silver' ? 'Silver' :
+                                      e.itemType === 'rupu' ? 'Rupu' : e.itemType;
+                      const detail = `${typeName} ${weight}g`;
+                      metalDetails.push(detail);
+                    }
+                  });
+                  details = metalDetails.join(', ');
+                }
+
+                return `
+                  <tr>
+                    <td>${date}</td>
+                    <td>${transactionType}</td>
+                    <td>${details}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      // Generate PDF
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false,
+      });
+
+      const date = new Date();
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      const dateStr = `${day}-${month}-${year}`;
+
+      const fileName = `Customer-Transaction-History-till-${dateStr}.pdf`;
+      const newUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri,
+      });
+
+      // Share the PDF
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(newUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Customer Transaction History PDF',
+        });
+      } else {
+        setError('Sharing is not available on this device');
+      }
+
+      setTimeout(async () => {
+        try {
+          await FileSystem.deleteAsync(newUri, { idempotent: true });
+        } catch (error) {
+          console.error('Could not clean up temp file:', error);
+        }
+      }, 120000); // 2 minute delay
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       setError('Failed to generate PDF');
@@ -499,12 +686,20 @@ export const CustomerListScreen: React.FC = () => {
             />
           )}
           right={() => (
-            <IconButton
-              icon={isExpanded ? "chevron-up" : "chevron-down"}
-              size={20}
-              onPress={() => toggleCardExpansion(item.id)}
-              style={styles.expandButton}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <IconButton
+                icon="tray-arrow-up"
+                size={18}
+                onPress={() => exportCustomerTransactionHistoryToPDF(item)}
+                style={{ marginRight: -5, marginTop: 0, marginBottom: 0 }}
+              />
+              <IconButton
+                icon={isExpanded ? "chevron-up" : "chevron-down"}
+                size={20}
+                onPress={() => toggleCardExpansion(item.id)}
+                style={styles.expandButton}
+              />
+            </View>
           )}
           onPress={() => toggleCardExpansion(item.id)}
           style={styles.customerItem}
@@ -708,19 +903,19 @@ const styles = StyleSheet.create({
   },
   expandButton: {
     marginRight: -10,
-    marginTop: -5,
+    marginTop: 0,
+    marginBottom: 0,
   },
   expandedContent: {
     backgroundColor: theme.colors.surface,
     marginHorizontal: theme.spacing.md,
     marginBottom: theme.spacing.sm,
-    borderRadius: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
     elevation: theme.elevation.level1,
   },
   transactionTable: {
     maxHeight: 200,
-    minHeight: 40,
-    borderRadius: 8,
   },
   transactionHeader: {
     flexDirection: 'row',

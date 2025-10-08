@@ -368,9 +368,9 @@ export class NotificationService {
         return;
       }
 
-      // Register the background fetch (every 30 minutes)
+      // Register the background fetch (every 10 minutes)
       await BackgroundFetch.registerTaskAsync(NOTIFICATION_TASK, {
-        minimumInterval: 30 * 60, // 30 minutes in seconds
+        minimumInterval: 10 * 60, // 10 minutes in seconds
         stopOnTerminate: false, // Continue when app is terminated
         startOnBoot: true, // Start when device boots
       });

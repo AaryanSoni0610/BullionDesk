@@ -54,33 +54,26 @@ type AlertFunction = (title: string, message: string, buttons?: any[]) => void;
 // Define the background task for auto backup
 TaskManager.defineTask(AUTO_BACKUP_TASK, async () => {
   try {
-    console.log('Background auto backup task started');
-
     // Check if auto backup is enabled
     const isEnabled = await BackupService.isAutoBackupEnabled();
     if (!isEnabled) {
-      console.log('Auto backup is disabled, skipping');
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
     // Check if it's time to perform backup
     const shouldBackup = await BackupService.shouldPerformAutoBackup();
     if (!shouldBackup) {
-      console.log('Auto backup not needed at this time');
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
     // Perform the backup
     const success = await BackupService.performAutoBackup();
     if (success) {
-      console.log('Background auto backup completed successfully');
       return BackgroundFetch.BackgroundFetchResult.NewData;
     } else {
-      console.log('Background auto backup failed');
       return BackgroundFetch.BackgroundFetchResult.Failed;
     }
   } catch (error) {
-    console.error('Error in background auto backup task:', error);
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
@@ -316,8 +309,7 @@ export class BackupService {
             try {
               await FileSystem.deleteAsync(tempFileUri, { idempotent: true });
             } catch (error) {
-              // Ignore cleanup errors
-              console.log('Could not clean up temp file:', error);
+              console.error('Could not clean up temp file:', error);
             }
           }, 120000); // 2 minute delay
           return;
@@ -415,6 +407,13 @@ export class BackupService {
       const raniRupaStock = await RaniRupaStockService.getAllStock();
       
       const records = { customers, transactions, ledger, baseInventory, raniRupaStock };
+      
+      // Filter data for 'today' export
+      if (exportType === 'today') {
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        records.transactions = records.transactions.filter(t => t.date.startsWith(today));
+        records.ledger = records.ledger.filter(l => l.date.startsWith(today));
+      }
       
       this.updateProgressAlert('Encrypting data... 60%');
       const deviceId = await this.getDeviceId();
@@ -1111,18 +1110,16 @@ export class BackupService {
       // Check if task is already registered
       const isRegistered = await TaskManager.isTaskRegisteredAsync(AUTO_BACKUP_TASK);
       if (isRegistered) {
-        console.log('Auto backup background task already registered');
         return;
       }
 
       // Register the background fetch
       await BackgroundFetch.registerTaskAsync(AUTO_BACKUP_TASK, {
-        minimumInterval: 24 * 60 * 60, // 24 hours in seconds
+        minimumInterval: 6 * 60 * 60, // 6 hours in seconds
         stopOnTerminate: false, // Continue when app is terminated
         startOnBoot: true, // Start when device boots
       });
 
-      console.log('Auto backup background task registered successfully');
     } catch (error) {
       console.error('Failed to register auto backup background task:', error);
     }
@@ -1136,13 +1133,11 @@ export class BackupService {
       // Check if task is registered
       const isRegistered = await TaskManager.isTaskRegisteredAsync(AUTO_BACKUP_TASK);
       if (!isRegistered) {
-        console.log('Auto backup background task not registered');
         return;
       }
 
       // Unregister the background fetch
       await BackgroundFetch.unregisterTaskAsync(AUTO_BACKUP_TASK);
-      console.log('Auto backup background task unregistered successfully');
     } catch (error) {
       console.error('Failed to unregister auto backup background task:', error);
     }

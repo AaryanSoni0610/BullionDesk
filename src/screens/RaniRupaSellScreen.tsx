@@ -28,7 +28,7 @@ interface InventoryItem {
   id: string;
   name: string;
   weight: number;
-  touch?: number; // For Rani items
+  touch: number; // For Rani items
   pureWeight: number;
   stock_id: string; // Reference to stock item
 }
@@ -129,7 +129,7 @@ export const RaniRupaSellScreen: React.FC = () => {
     selectedItems.forEach(itemId => {
       const item = inventoryItems.find(i => i.id === itemId);
       if (item) {
-        if (selectedType === 'rani' && cut > 0) {
+        if (selectedType === 'rani') {
           // Recalculate pure weight with cut applied
           const effectiveTouch = Math.max(0, (item.touch || 0) - cut);
           const pureWeight = (item.weight * effectiveTouch) / 100;
@@ -141,7 +141,7 @@ export const RaniRupaSellScreen: React.FC = () => {
     });
 
     const extra = parseFloat(extraWeight) || 0;
-    return formatPureGold(total) + extra;
+    return total + extra;
   };
 
   const handleSell = async () => {
@@ -151,8 +151,7 @@ export const RaniRupaSellScreen: React.FC = () => {
       return;
     }
 
-    // Show customer selection modal without allowing customer creation
-    setAllowCustomerCreation(false);
+    // Show customer selection modal
     setIsCustomerSelectionForRaniRupa(true);
     setIsWaitingForCustomerSelection(true);
     setCustomerModalVisible(true);
@@ -401,7 +400,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   listContent: {
-    paddingBottom: 120, // Space for bottom navigation
+    paddingBottom: 140, // Space for bottom navigation
   },
   emptyList: {
     flex: 1,

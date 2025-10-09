@@ -32,7 +32,6 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   title,
   message,
   buttons,
-  inputs,
   onDismiss,
   maxHeight,
 }) => {
@@ -68,67 +67,48 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
       animationType="fade"
       onRequestClose={isDismissible ? onDismiss : undefined}
     >
-      <TouchableWithoutFeedback onPress={isDismissible ? onDismiss : undefined}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={() => {}}>
-            <Surface style={[styles.alertContainer, { backgroundColor: theme.colors.surface }, maxHeight ? { maxHeight } : {}]}>
+      <View style={styles.overlay}>
+        <TouchableWithoutFeedback onPress={() => {}}>
+          <Surface style={[styles.alertContainer, { backgroundColor: theme.colors.surface }, maxHeight ? { maxHeight } : {}]}>
+            <Text
+              variant="headlineSmall"
+              style={[styles.title, { color: theme.colors.onSurface }]}
+            >
+              {title}
+            </Text>
+            <ScrollView
+              style={styles.messageContainer}
+              showsVerticalScrollIndicator={true}
+              bounces={false}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+              contentContainerStyle={styles.messageContent}
+            >
               <Text
-                variant="headlineSmall"
-                style={[styles.title, { color: theme.colors.onSurface }]}
+                variant="bodyMedium"
+                style={[styles.message, { color: theme.colors.onSurfaceVariant }]}
               >
-                {title}
+                {message}
               </Text>
-              <ScrollView
-                style={styles.messageContainer}
-                showsVerticalScrollIndicator={true}
-                bounces={false}
-                scrollEnabled={true}
-                nestedScrollEnabled={true}
-                contentContainerStyle={styles.messageContent}
-              >
-                <Text
-                  variant="bodyMedium"
-                  style={[styles.message, { color: theme.colors.onSurfaceVariant }]}
-                >
-                  {message}
-                </Text>
-              </ScrollView>
-              {inputs && inputs.length > 0 && (
-                <View style={styles.inputsContainer}>
-                  {inputs.map((input, index) => (
-                    <TextInput
-                      key={index}
-                      label={input.label}
-                      value={input.value}
-                      onChangeText={input.onChangeText}
-                      keyboardType={input.keyboardType || 'default'}
-                      placeholder={input.placeholder}
-                      mode="outlined"
-                      style={styles.input}
-                      theme={{ colors: { primary: theme.colors.primary } }}
-                    />
-                  ))}
-                </View>
-              )}
-              {isDismissible && (
-                <View style={styles.buttonContainer}>
-                  {finalButtons.map((button, index) => (
-                    <Button
-                      key={index}
-                      mode="text"
-                      onPress={() => handleButtonPress(button)}
-                      textColor={getButtonColor(button.style)}
-                      style={styles.button}
-                    >
-                      {button.text}
-                    </Button>
-                  ))}
-                </View>
-              )}
-            </Surface>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+            </ScrollView>
+            {isDismissible && (
+              <View style={styles.buttonContainer}>
+                {finalButtons.map((button, index) => (
+                  <Button
+                    key={index}
+                    mode="text"
+                    onPress={() => handleButtonPress(button)}
+                    textColor={getButtonColor(button.style)}
+                    style={styles.button}
+                  >
+                    {button.text}
+                  </Button>
+                ))}
+              </View>
+            )}
+          </Surface>
+        </TouchableWithoutFeedback>
+      </View>
     </Modal>
   );
 };
@@ -145,8 +125,10 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: 12,
     elevation: 6,
-    minWidth: 400,
-    maxWidth: 400,
+    minWidth: 300,
+    maxWidth: 300,
+    maxHeight: 400,
+    flexShrink: 1,
   },
   title: {
     marginBottom: 16,
@@ -154,10 +136,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto_500Medium',
   },
   messageContainer: {
-    marginBottom: 8,
+    marginBottom: 0,
   },
   messageContent: {
-    paddingVertical: 4,
+    paddingVertical: 0,
   },
   message: {
     textAlign: 'left',

@@ -124,9 +124,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     }
   }, [editingEntry]);
   
-  // Reset itemType to valid option when switching to sell tab with rani/rupu selected
+  // Reset itemType to valid option when switching to sell transaction type
   useEffect(() => {
-    // No longer needed - rani/rupu are now allowed in sell transactions
+    if (transactionType === 'sell' && (itemType === 'rani' || itemType === 'rupu')) {
+      setItemType('gold999'); // Default to gold999 for sell transactions
+    }
   }, [transactionType, itemType]);
   
   // Auto-select valid transaction type when available types change
@@ -156,7 +158,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       { label: 'Rupu (Impure Silver)', value: 'rupu' },
     ];
     
-    // All options are now available for all transaction types
+    // Filter out rani and rupu for sell transactions
+    if (transactionType === 'sell') {
+      return allOptions.filter(option => option.value !== 'rani' && option.value !== 'rupu');
+    }
+    
     return allOptions;
   };
   

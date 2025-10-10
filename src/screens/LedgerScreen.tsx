@@ -187,6 +187,7 @@ export const LedgerScreen: React.FC = () => {
       const gold999Value = values.gold999 || 0;
       const gold995Value = values.gold995 || 0;
       const silverValue = values.silver || 0;
+      const moneyValue = values.money || 0;
 
       // Create or get "Adjust" customer
       let adjustCustomer = customers.find(c => c.name === 'Adjust');
@@ -204,64 +205,99 @@ export const LedgerScreen: React.FC = () => {
         adjustCustomer = updatedCustomers.find(c => c.name === 'Adjust')!;
       }
 
-      // Create transaction entries
-      const entries: any[] = [];
-      let entryId = 1;
+      // Handle metal adjustments (gold and silver) as one transaction
+      const hasMetalAdjustments = gold999Value !== 0 || gold995Value !== 0 || silverValue !== 0;
+      if (hasMetalAdjustments) {
+        // Create transaction entries
+        const entries: any[] = [];
+        let entryId = 1;
 
-      // Gold 999 adjustment
-      if (gold999Value !== 0) {
-        entries.push({
-          id: `entry_${entryId++}`,
-          type: gold999Value > 0 ? 'purchase' : 'sell',
-          itemType: 'gold999',
-          weight: Math.abs(gold999Value),
-          price: 0, // No price to avoid balance/debt
-          subtotal: 0,
-          createdAt: new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString()
-        });
+        // Gold 999 adjustment
+        if (gold999Value !== 0) {
+          entries.push({
+            id: `entry_${entryId++}`,
+            type: gold999Value > 0 ? 'purchase' : 'sell',
+            itemType: 'gold999',
+            weight: Math.abs(gold999Value),
+            price: 0, // No price to avoid balance/debt
+            subtotal: 0,
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString()
+          });
+        }
+
+        // Gold 995 adjustment
+        if (gold995Value !== 0) {
+          entries.push({
+            id: `entry_${entryId++}`,
+            type: gold995Value > 0 ? 'purchase' : 'sell',
+            itemType: 'gold995',
+            weight: Math.abs(gold995Value),
+            price: 0, // No price to avoid balance/debt
+            subtotal: 0,
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString()
+          });
+        }
+
+        // Silver adjustment
+        if (silverValue !== 0) {
+          entries.push({
+            id: `entry_${entryId++}`,
+            type: silverValue > 0 ? 'purchase' : 'sell',
+            itemType: 'silver',
+            weight: Math.abs(silverValue),
+            price: 0, // No price to avoid balance/debt
+            subtotal: 0,
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString()
+          });
+        }
+
+        // Save transaction
+        const result = await DatabaseService.saveTransaction(
+          adjustCustomer,
+          entries,
+          0, // receivedAmount
+          undefined, // existingTransactionId
+          0 // discountExtraAmount
+        );
+
+        if (!result.success) {
+          console.error('Failed to save adjustment transaction:', result.error);
+          return;
+        }
       }
 
-      // Gold 995 adjustment
-      if (gold995Value !== 0) {
-        entries.push({
-          id: `entry_${entryId++}`,
-          type: gold995Value > 0 ? 'purchase' : 'sell',
-          itemType: 'gold995',
-          weight: Math.abs(gold995Value),
-          price: 0, // No price to avoid balance/debt
-          subtotal: 0,
+      // Handle money adjustment as separate ledger entry
+      if (moneyValue !== 0) {
+        const moneyType: 'give' | 'receive' = moneyValue > 0 ? 'receive' : 'give';
+        const amount = Math.abs(moneyValue);
+        const subtotal = moneyType === 'receive' ? amount : -amount; // Positive for receive, negative for give
+
+        const entriesNew: any[] = [];
+        entriesNew.push({
+          id: `entry_${Date.now()}`,
+          type: 'money', // Correct type for money entries
+          moneyType, // 'receive' or 'give'
+          amount, // Raw amount value
+          subtotal, // Calculated subtotal
+          itemType: 'money',
           createdAt: new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString()
+          lastUpdatedAt: new Date().toISOString(),
         });
-      }
-
-      // Silver adjustment
-      if (silverValue !== 0) {
-        entries.push({
-          id: `entry_${entryId++}`,
-          type: silverValue > 0 ? 'purchase' : 'sell',
-          itemType: 'silver',
-          weight: Math.abs(silverValue),
-          price: 0, // No price to avoid balance/debt
-          subtotal: 0,
-          createdAt: new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString()
-        });
-      }
-
-      // Save transaction
-      const result = await DatabaseService.saveTransaction(
-        adjustCustomer,
-        entries,
-        0, // receivedAmount
-        undefined, // existingTransactionId
-        0 // discountExtraAmount
-      );
-
-      if (!result.success) {
-        console.error('Failed to save adjustment transaction:', result.error);
-        return;
+        
+        const resultNew = await DatabaseService.saveTransaction(
+          adjustCustomer,
+          entriesNew,
+          0, // receivedAmount
+          undefined, // existingTransactionId
+          0 // discountExtraAmount
+        );
+        if (!resultNew.success) {
+          console.error('Failed to save money adjustment transaction:', resultNew.error);
+          return;
+        }
       }
 
       // Reset form and close alert
@@ -1487,7 +1523,14 @@ export const LedgerScreen: React.FC = () => {
             label: "Silver (g)",
             value: "",
             keyboardType: "numeric",
-            placeholder: "0.000"
+            placeholder: "0.0"
+          },
+          {
+            key: "money",
+            label: "Money (₹)",
+            value: "",
+            keyboardType: "numeric",
+            placeholder: "0"
           }
         ]}
         onCancel={() => setShowAdjustAlert(false)}

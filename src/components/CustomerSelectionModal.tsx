@@ -119,10 +119,11 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     const loadCustomers = async () => {
       try {
         const allCustomers = await DatabaseService.getAllCustomers();
-        setCustomers(allCustomers);
+        const filteredCustomers = allCustomers.filter(c => c.name.toLowerCase() !== 'adjust'); // Filter out 'Adjust' customer
+        setCustomers(filteredCustomers);
         
         // Sort by last transaction date for recent customers
-        const sortedByTransaction = [...allCustomers].sort((a, b) => {
+        const sortedByTransaction = [...filteredCustomers].sort((a, b) => {
           if (!a.lastTransaction && !b.lastTransaction) return 0;
           if (!a.lastTransaction) return 1;
           if (!b.lastTransaction) return -1;
@@ -276,7 +277,8 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   };
 
   const showCreateButton = allowCreateCustomer && searchQuery.trim() !== '' && 
-    !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.toLowerCase());
+    !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.toLowerCase()) &&
+    searchQuery.trim().toLowerCase() !== 'adjust';
 
   const showRecentCustomers = searchQuery.trim() === '' && recentCustomers.length > 0;
 

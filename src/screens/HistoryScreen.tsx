@@ -186,7 +186,8 @@ export const HistoryScreen: React.FC = () => {
       
       // Sort by date (most recent first)
       const sortedTransactions = allTransactions
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .filter(t => t.customerName.toLowerCase() !== 'adjust'); // Filter out 'Adjust' transactions
       
       setTransactions(sortedTransactions);
       

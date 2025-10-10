@@ -315,6 +315,7 @@ export class DatabaseService {
         return { success: false, error: 'Invalid customer or entries data' };
       }
 
+      console.log('entries details:', entries);
       // Use provided saveDate or current date
       const transactionDate = saveDate ? saveDate.toISOString() : new Date().toISOString();
       const now = new Date().toISOString(); // Keep current time for createdAt/lastUpdatedAt when updating
@@ -333,6 +334,10 @@ export class DatabaseService {
         // Positive netAmount (receive) = merchant receives money = customer has credit
         // Negative netAmount (give) = merchant gives money = customer owes more
         finalBalance = netAmount;
+        if (customer.name.toLowerCase() === 'adjust') {
+          finalBalance = 0; // Do not adjust balance for "Adjust" customer
+          console.log(`netAmount: ${netAmount}, finalBalance: ${finalBalance}`)
+        }
       } else {
         // For sell/purchase transactions:
         finalBalance = netAmount >= 0
@@ -441,6 +446,7 @@ export class DatabaseService {
                 entry.stock_id = result.stock_id;
               } else {
                 console.error(`[STOCK_UPDATE] Failed to add stock: ${result.error}`);
+                return { success: false, error: `Failed to add stock: ${result.error}` };
               }
             } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
               // Remove stock for sales - use existing stock_id or find stock to remove
@@ -455,22 +461,24 @@ export class DatabaseService {
                   entry.stock_id = oldestStock.stock_id; // Set it on the entry for future reference
                 } else {
                   console.error(`[STOCK_UPDATE] No stock available for sale of ${entry.itemType}`);
-                  continue;
+                  return { success: false, error: `No stock available for sale of ${entry.itemType}` };
                 }
               }
               const removeResult = await RaniRupaStockService.removeStock(stockIdToRemove);
               if (!removeResult.success) {
                 console.error(`[STOCK_UPDATE] Failed to remove stock for sale: ${removeResult.error}`);
+                return { success: false, error: `Failed to remove stock for sale: ${removeResult.error}` };
               }
             } else {
-              console.error(`[STOCK_UPDATE] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
+              console.log(`[STOCK_UPDATE] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
             }
           }
         } catch (stockError) {
           console.error('[STOCK_UPDATE] Error managing stock for update:', stockError);
           return { success: false, error: 'Error managing stock' };
         }
-        
+
+        console.log(`netAmount: ${netAmount}, finalBalance: ${finalBalance}`)
         transaction = {
           ...existingTransaction,
           entries: mappedEntries,
@@ -993,6 +1001,9 @@ export class DatabaseService {
         if (isMoneyOnlyTransaction) {
           // For money-only transactions
           finalBalance = netAmount>=0 ? -netAmount : netAmount;
+          if (customer.name.toLowerCase() === 'adjust') {
+            finalBalance = 0; // Do not adjust balance for "Adjust" customer
+          }
         } else {
           // For sell/purchase transactions
           //finalBalance = netAmount >= 0

@@ -54,6 +54,7 @@ export const HomeScreen: React.FC = () => {
       // Sort by date (most recent first) and take the first 20
       const sortedTransactions = allTransactions
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .filter(t => t.customerName.toLowerCase() !== 'adjust') // Filter out 'Adjust' transactions
         .slice(0, 20);
       
       // Create customer lookup map

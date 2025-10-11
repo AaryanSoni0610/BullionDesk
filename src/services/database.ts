@@ -315,7 +315,6 @@ export class DatabaseService {
         return { success: false, error: 'Invalid customer or entries data' };
       }
 
-      console.log('entries details:', entries);
       // Use provided saveDate or current date
       const transactionDate = saveDate ? saveDate.toISOString() : new Date().toISOString();
       const now = new Date().toISOString(); // Keep current time for createdAt/lastUpdatedAt when updating
@@ -336,7 +335,6 @@ export class DatabaseService {
         finalBalance = netAmount;
         if (customer.name.toLowerCase() === 'adjust') {
           finalBalance = 0; // Do not adjust balance for "Adjust" customer
-          console.log(`netAmount: ${netAmount}, finalBalance: ${finalBalance}`)
         }
       } else {
         // For sell/purchase transactions:
@@ -470,7 +468,9 @@ export class DatabaseService {
                 return { success: false, error: `Failed to remove stock for sale: ${removeResult.error}` };
               }
             } else {
-              console.log(`[STOCK_UPDATE] Skipping entry - not Rani/Rupa or missing stock_id for sell`);
+              if (entry.stock_id !== undefined) { // Explicitly check for undefined to allow empty string or null as valid IDs
+                console.error(`[STOCK_DELETE] Skipping entry - no stock_id found`);
+              }
             }
           }
         } catch (stockError) {
@@ -478,7 +478,6 @@ export class DatabaseService {
           return { success: false, error: 'Error managing stock' };
         }
 
-        console.log(`netAmount: ${netAmount}, finalBalance: ${finalBalance}`)
         transaction = {
           ...existingTransaction,
           entries: mappedEntries,
@@ -1067,7 +1066,6 @@ export class DatabaseService {
       // Reverse stock changes for rani/rupa entries
       try {
         for (const entry of transaction.entries) {
-          console.log('stock id:', entry.stock_id);
           if (entry.stock_id) {
             if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
               // Remove stock for purchases that were added

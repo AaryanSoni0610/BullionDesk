@@ -29,18 +29,14 @@ Notifications.setNotificationHandler({
 // Define the background task for notifications
 TaskManager.defineTask(NOTIFICATION_TASK, async () => {
   try {
-    console.log('Background notification task started');
-
     // Check if notifications are enabled
     const isEnabled = await NotificationService.isNotificationsEnabled();
     if (!isEnabled) {
-      console.log('Notifications are disabled, skipping');
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
     // Run the notification check
     await NotificationService.checkAndScheduleNotifications();
-    console.log('Background notification check completed');
 
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (error) {
@@ -364,7 +360,6 @@ export class NotificationService {
       // Check if task is already registered
       const isRegistered = await TaskManager.isTaskRegisteredAsync(NOTIFICATION_TASK);
       if (isRegistered) {
-        console.log('Notification background task already registered');
         return;
       }
 
@@ -374,8 +369,6 @@ export class NotificationService {
         stopOnTerminate: false, // Continue when app is terminated
         startOnBoot: true, // Start when device boots
       });
-
-      console.log('Notification background task registered successfully');
     } catch (error) {
       console.error('Failed to register notification background task:', error);
     }
@@ -389,13 +382,11 @@ export class NotificationService {
       // Check if task is registered
       const isRegistered = await TaskManager.isTaskRegisteredAsync(NOTIFICATION_TASK);
       if (!isRegistered) {
-        console.log('Notification background task not registered');
         return;
       }
 
       // Unregister the background fetch
       await BackgroundFetch.unregisterTaskAsync(NOTIFICATION_TASK);
-      console.log('Notification background task unregistered successfully');
     } catch (error) {
       console.error('Failed to unregister notification background task:', error);
     }

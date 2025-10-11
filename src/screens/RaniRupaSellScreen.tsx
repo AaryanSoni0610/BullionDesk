@@ -293,21 +293,13 @@ export const RaniRupaSellScreen: React.FC = () => {
         createdAt: new Date().toISOString(),
       });
 
-      // Validate that all selected stock items still exist before proceeding
-      console.log('Validating stock existence before sale...');
-      console.log('Selected items:', Array.from(selectedItems));
-      console.log('Inventory items:', inventoryItems.map(i => ({ id: i.id, stock_id: i.stock_id, name: i.name })));
-      
       const allStock = await RaniRupaStockService.getAllStock();
-      console.log('All stock in database:', allStock.map(s => ({ stock_id: s.stock_id, itemtype: s.itemtype })));
       
       const missingItems: string[] = [];
       for (const itemId of selectedItems) {
         const item = inventoryItems.find(i => i.id === itemId);
         if (item) {
-          console.log(`Checking stock_id: ${item.stock_id} for item: ${item.name}`);
           const existingStock = await RaniRupaStockService.getStockById(item.stock_id);
-          console.log(`Stock exists for ${item.stock_id}:`, !!existingStock);
           if (!existingStock) {
             missingItems.push(item.name);
           }
@@ -315,7 +307,6 @@ export const RaniRupaSellScreen: React.FC = () => {
       }
 
       if (missingItems.length > 0) {
-        console.log('Missing items found:', missingItems);
         showAlert('Error', `Cannot complete sale. The following stock items are no longer available: ${missingItems.join(', ')}. Please refresh the inventory and try again.`);
         return;
       }

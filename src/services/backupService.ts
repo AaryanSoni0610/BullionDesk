@@ -37,7 +37,7 @@ interface BackupData {
     customers: any[];
     transactions: any[];
     ledger: any[];
-    baseInventory: {
+    baseInventory?: {
       gold999: number;
       gold995: number;
       silver: number;
@@ -87,6 +87,23 @@ export class BackupService {
    */
   static setAlertFunction(alertFunc: AlertFunction): void {
     this.alertFunction = alertFunc;
+  }
+
+  /**
+   * Redirect console.error to also log to backup log file
+   */
+  static setupConsoleErrorLogging(): void {
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      // Call original console.error
+      originalConsoleError(...args);
+      
+      // Also log to backup log file if available
+      const message = args.map(arg => 
+        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+      ).join(' ');
+      this.logAction(`ERROR: ${message}`);
+    };
   }
 
   /**
@@ -406,13 +423,17 @@ export class BackupService {
       this.updateProgressAlert('Loading stock... 58%');
       const raniRupaStock = await RaniRupaStockService.getAllStock();
       
-      const records = { customers, transactions, ledger, baseInventory, raniRupaStock };
+      let records: BackupData['records'];
       
       // Filter data for 'today' export
       if (exportType === 'today') {
         const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-        records.transactions = records.transactions.filter(t => t.date.startsWith(today));
-        records.ledger = records.ledger.filter(l => l.date.startsWith(today));
+        const filteredTransactions = transactions.filter(t => t.date.startsWith(today));
+        const filteredLedger = ledger.filter(l => l.date.startsWith(today));
+        // Exclude base inventory for today exports to avoid conflicts
+        records = { customers, transactions: filteredTransactions, ledger: filteredLedger, raniRupaStock };
+      } else {
+        records = { customers, transactions, ledger, baseInventory, raniRupaStock };
       }
       
       this.updateProgressAlert('Encrypting data... 60%');
@@ -715,10 +736,40 @@ export class BackupService {
       }
     }
 
-    // Restore base inventory if present in backup
+    // Handle base inventory - only set if present in backup and user confirms override if different
     if (records.baseInventory) {
-      await DatabaseService.setBaseInventory(records.baseInventory);
+      const currentBaseInventory = await DatabaseService.getBaseInventory();
+      
+      // Check if current base inventory differs from backup
+      const isDifferent = Object.keys(records.baseInventory).some(key => 
+        records.baseInventory![key as keyof typeof records.baseInventory] !== currentBaseInventory[key as keyof typeof currentBaseInventory]
+      );
+      
+      if (isDifferent) {
+        // Show warning and ask user to confirm
+        const shouldProceed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Base Inventory Conflict',
+            'The backup contains different base inventory values. This may cause accounting problems. Do you want to override your current base inventory with the backup values?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Override', style: 'destructive', onPress: () => resolve(true) }
+            ]
+          );
+        });
+        
+        if (!shouldProceed) {
+          // Skip setting base inventory
+          console.log('User chose to skip base inventory override');
+        } else {
+          await DatabaseService.setBaseInventory(records.baseInventory);
+        }
+      } else {
+        // Base inventories match, safe to set
+        await DatabaseService.setBaseInventory(records.baseInventory);
+      }
     }
+    // Note: If baseInventory is not present in backup (e.g., 'today' export), current base inventory is left unchanged
 
     // Merge Rani-Rupa stock (by stock_id) - only add if doesn't exist
     if (records.raniRupaStock) {

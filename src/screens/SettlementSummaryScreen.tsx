@@ -411,7 +411,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     // For old transactions: lock all entries
     // For editing current transactions: lock only rani/rupu entries that are not metal-only
     const isEntryLocked = areEntriesLocked || (isEditing && (entry.itemType === 'rani' || entry.itemType === 'rupu') && !entry.metalOnly);
-    console.log(`Entry ${entry.itemType} locked:`, isEntryLocked, 'areEntriesLocked:', areEntriesLocked, 'isEditing:', isEditing, 'metalOnly:', entry.metalOnly);
 
     return (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">

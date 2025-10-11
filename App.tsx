@@ -271,6 +271,9 @@ export default function App() {
       // Initialize notifications
       await NotificationService.initialize();
 
+      // Setup console.error logging to backup log file
+      BackupService.setupConsoleErrorLogging();
+
       // Register background auto backup task if enabled
       const isAutoBackupEnabled = await BackupService.isAutoBackupEnabled();
       if (isAutoBackupEnabled) {

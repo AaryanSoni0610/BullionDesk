@@ -18,7 +18,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime } from '../utils/formatting';
+import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime, customFormatPureSilver } from '../utils/formatting';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -1104,6 +1104,12 @@ export const LedgerScreen: React.FC = () => {
         const weightNum = entry.weight || 0;
         const pureGoldPrecise = (weightNum * touchNum) / 100;
         weight = formatPureGoldPrecise(pureGoldPrecise);
+      }
+      if (entry.itemType === 'rupu' && selectedInventory === 'silver') {
+        // Recalculate pure weight for Rupu using custom formatting
+        const touchNum = entry.touch || 0;
+        const weightNum = entry.weight || 0;
+        weight = customFormatPureSilver(weightNum, touchNum);
       }
       
       const purchaseWeight = isPurchase ? weight : 0;

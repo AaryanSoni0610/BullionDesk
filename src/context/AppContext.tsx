@@ -171,14 +171,18 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       balance: 0,
     };
 
-    // Clear editing transaction ID for new transactions
-    setEditingTransactionId(null);
-    setLastGivenMoney(0);
-    setTransactionCreatedAt(null);
-    setTransactionLastUpdatedAt(null);
-
-    // Navigate immediately to avoid lag
-    navigateToEntry(newCustomer);
+    if (isCustomerSelectionForRaniRupa) {
+      // For Rani/Rupa sell, just set the customer without navigating
+      setCurrentCustomer(newCustomer);
+      setIsCustomerSelectionForRaniRupa(false);
+    } else {
+      // Clear editing transaction ID for new transactions
+      setEditingTransactionId(null);
+      setLastGivenMoney(0);
+      setTransactionCreatedAt(null);
+      setTransactionLastUpdatedAt(null);
+      navigateToEntry(newCustomer);
+    }
 
     // Save customer in background
     try {

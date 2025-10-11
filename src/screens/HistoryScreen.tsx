@@ -449,7 +449,20 @@ export const HistoryScreen: React.FC = () => {
                 <React.Fragment key={index}>
                   <View style={styles.entryRow}>
                     <Text variant="bodySmall" style={styles.entryType}>
-                      {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
+                      {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
+                        if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                          const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                            e.itemType === entry.itemType && e.type === entry.type
+                          );
+                          const totalCount = transaction.entries.filter(e => 
+                            e.itemType === entry.itemType && e.type === entry.type
+                          ).length;
+                          if (totalCount > 1) {
+                            return ` ${sameTypeEntries.length}`;
+                          }
+                        }
+                        return '';
+                      })()}
                     </Text>
                     <Text variant="bodySmall" style={styles.entryDetails}>
                       {entry.weight && (() => {
@@ -457,7 +470,9 @@ export const HistoryScreen: React.FC = () => {
                         if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                           const weight = entry.weight || 0;
                           const touch = entry.touch || 100;
-                          const pureWeight = (weight * touch) / 100;
+                          const cut = entry.cut || 0;
+                          const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                          const pureWeight = (weight * effectiveTouch) / 100;
                           const formattedPureWeight = entry.itemType === 'rani' 
                             ? formatPureGoldPrecise(pureWeight) 
                             : formatPureSilver(pureWeight);
@@ -465,9 +480,9 @@ export const HistoryScreen: React.FC = () => {
 
                           const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
                           if (entry.type === 'sell') {
-                            return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                            return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
                           } else {
-                            return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}%`;
+                            return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
                           }
                         } else {
                           // Default formatting for other items
@@ -565,7 +580,20 @@ export const HistoryScreen: React.FC = () => {
                     <React.Fragment key={index}>
                       <View style={styles.entryRow}>
                         <Text variant="bodySmall" style={styles.entryType}>
-                          {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}
+                          {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
+                            if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                              const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                                e.itemType === entry.itemType && e.type === entry.type
+                              );
+                              const totalCount = transaction.entries.filter(e => 
+                                e.itemType === entry.itemType && e.type === entry.type
+                              ).length;
+                              if (totalCount > 1) {
+                                return ` ${sameTypeEntries.length}`;
+                              }
+                            }
+                            return '';
+                          })()}
                         </Text>
                         <Text variant="bodySmall" style={styles.entryDetails}>
                           {entry.weight && (() => {
@@ -573,16 +601,18 @@ export const HistoryScreen: React.FC = () => {
                             if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                               const weight = entry.weight || 0;
                               const touch = entry.touch || 100;
-                              const pureWeight = (weight * touch) / 100;
+                              const cut = entry.cut || 0;
+                              const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                              const pureWeight = (weight * effectiveTouch) / 100;
                               const formattedPureWeight = entry.itemType === 'rani' 
                                 ? formatPureGoldPrecise(pureWeight) 
                                 : formatPureSilver(pureWeight);
                               
                               const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
                               if (entry.type === 'sell') {
-                                return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
                               } else {
-                                return `${weight.toFixed(fixedDigits)}g : ${touch.toFixed(2)}%`;
+                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
                               }
                             } else {
                               // Default formatting for other items

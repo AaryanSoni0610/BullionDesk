@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatRelativeDate, formatIndianNumber } from '../utils/formatting';
+import { formatTransactionAmount, formatRelativeDate, formatIndianNumber, formatPureGoldPrecise, customFormatPureSilver, formatPureSilver } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import { DatabaseService } from '../services/database';
 import { Transaction, Customer } from '../types';
@@ -21,13 +21,12 @@ export const HomeScreen: React.FC = () => {
     loadRecentTransactions();
   }, []);
 
-  // Handle hardware back button - minimize app on Home screen
+  // Handle hardware back button - exit app on Home screen
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
-        // Return true to prevent default back behavior (which would exit app)
-        // This effectively minimizes the app
-        return true;
+        // Return false to allow default back behavior (which exits the app)
+        return false;
       };
 
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
@@ -91,21 +90,75 @@ export const HomeScreen: React.FC = () => {
     const sellItems: string[] = [];
     const purchaseItems: string[] = [];
     
-    transaction.entries.forEach(entry => {
-      if (entry.type !== 'money') {
-        const displayName = getItemDisplayName(entry);
-        // Use 3 decimal places for gold items, 1 for others
-        const isGoldItem = ['gold999', 'gold995', 'rani'].includes(entry.itemType);
-        const decimals = isGoldItem ? 3 : 1;
-        const itemText = entry.weight ? `${displayName} ${entry.weight.toFixed(decimals)}g` : displayName;
-        
-        if (entry.type === 'sell') {
-          sellItems.push(itemText);
-        } else if (entry.type === 'purchase') {
-          purchaseItems.push(itemText);
-        }
+    // Check if transaction has Rani or Rupu entries
+    const hasRaniRupu = transaction.entries.some(entry => 
+      entry.type !== 'money' && (entry.itemType === 'rani' || entry.itemType === 'rupu')
+    );
+    
+    if (hasRaniRupu) {
+      // Handle Rani/Rupu transactions with summarized display
+      const raniSellTotal = transaction.entries
+        .filter(entry => entry.type === 'sell' && entry.itemType === 'rani')
+        .reduce((sum, entry) => sum + formatPureGoldPrecise((entry.weight || 0) * (entry.touch || 100) / 100), 0);
+      
+      const raniPurchaseTotal = transaction.entries
+        .filter(entry => entry.type === 'purchase' && entry.itemType === 'rani')
+        .reduce((sum, entry) => sum + formatPureGoldPrecise((entry.weight || 0) * (entry.touch || 100) / 100), 0);
+      
+      const rupuSellTotal = transaction.entries
+        .filter(entry => entry.type === 'sell' && entry.itemType === 'rupu')
+        .reduce((sum, entry) => sum + ((entry.weight || 0) * (entry.touch || 100) / 100), 0);
+      
+      const rupuPurchaseTotal = transaction.entries
+        .filter(entry => entry.type === 'purchase' && entry.itemType === 'rupu')
+        .reduce((sum, entry) => sum + ((entry.weight || 0) * (entry.touch || 100) / 100), 0);
+      
+      // Add summarized Rani/Rupu items
+      if (raniSellTotal > 0) {
+        sellItems.push(`Rani Fine ${formatPureGoldPrecise(raniSellTotal).toFixed(3)}g`);
       }
-    });
+      if (raniPurchaseTotal > 0) {
+        purchaseItems.push(`Rani Fine ${formatPureGoldPrecise(raniPurchaseTotal).toFixed(3)}g`);
+      }
+      if (rupuSellTotal > 0) {
+        sellItems.push(`Rupu Fine ${formatPureSilver(rupuSellTotal).toFixed(1)}g`);
+      }
+      if (rupuPurchaseTotal > 0) {
+        purchaseItems.push(`Rupu Fine ${formatPureSilver(rupuPurchaseTotal).toFixed(1)}g`);
+      }
+      
+      // Add other non-Rani/Rupu items
+      transaction.entries.forEach(entry => {
+        if (entry.type !== 'money' && entry.itemType !== 'rani' && entry.itemType !== 'rupu') {
+          const displayName = getItemDisplayName(entry);
+          const isGoldItem = ['gold999', 'gold995'].includes(entry.itemType);
+          const decimals = isGoldItem ? 3 : 1;
+          const itemText = entry.weight ? `${displayName} ${entry.weight.toFixed(decimals)}g` : displayName;
+          
+          if (entry.type === 'sell') {
+            sellItems.push(itemText);
+          } else if (entry.type === 'purchase') {
+            purchaseItems.push(itemText);
+          }
+        }
+      });
+    } else {
+      // Original logic for non-Rani/Rupu transactions
+      transaction.entries.forEach(entry => {
+        if (entry.type !== 'money') {
+          const displayName = getItemDisplayName(entry);
+          const isGoldItem = ['gold999', 'gold995', 'rani'].includes(entry.itemType);
+          const decimals = isGoldItem ? 3 : 1;
+          const itemText = entry.weight ? `${displayName} ${entry.weight.toFixed(decimals)}g` : displayName;
+          
+          if (entry.type === 'sell') {
+            sellItems.push(itemText);
+          } else if (entry.type === 'purchase') {
+            purchaseItems.push(itemText);
+          }
+        }
+      });
+    }
     
     const parts: string[] = [];
     if (sellItems.length > 0) {

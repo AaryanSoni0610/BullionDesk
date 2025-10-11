@@ -4,6 +4,7 @@ import {
   StyleSheet,
   FlatList,
   BackHandler,
+  Platform,
 } from 'react-native';
 import {
   Surface,
@@ -14,15 +15,19 @@ import {
   List,
   Checkbox,
   TextInput,
+  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { formatPureGoldPrecise, formatPureSilver, formatPureGold } from '../utils/formatting';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { formatPureGoldPrecise, customFormatPureSilver } from '../utils/formatting';
 import { theme } from '../theme';
 import { RaniRupaStockService } from '../services/raniRupaStockService';
-import { useAppContext } from '../context/AppContext';
-import { Customer, TransactionEntry } from '../types';
 import { DatabaseService } from '../services/database';
+import { useAppContext } from '../context/AppContext';
+import { InventoryInputDialog } from '../components/InventoryInputDialog';
+import CustomAlert from '../components/CustomAlert';
+import { Customer, TransactionEntry } from '../types';
 
 interface InventoryItem {
   id: string;
@@ -42,8 +47,68 @@ export const RaniRupaSellScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isWaitingForCustomerSelection, setIsWaitingForCustomerSelection] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
+  const [showSaveDatePicker, setShowSaveDatePicker] = useState(false);
+  const [showDateWarning, setShowDateWarning] = useState(false);
+  const [pendingSaveDate, setPendingSaveDate] = useState<Date | null>(null);
+  const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);
 
-  const { navigateToSettings, showAlert, setCustomerModalVisible, setAllowCustomerCreation, customerModalVisible, currentCustomer, setIsCustomerSelectionForRaniRupa, setCurrentCustomer } = useAppContext();
+  const { navigateToSettings, showAlert, setCustomerModalVisible, setAllowCustomerCreation, customerModalVisible, currentCustomer, setIsCustomerSelectionForRaniRupa, setCurrentCustomer, handleCreateCustomer } = useAppContext();
+
+  // Format date for display in DD/MM/YYYY format
+  const formatDateDisplay = (date: Date): string => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  // Handle Select Save Date button press
+  const handleSelectSaveDatePress = () => {
+    setShowSaveDatePicker(true);
+  };
+
+  // Handle save date picker change
+  const handleSaveDateChange = (event: any, selectedDate?: Date) => {
+    const isConfirmed = event.type === 'set';
+    setShowSaveDatePicker(Platform.OS === 'ios' && isConfirmed); // Keep open on iOS only if confirmed
+    
+    if (isConfirmed && selectedDate) {
+      const today = new Date();
+      const isTodaySelected = selectedDate.getFullYear() === today.getFullYear() &&
+                             selectedDate.getMonth() === today.getMonth() &&
+                             selectedDate.getDate() === today.getDate();
+      
+      if (!isTodaySelected) {
+        // Show custom alert warning for non-today dates
+        setPendingSaveDate(selectedDate);
+        setShowDateWarningAlert(true);
+      } else {
+        // Today selected, no warning needed
+        setSelectedSaveDate(selectedDate);
+      }
+    } else if (event.type === 'dismissed') {
+      // User cancelled, don't change anything
+      setShowSaveDatePicker(false);
+    }
+  };
+
+  // Handle date warning alert continue
+  const handleDateWarningContinue = () => {
+    if (pendingSaveDate) {
+      setSelectedSaveDate(pendingSaveDate);
+      setPendingSaveDate(null);
+    }
+    setShowDateWarningAlert(false);
+  };
+
+  // Handle date warning alert cancel
+  const handleDateWarningCancel = () => {
+    setPendingSaveDate(null);
+    setShowDateWarningAlert(false);
+  };
 
   // Load inventory items based on selected type
   useEffect(() => {
@@ -82,7 +147,7 @@ export const RaniRupaSellScreen: React.FC = () => {
         name: `${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} ${index + 1}`,
         weight: stock.weight,
         touch: stock.touch,
-        pureWeight: selectedType === 'rani' ? formatPureGoldPrecise((stock.weight * stock.touch) / 100) : formatPureSilver((stock.weight * stock.touch) / 100),
+        pureWeight: selectedType === 'rani' ? formatPureGoldPrecise((stock.weight * stock.touch) / 100) : customFormatPureSilver(stock.weight, stock.touch),
         stock_id: stock.stock_id,
       }));
 
@@ -177,6 +242,21 @@ export const RaniRupaSellScreen: React.FC = () => {
 
   const executeSale = async (customer: Customer) => {
     try {
+      // Determine save date: null for today (use current date/time), or selected date with random time
+      const today = new Date();
+      const isTodaySelected = selectedSaveDate.getFullYear() === today.getFullYear() &&
+                             selectedSaveDate.getMonth() === today.getMonth() &&
+                             selectedSaveDate.getDate() === today.getDate();
+      
+      let saveDate: Date | null = null;
+      if (!isTodaySelected) {
+        // Create date with random time between 10:00 AM and 8:00 PM
+        const randomHour = Math.floor(Math.random() * 10) + 10; // 10 to 19 (10 AM to 9 PM)
+        const randomMinute = Math.floor(Math.random() * 60);
+        saveDate = new Date(selectedSaveDate);
+        saveDate.setHours(randomHour, randomMinute, 0, 0);
+      }
+
       // Create transaction entries
       const entries: TransactionEntry[] = [];
       
@@ -190,6 +270,7 @@ export const RaniRupaSellScreen: React.FC = () => {
             itemType: selectedType,
             weight: item.weight,
             touch: item.touch,
+            cut: selectedType === 'rani' ? (parseFloat(cutValue) || 0) : undefined, // Save cut for rani items
             pureWeight: item.pureWeight,
             price: 0, // No price for bulk exchange
             subtotal: 0, // No money involved in this exchange
@@ -212,13 +293,41 @@ export const RaniRupaSellScreen: React.FC = () => {
         createdAt: new Date().toISOString(),
       });
 
+      // Validate that all selected stock items still exist before proceeding
+      console.log('Validating stock existence before sale...');
+      console.log('Selected items:', Array.from(selectedItems));
+      console.log('Inventory items:', inventoryItems.map(i => ({ id: i.id, stock_id: i.stock_id, name: i.name })));
+      
+      const allStock = await RaniRupaStockService.getAllStock();
+      console.log('All stock in database:', allStock.map(s => ({ stock_id: s.stock_id, itemtype: s.itemtype })));
+      
+      const missingItems: string[] = [];
+      for (const itemId of selectedItems) {
+        const item = inventoryItems.find(i => i.id === itemId);
+        if (item) {
+          console.log(`Checking stock_id: ${item.stock_id} for item: ${item.name}`);
+          const existingStock = await RaniRupaStockService.getStockById(item.stock_id);
+          console.log(`Stock exists for ${item.stock_id}:`, !!existingStock);
+          if (!existingStock) {
+            missingItems.push(item.name);
+          }
+        }
+      }
+
+      if (missingItems.length > 0) {
+        console.log('Missing items found:', missingItems);
+        showAlert('Error', `Cannot complete sale. The following stock items are no longer available: ${missingItems.join(', ')}. Please refresh the inventory and try again.`);
+        return;
+      }
+
       // Save transaction
       const result = await DatabaseService.saveTransaction(
         customer,
         entries,
         0, // receivedAmount
         undefined, // existingTransactionId
-        0 // discountExtraAmount
+        0, // discountExtraAmount
+        saveDate
       );
 
       if (!result.success) {
@@ -226,17 +335,8 @@ export const RaniRupaSellScreen: React.FC = () => {
         return;
       }
 
-      for (const itemId of selectedItems) {
-        const item = inventoryItems.find(i => i.id === itemId);
-        if (item) {
-          const stockResult = await RaniRupaStockService.removeStock(item.stock_id);
-          if(!stockResult.success) {
-            showAlert('Warning', `Transaction created but failed to remove stock item: ${stockResult.error}`);
-          } else {
-            showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`);
-          }
-        }
-      }
+      // Transaction created successfully - stock was automatically removed by DatabaseService
+      showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`);
 
       // Reset state
       setSelectedItems(new Set());
@@ -250,6 +350,47 @@ export const RaniRupaSellScreen: React.FC = () => {
     }
   };
 
+  const handleEditConfirm = async (values: Record<string, any>) => {
+    if (!editingItem) return;
+
+    const newWeight = parseFloat(values.weight);
+    if (isNaN(newWeight) || newWeight <= 0) {
+      showAlert('Invalid Weight', 'Please enter a valid weight greater than 0');
+      return;
+    }
+
+    try {
+      const oldWeight = editingItem.weight;
+      const weightDiff = newWeight - oldWeight;
+
+      // Show confirmation alert
+      showAlert(
+        'Confirm Weight Change',
+        `Change weight from ${oldWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g to ${newWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g?\n\nThis will ${weightDiff > 0 ? 'increase' : 'decrease'} the total pure weight by ${Math.abs(weightDiff).toFixed(selectedType === 'rani' ? 3 : 1)}g.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              await RaniRupaStockService.updateStock(editingItem.id, { weight: newWeight });
+              setShowEditDialog(false);
+              setEditingItem(null);
+              await loadInventoryItems();
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error updating stock weight:', error);
+      showAlert('Error', 'Failed to update stock weight');
+    }
+  };
+
+  const handleEditItem = (item: InventoryItem) => {
+    setEditingItem(item);
+    setShowEditDialog(true);
+  };
+
   const renderInventoryItem = ({ item }: { item: InventoryItem }) => (
     <List.Item
       key={item.id}
@@ -259,6 +400,14 @@ export const RaniRupaSellScreen: React.FC = () => {
         <Checkbox
           status={selectedItems.has(item.id) ? 'checked' : 'unchecked'}
           onPress={() => toggleItemSelection(item.id)}
+        />
+      )}
+      right={() => (
+        <IconButton
+          icon="pencil"
+          size={18}
+          onPress={() => handleEditItem(item)}
+          style={{ margin: 0, marginRight: -2 }}
         />
       )}
       onPress={() => toggleItemSelection(item.id)}
@@ -284,6 +433,33 @@ export const RaniRupaSellScreen: React.FC = () => {
           </Text>
         </View>
       </Surface>
+
+      {/* Save Date Picker */}
+      <View style={styles.dateSection}>
+        <Text variant="titleSmall" style={styles.dateLabel}>
+          Save on: {formatDateDisplay(selectedSaveDate)}
+        </Text>
+        <Button
+          mode="contained"
+          onPress={handleSelectSaveDatePress}
+          style={styles.dateButton}
+          contentStyle={styles.dateButtonContent}
+        >
+          Change Date
+        </Button>
+      </View>
+      <Divider style={styles.dateDivider} />
+
+      {/* Save Date Picker Modal */}
+      {showSaveDatePicker && (
+        <DateTimePicker
+          value={selectedSaveDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={handleSaveDateChange}
+          maximumDate={new Date()}
+        />
+      )}
 
       {/* Segmented Buttons */}
       <View style={styles.segmentedContainer}>
@@ -361,6 +537,33 @@ export const RaniRupaSellScreen: React.FC = () => {
           </Button>
         </View>
       </View>
+      <InventoryInputDialog
+        visible={showEditDialog}
+        title={`Edit ${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Weight`}
+        message={`Current weight: ${editingItem?.weight.toFixed(selectedType === 'rani' ? 3 : 1)}g`}
+        inputs={[
+          {
+            key: 'weight',
+            label: 'Weight (g)',
+            value: editingItem?.weight.toString() || '',
+            placeholder: 'Enter weight in grams',
+            keyboardType: 'numeric'
+          }
+        ]}
+        onCancel={() => setShowEditDialog(false)}
+        onSubmit={handleEditConfirm}
+      />
+      {/* Date Warning Custom Alert */}
+      <CustomAlert
+        visible={showDateWarningAlert}
+        title="Date Selection Warning"
+        message="You have selected a date that is not today. This can lead to severe problems in accounting. Are you sure you want to continue?"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: handleDateWarningCancel },
+          { text: 'Continue', onPress: handleDateWarningContinue }
+        ]}
+        onDismiss={handleDateWarningCancel}
+      />
     </SafeAreaView>
   );
 };
@@ -460,5 +663,27 @@ const styles = StyleSheet.create({
   },
   sellButton: {
     marginTop: 8,
+  },
+  dateSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+  },
+  dateLabel: {
+    fontFamily: 'Roboto_500Medium',
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  dateButton: {
+    marginLeft: theme.spacing.sm,
+    borderRadius: 20,
+  },
+  dateButtonContent: {
+    paddingHorizontal: theme.spacing.sm,
+  },
+  dateDivider: {
+    marginBottom: theme.spacing.md,
   },
 });

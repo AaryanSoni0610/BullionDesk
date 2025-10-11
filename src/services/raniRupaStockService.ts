@@ -41,6 +41,35 @@ export class RaniRupaStockService {
     }
   }
 
+  // Restore stock item with specific stock_id (used for transaction reversal)
+  static async restoreStock(stock_id: string, itemtype: 'rani' | 'rupu', weight: number, touch: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const stock = await this.getAllStock();
+      
+      // Check if stock with this ID already exists
+      const existingIndex = stock.findIndex(item => item.stock_id === stock_id);
+      if (existingIndex !== -1) {
+        return { success: false, error: 'Stock with this ID already exists' };
+      }
+
+      const restoredStock: RaniRupaStock = {
+        stock_id,
+        itemtype,
+        weight,
+        touch,
+        date: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
+        createdAt: new Date().toISOString(),
+      };
+
+      stock.push(restoredStock);
+      await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
   // Remove stock item by stock_id
   static async removeStock(stock_id: string): Promise<{ success: boolean; error?: string }> {
     try {
@@ -54,6 +83,30 @@ export class RaniRupaStockService {
       stock.splice(index, 1); // Remove the item from the array
       await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
 
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Update stock item weight by stock_id
+  static async updateStock(stock_id: string, updates: { weight?: number; touch?: number }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const stock = await this.getAllStock();
+      const index = stock.findIndex(item => item.stock_id === stock_id);
+
+      if (index === -1) {
+        return { success: false, error: 'Stock item not found' };
+      }
+
+      if (updates.weight !== undefined) {
+        stock[index].weight = updates.weight;
+      }
+      if (updates.touch !== undefined) {
+        stock[index].touch = updates.touch;
+      }
+
+      await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(stock));
       return { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

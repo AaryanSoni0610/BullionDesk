@@ -48,6 +48,22 @@ export const formatCurrency = (amount: number): string => {
 };
 
 /**
+ * Custom format for Rupu pure silver weight calculation
+ * Rounds up if decimal part is 0.600 or higher
+ * @param weight - The weight value
+ * @param touch - The touch percentage
+ * @returns Formatted pure weight
+ */
+export const customFormatPureSilver = (weight: number, touch: number): number => {
+  const pureWeight = (weight * touch) / 100;
+  const decimalPart = pureWeight - Math.floor(pureWeight);
+  if (decimalPart > 0.600) {
+    return Math.floor(pureWeight) + 1;
+  }
+  return Math.floor(pureWeight);
+};
+
+/**
  * Money formatting function - rounds to nearest 10 with specific rules
  * @param value - The money value as string
  * @returns Formatted money string

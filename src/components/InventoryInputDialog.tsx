@@ -35,6 +35,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   requireAtLeastOneNumeric = false,
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [selectModalVisible, setSelectModalVisible] = useState(false);
   const [currentSelectKey, setCurrentSelectKey] = useState<string>('');
@@ -44,12 +45,15 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   useEffect(() => {
     setValues(prevValues => {
       const newValues = { ...prevValues };
+      const newOriginalValues: Record<string, string> = {};
       inputs.forEach(input => {
         // Only set default value if this input doesn't already have a value
         if (!(input.key in newValues) || newValues[input.key] === '') {
           newValues[input.key] = input.value;
         }
+        newOriginalValues[input.key] = input.value;
       });
+      setOriginalValues(newOriginalValues);
       return newValues;
     });
     setErrors({});
@@ -85,6 +89,14 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
     if (errors[currentSelectKey]) {
       setErrors(prev => ({ ...prev, [currentSelectKey]: '' }));
     }
+  };
+
+  const hasValuesChanged = (): boolean => {
+    return inputs.some(input => {
+      const currentValue = values[input.key] || '';
+      const originalValue = originalValues[input.key] || '';
+      return currentValue !== originalValue;
+    });
   };
 
   const validateInputs = (): boolean => {
@@ -275,6 +287,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                 mode="contained"
                 onPress={handleSubmit}
                 style={styles.button}
+                disabled={!hasValuesChanged()}
               >
                 Next
               </Button>

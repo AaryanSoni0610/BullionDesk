@@ -221,7 +221,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       const cutNum = entry.cut || 0;
       const effectiveTouch = Math.max(0, touchNum - cutNum);
       const pureGold = entry.pureWeight || ((entry.weight || 0) * effectiveTouch) / 100;
-      const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Cut: ${entry.cut || 0}%, Pure: ${formatWeight(pureGold, false)}`;
+      const details = `Weight: ${entry.weight?.toFixed(3)}g, Touch: ${entry.touch?.toFixed(2)}%, Cut: ${entry.cut?.toFixed(2) || 0}%, Pure: ${formatWeight(pureGold, false)}`;
       if (entry.price !== undefined) {
         return `${details}, Price: ₹${formatIndianNumber(entry.price)}/10g`;
       }
@@ -230,7 +230,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
     if (entry.itemType === 'rupu') {
       const pureWeight = entry.pureWeight || ((entry.weight || 0) * (entry.touch || 0)) / 100;
-      const details = `Weight: ${entry.weight}g, Touch: ${entry.touch}%, Pure: ${formatWeight(pureWeight, true)}`;
+      const details = `Weight: ${entry.weight?.toFixed(1)}g, Touch: ${entry.touch?.toFixed(2)}%, Pure: ${formatWeight(pureWeight, true)}`;
       if (entry.price !== undefined) {
         return `${details}, Price: ₹${formatIndianNumber(entry.price)}/kg`;
       }
@@ -408,10 +408,10 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => {
     // Check if this specific entry should be locked
-    const hasMetalOnlyEntry = entries.some(e => (e.metalOnly === true));
-    const hasRaniRupaEntry = entries.some(e => (e.itemType === 'rani' || e.itemType === 'rupu'));
-    const isEntryLocked = areEntriesLocked || (!hasMetalOnlyEntry && hasRaniRupaEntry);
-    console.log('has metal only:', hasMetalOnlyEntry, 'Entry Locked:', isEntryLocked, 'Rani/Rupu Present:', hasRaniRupaEntry);
+    // For old transactions: lock all entries
+    // For editing current transactions: lock only rani/rupu entries that are not metal-only
+    const isEntryLocked = areEntriesLocked || (isEditing && (entry.itemType === 'rani' || entry.itemType === 'rupu') && !entry.metalOnly);
+    console.log(`Entry ${entry.itemType} locked:`, isEntryLocked, 'areEntriesLocked:', areEntriesLocked, 'isEditing:', isEditing, 'metalOnly:', entry.metalOnly);
 
     return (
     <Card key={entry.id} style={styles.entryCard} mode="outlined">
@@ -503,7 +503,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
             Save on: {formatDateDisplay(selectedSaveDate)}
           </Text>
           <Button
-            mode="text"
+            mode="contained"
             onPress={handleSelectSaveDatePress}
             disabled={isEditing}
             style={styles.dateButton}
@@ -1011,6 +1011,7 @@ const styles = StyleSheet.create({
   },
   dateButton: {
     marginLeft: theme.spacing.sm,
+    borderRadius: 20,
   },
   dateButtonContent: {
     paddingHorizontal: theme.spacing.sm,

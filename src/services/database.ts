@@ -424,11 +424,11 @@ export class DatabaseService {
                   console.error(`[STOCK_UPDATE] Failed to remove stock for purchase reversal: ${removeResult.error}`);
                 }
               } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-                // Add back stock for sales that were removed
+                // Add back stock for sales that were removed - use original stock_id
                 const touch = entry.touch || 100; // Default to 100% for rupu
-                const addResult = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
-                if (!(addResult.success && addResult.stock_id)) {
-                  console.error(`[STOCK_UPDATE] Failed to add back stock for sale reversal: ${addResult.error}`);
+                const restoreResult = await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
+                if (!restoreResult.success) {
+                  console.error(`[STOCK_UPDATE] Failed to restore stock for sale reversal: ${restoreResult.error}`);
                 }
               }
             } else {
@@ -1067,6 +1067,7 @@ export class DatabaseService {
       // Reverse stock changes for rani/rupa entries
       try {
         for (const entry of transaction.entries) {
+          console.log('stock id:', entry.stock_id);
           if (entry.stock_id) {
             if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
               // Remove stock for purchases that were added
@@ -1075,16 +1076,17 @@ export class DatabaseService {
                 console.error(`[STOCK_DELETE] Failed to remove stock for purchase reversal: ${removeResult.error}`);
               }
             } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-              // Add back stock for sales that were removed
-              // We need to recreate the stock item based on the entry data
+              // Add back stock for sales that were removed - use original stock_id
               const touch = entry.touch || 100; // Default to 100% for rupu
-              const addResult = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
-              if (! (addResult.success && addResult.stock_id)) {
-                console.error(`[STOCK_DELETE] Failed to add back stock for sale reversal: ${addResult.error}`);
+              const restoreResult = await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
+              if (!restoreResult.success) {
+                console.error(`[STOCK_DELETE] Failed to restore stock for sale reversal: ${restoreResult.error}`);
               }
             }
           } else {
-            console.error(`[STOCK_DELETE] Skipping entry - no stock_id found`);
+            if (entry.stock_id !== undefined) { // Explicitly check for undefined to allow empty string or null as valid IDs
+              console.error(`[STOCK_DELETE] Skipping entry - no stock_id found`);
+            }
           }
         }
       } catch (stockError) {

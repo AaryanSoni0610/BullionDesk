@@ -158,4 +158,4 @@ For support, feedback, or bug reports:
 
 ---
 
-**BullionDesk** - Streamlining bullion business management since 2023. Built with ❤️ by Aaryan Soni.
+**BullionDesk** - Streamlining bullion business management since 2025. Built with ❤️ by Aaryan Soni.

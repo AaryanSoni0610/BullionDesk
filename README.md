@@ -150,7 +150,7 @@ BullionDesk stores all data locally on your device and does not transmit any inf
 
 For support, feedback, or bug reports:
 - Create an issue on GitHub
-- Contact the developer: [Developer Contact Information]
+- Contact the developer: imaaryan3563@gmail.com
 
 ## Version History
 

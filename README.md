@@ -142,10 +142,6 @@ bulliondesk/
 - Ensure data integrity in business logic
 - Maintain consistent code formatting
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Privacy Policy
 
 BullionDesk stores all data locally on your device and does not transmit any information to external servers. Data is encrypted when backed up to external storage. See the full Privacy Policy in the app settings.

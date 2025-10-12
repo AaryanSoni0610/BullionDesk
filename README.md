@@ -1,4 +1,4 @@
-Collecting workspace information# BullionDesk
+# BullionDesk
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders. Built with React Native and Expo, BullionDesk helps manage customer balances, transactions, inventory, and provides detailed reporting capabilities.
 

@@ -908,7 +908,7 @@ export const LedgerScreen: React.FC = () => {
           <div class="chips">
             <span class="chip">In: ${formatCurrency(data.cashFlow.totalIn)}</span>
             <span class="chip">Out: ${formatCurrency(data.cashFlow.totalOut)}</span>
-            <span class="chip">Net: ${formatCurrency(data.cashFlow.moneyIn - data.cashFlow.totalOut)}</span>
+            <span class="chip">Net: ${formatCurrency(data.cashFlow.moneyIn)}</span>
           </div>
         </body>
         </html>

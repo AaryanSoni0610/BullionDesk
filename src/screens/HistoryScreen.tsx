@@ -447,52 +447,120 @@ export const HistoryScreen: React.FC = () => {
               <Divider style={styles.expandedDivider} />
               {transaction.entries.map((entry, index) => (
                 <React.Fragment key={index}>
-                  <View style={styles.entryRow}>
-                    <Text variant="bodySmall" style={styles.entryType}>
-                      {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
-                        if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                          const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
-                            e.itemType === entry.itemType && e.type === entry.type
+                  {/* Special handling for rani/rupa purchase items */}
+                  {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
+                    <>
+                      <View style={styles.entryRow}>
+                        <Text variant="bodySmall" style={styles.entryType}>
+                          ↙️ {getItemDisplayName(entry)}{(() => {
+                            const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                              e.itemType === entry.itemType && e.type === entry.type
+                            );
+                            const totalCount = transaction.entries.filter(e => 
+                              e.itemType === entry.itemType && e.type === entry.type
+                            ).length;
+                            if (totalCount > 1) {
+                              return ` ${sameTypeEntries.length}`;
+                            }
+                            return '';
+                          })()}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.entryDetails}>
+                          {(() => {
+                            const weight = entry.weight || 0;
+                            const touch = entry.touch || 100;
+                            const cut = entry.cut || 0;
+                            const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                            const pureWeight = (weight * effectiveTouch) / 100;
+                            const formattedPureWeight = entry.itemType === 'rani' 
+                              ? formatPureGoldPrecise(pureWeight) 
+                              : formatPureSilver(pureWeight);
+                            
+                            const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                            // For rani purchases, format pure weight with last digit as 0
+                            const displayPureWeight = entry.itemType === 'rani' && entry.type === 'purchase'
+                              ? (Math.floor(pureWeight * 100) / 100).toFixed(3)
+                              : formattedPureWeight.toFixed(fixedDigits);
+                            return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${displayPureWeight}g`;
+                          })()}
+                        </Text>
+                      </View>
+                      {!entry.metalOnly && entry.price && entry.price > 0 && (() => {
+                        // For rani purchases, don't show price if paired with gold999/gold995 sell at same price
+                        if (entry.itemType === 'rani' && entry.type === 'purchase') {
+                          const hasMatchingGoldSell = transaction.entries.some(otherEntry => 
+                            (otherEntry.itemType === 'gold999' || otherEntry.itemType === 'gold995') && 
+                            otherEntry.type === 'sell' && 
+                            otherEntry.price === entry.price
                           );
-                          const totalCount = transaction.entries.filter(e => 
-                            e.itemType === entry.itemType && e.type === entry.type
-                          ).length;
-                          if (totalCount > 1) {
-                            return ` ${sameTypeEntries.length}`;
-                          }
+                          return !hasMatchingGoldSell;
                         }
-                        return '';
-                      })()}
-                    </Text>
-                    <Text variant="bodySmall" style={styles.entryDetails}>
-                      {entry.weight && (() => {
-                        // Special formatting for rani/rupu sell items
-                        if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                          const weight = entry.weight || 0;
-                          const touch = entry.touch || 100;
-                          const cut = entry.cut || 0;
-                          const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                          const pureWeight = (weight * effectiveTouch) / 100;
-                          const formattedPureWeight = entry.itemType === 'rani' 
-                            ? formatPureGoldPrecise(pureWeight) 
-                            : formatPureSilver(pureWeight);
-                          
+                        // For rupu purchases, don't show price if paired with silver sell at same price
+                        if (entry.itemType === 'rupu' && entry.type === 'purchase') {
+                          const hasMatchingSilverSell = transaction.entries.some(otherEntry => 
+                            otherEntry.itemType === 'silver' && 
+                            otherEntry.type === 'sell' && 
+                            otherEntry.price === entry.price
+                          );
+                          return !hasMatchingSilverSell;
+                        }
+                        return true;
+                      })() && (
+                        <View style={styles.entryRow}>
+                          <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
+                            ₹{formatIndianNumber(entry.price)}
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.entryRow}>
+                      <Text variant="bodySmall" style={styles.entryType}>
+                        {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
+                          if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                            const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                              e.itemType === entry.itemType && e.type === entry.type
+                            );
+                            const totalCount = transaction.entries.filter(e => 
+                              e.itemType === entry.itemType && e.type === entry.type
+                            ).length;
+                            if (totalCount > 1) {
+                              return ` ${sameTypeEntries.length}`;
+                            }
+                          }
+                          return '';
+                        })()}
+                      </Text>
+                      <Text variant="bodySmall" style={styles.entryDetails}>
+                        {entry.weight && (() => {
+                          // Special formatting for rani/rupu sell items
+                          if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                            const weight = entry.weight || 0;
+                            const touch = entry.touch || 100;
+                            const cut = entry.cut || 0;
+                            const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                            const pureWeight = (weight * effectiveTouch) / 100;
+                            const formattedPureWeight = entry.itemType === 'rani' 
+                              ? formatPureGoldPrecise(pureWeight) 
+                              : formatPureSilver(pureWeight);
+                            
 
-                          const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-                          if (entry.type === 'sell') {
-                            return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                            const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                            if (entry.type === 'sell') {
+                              return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                            } else {
+                              return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
+                            }
                           } else {
-                            return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
+                            // Default formatting for other items
+                            const isGold = entry.itemType.includes('gold');
+                            const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                            return `${formattedWeight}g`;
                           }
-                        } else {
-                          // Default formatting for other items
-                          const isGold = entry.itemType.includes('gold');
-                          const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
-                          return `${formattedWeight}g`;
-                        }
-                      })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
-                    </Text>
-                  </View>
+                        })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
+                      </Text>
+                    </View>
+                  )}
                   
                   {/* Show Rupu silver returns */}
                   {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
@@ -578,51 +646,119 @@ export const HistoryScreen: React.FC = () => {
                   <Divider style={styles.expandedDivider} />
                   {transaction.entries.map((entry, index) => (
                     <React.Fragment key={index}>
-                      <View style={styles.entryRow}>
-                        <Text variant="bodySmall" style={styles.entryType}>
-                          {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
-                            if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                              const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
-                                e.itemType === entry.itemType && e.type === entry.type
+                      {/* Special handling for rani/rupa purchase items */}
+                      {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
+                        <>
+                          <View style={styles.entryRow}>
+                            <Text variant="bodySmall" style={styles.entryType}>
+                              ↙️ {getItemDisplayName(entry)}{(() => {
+                                const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                );
+                                const totalCount = transaction.entries.filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                ).length;
+                                if (totalCount > 1) {
+                                  return ` ${sameTypeEntries.length}`;
+                                }
+                                return '';
+                              })()}
+                            </Text>
+                            <Text variant="bodySmall" style={styles.entryDetails}>
+                              {(() => {
+                                const weight = entry.weight || 0;
+                                const touch = entry.touch || 100;
+                                const cut = entry.cut || 0;
+                                const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                                const pureWeight = (weight * effectiveTouch) / 100;
+                                const formattedPureWeight = entry.itemType === 'rani' 
+                                  ? formatPureGoldPrecise(pureWeight) 
+                                  : formatPureSilver(pureWeight);
+                                
+                                const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                                // For rani purchases, format pure weight with last digit as 0
+                                const displayPureWeight = entry.itemType === 'rani' && entry.type === 'purchase'
+                                  ? (Math.floor(pureWeight * 100) / 100).toFixed(3)
+                                  : formattedPureWeight.toFixed(fixedDigits);
+                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${displayPureWeight}g`;
+                              })()}
+                            </Text>
+                          </View>
+                          {!entry.metalOnly && entry.price && entry.price > 0 && (() => {
+                            // For rani purchases, don't show price if paired with gold999/gold995 sell at same price
+                            if (entry.itemType === 'rani' && entry.type === 'purchase') {
+                              const hasMatchingGoldSell = transaction.entries.some(otherEntry => 
+                                (otherEntry.itemType === 'gold999' || otherEntry.itemType === 'gold995') && 
+                                otherEntry.type === 'sell' && 
+                                otherEntry.price === entry.price
                               );
-                              const totalCount = transaction.entries.filter(e => 
-                                e.itemType === entry.itemType && e.type === entry.type
-                              ).length;
-                              if (totalCount > 1) {
-                                return ` ${sameTypeEntries.length}`;
-                              }
+                              return !hasMatchingGoldSell;
                             }
-                            return '';
-                          })()}
-                        </Text>
-                        <Text variant="bodySmall" style={styles.entryDetails}>
-                          {entry.weight && (() => {
-                            // Special formatting for rani/rupu sell items
-                            if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                              const weight = entry.weight || 0;
-                              const touch = entry.touch || 100;
-                              const cut = entry.cut || 0;
-                              const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                              const pureWeight = (weight * effectiveTouch) / 100;
-                              const formattedPureWeight = entry.itemType === 'rani' 
-                                ? formatPureGoldPrecise(pureWeight) 
-                                : formatPureSilver(pureWeight);
-                              
-                              const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-                              if (entry.type === 'sell') {
-                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                            // For rupu purchases, don't show price if paired with silver sell at same price
+                            if (entry.itemType === 'rupu' && entry.type === 'purchase') {
+                              const hasMatchingSilverSell = transaction.entries.some(otherEntry => 
+                                otherEntry.itemType === 'silver' && 
+                                otherEntry.type === 'sell' && 
+                                otherEntry.price === entry.price
+                              );
+                              return !hasMatchingSilverSell;
+                            }
+                            return true;
+                          })() && (
+                            <View style={styles.entryRow}>
+                              <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
+                                ₹{formatIndianNumber(entry.price)}
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
+                        <View style={styles.entryRow}>
+                          <Text variant="bodySmall" style={styles.entryType}>
+                            {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
+                              if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                                const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                );
+                                const totalCount = transaction.entries.filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                ).length;
+                                if (totalCount > 1) {
+                                  return ` ${sameTypeEntries.length}`;
+                                }
+                              }
+                              return '';
+                            })()}
+                          </Text>
+                          <Text variant="bodySmall" style={styles.entryDetails}>
+                            {entry.weight && (() => {
+                              // Special formatting for rani/rupu sell items
+                              if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                                const weight = entry.weight || 0;
+                                const touch = entry.touch || 100;
+                                const cut = entry.cut || 0;
+                                const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                                const pureWeight = (weight * effectiveTouch) / 100;
+                                const formattedPureWeight = entry.itemType === 'rani' 
+                                  ? formatPureGoldPrecise(pureWeight) 
+                                  : formatPureSilver(pureWeight);
+                                
+                                const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                                if (entry.type === 'sell') {
+                                  return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                                } else {
+                                  return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
+                                }
                               } else {
-                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
+                                // Default formatting for other items
+                                const isGold = entry.itemType.includes('gold');
+                                const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                                return `${formattedWeight}g`;
                               }
-                            } else {
-                              // Default formatting for other items
-                              const isGold = entry.itemType.includes('gold');
-                              const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
-                              return `${formattedWeight}g`;
-                            }
-                          })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
-                        </Text>
-                      </View>
+                            })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
+                          </Text>
+                        </View>
+                      )}
                       
                       {/* Show Rupu silver returns */}
                       {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
@@ -804,7 +940,7 @@ export const HistoryScreen: React.FC = () => {
                 mode="contained" 
                 onPress={() => {
                   setSearchQuery('');
-                  setSelectedFilter('all');
+                  setSelectedFilter('today');
                   performSearch('');
                 }}
                 style={styles.clearFiltersButton}

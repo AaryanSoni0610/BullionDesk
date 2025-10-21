@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
+import { View, Animated, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { PaperProvider, Snackbar } from 'react-native-paper';
+import { PaperProvider, Snackbar, Text } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFonts } from 'expo-font';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useNavigation, useRoute, useNavigationState } from '@react-navigation/native';
 import {
   Roboto_100Thin,
   Roboto_300Light,
@@ -33,10 +38,126 @@ import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
+import { TradeService } from './src/services/tradeService';
 
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
 
 type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell';
+
+// Custom horizontal sliding interpolator for swipe gestures
+const horizontalSlideInterpolator = ({ current, next, inverted, layouts: { screen } }: any) => {
+  const translateX = Animated.multiply(
+    current.progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [screen.width, 0],
+      extrapolate: 'clamp',
+    }),
+    inverted
+  );
+
+  return {
+    cardStyle: {
+      transform: [{ translateX }],
+    },
+  };
+};
+
+// Custom screen style interpolator for smooth transitions
+const horizontalScreenInterpolator = ({ current, next, inverted, layouts: { screen } }: any) => {
+  const translateX = current.progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [screen.width, 0],
+  });
+
+  return {
+    transform: [{ translateX }],
+  };
+};
+
+// Swipe-enabled wrapper component for tab screens
+const SwipeableTabScreen = React.forwardRef<View, {
+  children: React.ReactNode;
+  currentTab: string;
+}>(({ children, currentTab }, ref) => {
+  const navigation = useNavigation();
+
+  const onHandlerStateChange = (event: any) => {
+    if (event.nativeEvent.state === State.END) {
+      const { translationX, velocityX } = event.nativeEvent;
+      
+      // Minimum swipe distance and velocity thresholds
+      const minSwipeDistance = 50;
+      const minSwipeVelocity = 500;
+      
+      // Determine swipe direction and navigate accordingly
+      if (Math.abs(translationX) > minSwipeDistance && Math.abs(velocityX) > minSwipeVelocity) {
+        if (translationX > 0) {
+          // Swipe right - go to previous tab
+          switch (currentTab) {
+            case 'History':
+              (navigation as any).navigate('Home');
+              break;
+            case 'Trade':
+              (navigation as any).navigate('History');
+              break;
+            case 'Ledger':
+              (navigation as any).navigate('Trade');
+              break;
+          }
+        } else {
+          // Swipe left - go to next tab
+          switch (currentTab) {
+            case 'Home':
+              (navigation as any).navigate('History');
+              break;
+            case 'History':
+              (navigation as any).navigate('Trade');
+              break;
+            case 'Trade':
+              (navigation as any).navigate('Ledger');
+              break;
+          }
+        }
+      }
+    }
+  };
+
+  return (
+    <PanGestureHandler
+      onHandlerStateChange={onHandlerStateChange}
+    >
+      <View ref={ref} style={{ flex: 1 }}>
+        {children}
+      </View>
+    </PanGestureHandler>
+  );
+});
+
+// Wrapped screen components with swipe functionality
+const SwipeableHomeScreen = () => (
+  <SwipeableTabScreen currentTab="Home">
+    <HomeScreen />
+  </SwipeableTabScreen>
+);
+
+const SwipeableHistoryScreen = () => (
+  <SwipeableTabScreen currentTab="History">
+    <HistoryScreen />
+  </SwipeableTabScreen>
+);
+
+const SwipeableTradeScreen = () => (
+  <SwipeableTabScreen currentTab="Trade">
+    <TradeScreen />
+  </SwipeableTabScreen>
+);
+
+const SwipeableLedgerScreen = () => (
+  <SwipeableTabScreen currentTab="Ledger">
+    <LedgerScreen />
+  </SwipeableTabScreen>
+);
 
 // Main App Component with Context
 interface AppContentProps {
@@ -87,84 +208,97 @@ const AppContent: React.FC<AppContentProps> = ({
     onNavigateToEntry();
   };
 
-  // Main Tab Navigator Component
-  const MainTabNavigator = () => (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ focused }) => {
-          let iconName: keyof typeof Icon.glyphMap;
-          
-          switch (route.name) {
-            case 'Home':
-              iconName = focused ? 'home' : 'home-outline';
-              break;
-            case 'History':
-              iconName = focused ? 'history' : 'clock-outline';
-              break;
-            case 'Ledger':
-              iconName = focused ? 'chart-line' : 'chart-line-variant';
-              break;
-            case 'Trade':
-              iconName = focused ? 'swap-vertical-circle-outline' : 'swap-vertical';
-              break;
-            default:
-              iconName = 'circle';
-          }
-          
+  // Main Tab Navigator Component with Stack for smooth transitions
+  const MainTabNavigator = () => {
+    const navigation = useNavigation();
+    const currentRouteName = useNavigationState(state => {
+      if (!state) return 'Home';
+      const route = state.routes[state.index];
+      return route?.name || 'Home';
+    });
+    
+    return (
+      <View style={{ flex: 1 }}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            cardStyleInterpolator: horizontalSlideInterpolator,
+            transitionSpec: {
+              open: {
+                animation: 'timing',
+                config: {
+                  duration: 300,
+                },
+              },
+              close: {
+                animation: 'timing',
+                config: {
+                  duration: 300,
+                },
+              },
+            },
+          }}
+        >
+        <Stack.Screen name="Home" component={SwipeableHomeScreen} />
+        <Stack.Screen name="History" component={SwipeableHistoryScreen} />
+        <Stack.Screen name="Trade" component={SwipeableTradeScreen} />
+        <Stack.Screen name="Ledger" component={SwipeableLedgerScreen} />
+      </Stack.Navigator>
+      
+      {/* Custom Bottom Tab Bar */}
+      <View style={{
+        height: theme.dimensions.bottomNavHeight,
+        backgroundColor: theme.colors.surface,
+        elevation: theme.elevation.level3,
+        borderTopWidth: 0,
+        flexDirection: 'row',
+      }}>
+        {[
+          { name: 'Home', label: 'Home', focusedIcon: 'home', unfocusedIcon: 'home-outline' },
+          { name: 'History', label: 'History', focusedIcon: 'history', unfocusedIcon: 'clock-outline' },
+          { name: 'Trade', label: 'Trade', focusedIcon: 'swap-vertical-circle-outline', unfocusedIcon: 'swap-vertical' },
+          { name: 'Ledger', label: 'Ledger', focusedIcon: 'chart-line', unfocusedIcon: 'chart-line-variant' },
+        ].map((tab) => {
+          const isFocused = currentRouteName === tab.name;
           return (
-            <Icon 
-              name={iconName} 
-              size={24} 
-              color={focused ? theme.colors.primary : theme.colors.onSurfaceVariant}
-            />
+            <TouchableOpacity
+              key={tab.name}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingVertical: 4,
+              }}
+              onPress={() => {
+                (navigation as any).navigate(tab.name);
+              }}
+            >
+              <Icon 
+                name={(isFocused ? tab.focusedIcon : tab.unfocusedIcon) as keyof typeof Icon.glyphMap}
+                size={24}
+                color={isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant}
+              />
+              <Text style={{
+                fontSize: 12,
+                fontFamily: 'Roboto_500Medium',
+                marginTop: 2,
+                color: isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant,
+              }}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
           );
-        },
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-        tabBarStyle: {
-          height: theme.dimensions.bottomNavHeight,
-          backgroundColor: theme.colors.surface,
-          elevation: theme.elevation.level3,
-          borderTopWidth: 0,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontFamily: 'Roboto_500Medium',
-          marginBottom: 4,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 4,
-        },
-      })}
-    >
-      <Tab.Screen 
-        name="Home" 
-        component={HomeScreen}
-        options={{ tabBarLabel: 'Home' }}
-      />
-      <Tab.Screen 
-        name="History" 
-        component={HistoryScreen}
-        options={{ tabBarLabel: 'History' }}
-      />
-      <Tab.Screen 
-        name="Trade" 
-        component={TradeScreen}
-        options={{ tabBarLabel: 'Trade' }}
-      />
-      <Tab.Screen 
-        name="Ledger" 
-        component={LedgerScreen}
-        options={{ tabBarLabel: 'Ledger' }}
-      />
-    </Tab.Navigator>
-  );
+        })}
+      </View>
+    </View>
+    );
+  };
 
   return (
-    <SafeAreaProvider>
-      <PaperProvider theme={theme}>
-        <NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <PaperProvider theme={theme}>
+          <NavigationContainer>
           {appState === 'tabs' && (
             <MainTabNavigator />
           )}
@@ -247,6 +381,7 @@ const AppContent: React.FC<AppContentProps> = ({
         </NavigationContainer>
       </PaperProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };
 
@@ -279,6 +414,9 @@ export default function App() {
       if (isAutoBackupEnabled) {
         await BackupService.registerBackgroundTask();
       }
+
+      // Register background trade cleanup task
+      await TradeService.registerBackgroundTask();
 
       // Check if immediate backup is needed
       const shouldBackup = await BackupService.shouldPerformAutoBackup();

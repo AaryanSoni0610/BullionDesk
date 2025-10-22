@@ -8,9 +8,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFonts } from 'expo-font';
-import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useNavigation, useRoute, useNavigationState } from '@react-navigation/native';
+import { useNavigation, useNavigationState } from '@react-navigation/native';
 import {
   Roboto_100Thin,
   Roboto_300Light,
@@ -62,102 +61,6 @@ const horizontalSlideInterpolator = ({ current, next, inverted, layouts: { scree
     },
   };
 };
-
-// Custom screen style interpolator for smooth transitions
-const horizontalScreenInterpolator = ({ current, next, inverted, layouts: { screen } }: any) => {
-  const translateX = current.progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [screen.width, 0],
-  });
-
-  return {
-    transform: [{ translateX }],
-  };
-};
-
-// Swipe-enabled wrapper component for tab screens
-const SwipeableTabScreen = React.forwardRef<View, {
-  children: React.ReactNode;
-  currentTab: string;
-}>(({ children, currentTab }, ref) => {
-  const navigation = useNavigation();
-
-  const onHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.state === State.END) {
-      const { translationX, velocityX } = event.nativeEvent;
-      
-      // Minimum swipe distance and velocity thresholds
-      const minSwipeDistance = 50;
-      const minSwipeVelocity = 500;
-      
-      // Determine swipe direction and navigate accordingly
-      if (Math.abs(translationX) > minSwipeDistance && Math.abs(velocityX) > minSwipeVelocity) {
-        if (translationX > 0) {
-          // Swipe right - go to previous tab
-          switch (currentTab) {
-            case 'History':
-              (navigation as any).navigate('Home');
-              break;
-            case 'Trade':
-              (navigation as any).navigate('History');
-              break;
-            case 'Ledger':
-              (navigation as any).navigate('Trade');
-              break;
-          }
-        } else {
-          // Swipe left - go to next tab
-          switch (currentTab) {
-            case 'Home':
-              (navigation as any).navigate('History');
-              break;
-            case 'History':
-              (navigation as any).navigate('Trade');
-              break;
-            case 'Trade':
-              (navigation as any).navigate('Ledger');
-              break;
-          }
-        }
-      }
-    }
-  };
-
-  return (
-    <PanGestureHandler
-      onHandlerStateChange={onHandlerStateChange}
-    >
-      <View ref={ref} style={{ flex: 1 }}>
-        {children}
-      </View>
-    </PanGestureHandler>
-  );
-});
-
-// Wrapped screen components with swipe functionality
-const SwipeableHomeScreen = () => (
-  <SwipeableTabScreen currentTab="Home">
-    <HomeScreen />
-  </SwipeableTabScreen>
-);
-
-const SwipeableHistoryScreen = () => (
-  <SwipeableTabScreen currentTab="History">
-    <HistoryScreen />
-  </SwipeableTabScreen>
-);
-
-const SwipeableTradeScreen = () => (
-  <SwipeableTabScreen currentTab="Trade">
-    <TradeScreen />
-  </SwipeableTabScreen>
-);
-
-const SwipeableLedgerScreen = () => (
-  <SwipeableTabScreen currentTab="Ledger">
-    <LedgerScreen />
-  </SwipeableTabScreen>
-);
 
 // Main App Component with Context
 interface AppContentProps {
@@ -239,10 +142,10 @@ const AppContent: React.FC<AppContentProps> = ({
             },
           }}
         >
-        <Stack.Screen name="Home" component={SwipeableHomeScreen} />
-        <Stack.Screen name="History" component={SwipeableHistoryScreen} />
-        <Stack.Screen name="Trade" component={SwipeableTradeScreen} />
-        <Stack.Screen name="Ledger" component={SwipeableLedgerScreen} />
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="History" component={HistoryScreen} />
+        <Stack.Screen name="Trade" component={TradeScreen} />
+        <Stack.Screen name="Ledger" component={LedgerScreen} />
       </Stack.Navigator>
       
       {/* Custom Bottom Tab Bar */}

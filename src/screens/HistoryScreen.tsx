@@ -507,13 +507,13 @@ export const HistoryScreen: React.FC = () => {
                           return !hasMatchingSilverSell;
                         }
                         return true;
-                      })() && (
+                      })() ? (
                         <View style={styles.entryRow}>
                           <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
                             ₹{formatIndianNumber(entry.price)}
                           </Text>
                         </View>
-                      )}
+                      ) : null}
                     </>
                   ) : (
                     <View style={styles.entryRow}>
@@ -706,13 +706,13 @@ export const HistoryScreen: React.FC = () => {
                               return !hasMatchingSilverSell;
                             }
                             return true;
-                          })() && (
+                          })() ? (
                             <View style={styles.entryRow}>
                               <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
                                 ₹{formatIndianNumber(entry.price)}
                               </Text>
                             </View>
-                          )}
+                          ) : null}
                         </>
                       ) : (
                         <View style={styles.entryRow}>

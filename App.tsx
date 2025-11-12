@@ -125,21 +125,7 @@ const AppContent: React.FC<AppContentProps> = ({
         <Stack.Navigator
           screenOptions={{
             headerShown: false,
-            cardStyleInterpolator: horizontalSlideInterpolator,
-            transitionSpec: {
-              open: {
-                animation: 'timing',
-                config: {
-                  duration: 300,
-                },
-              },
-              close: {
-                animation: 'timing',
-                config: {
-                  duration: 300,
-                },
-              },
-            },
+            animationEnabled: false,
           }}
         >
         <Stack.Screen name="Home" component={HomeScreen} />

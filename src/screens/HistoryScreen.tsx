@@ -64,8 +64,10 @@ export const HistoryScreen: React.FC = () => {
     // Check if transaction is fully settled (no remaining balance)
     const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
     const isSettled = remainingBalance <= 0;
-    
-    return isSettled && isOld;
+
+    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
+
+    return isSettled && isOld && !isMetalOnly;
   };
 
   // Handle delete transaction

@@ -130,7 +130,7 @@ export const LedgerScreen: React.FC = () => {
 
   useEffect(() => {
     loadInventoryData();
-  }, [selectedPeriod]);
+  }, [selectedPeriod, customDate]);
 
   // Handle hardware back button - navigate to home screen
   useFocusEffect(
@@ -163,13 +163,17 @@ export const LedgerScreen: React.FC = () => {
         DatabaseService.getAllLedgerEntries()
       ]);
 
-      // Filter transactions by selected period
+      // Filter transactions by selected period (for display only)
       const filteredTrans = filterTransactionsByPeriod(transactions);
       
-      // Filter ledger entries by selected period
+      // Filter ledger entries by selected period (for display only)
       const filteredLedger = filterLedgerEntriesByPeriod(allLedgerEntries);
 
-      const data = await calculateInventoryData(filteredTrans, customers, filteredLedger);
+      // Get transactions up to the end of selected period (for cumulative inventory calculation)
+      const transactionsUpToDate = getTransactionsUpToDate(transactions);
+      const ledgerEntriesUpToDate = getLedgerEntriesUpToDate(allLedgerEntries);
+
+      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
       setInventoryData(data);
       setFilteredTransactions(filteredTrans);
       setFilteredLedgerEntries(filteredLedger);
@@ -371,7 +375,69 @@ export const LedgerScreen: React.FC = () => {
     }
   };
 
-  const calculateInventoryData = async (transactions: Transaction[], customers: Customer[], ledgerEntries: LedgerEntry[]): Promise<InventoryData> => {
+  // Get all transactions up to and including the selected date (for cumulative inventory calculation)
+  const getTransactionsUpToDate = (transactions: Transaction[]) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+    let endDate: Date;
+    switch (selectedPeriod) {
+      case 'today':
+        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
+        break;
+      case 'yesterday':
+        endDate = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
+        break;
+      case 'custom':
+        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+        endDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+        break;
+      default:
+        endDate = new Date();
+    }
+
+    return transactions.filter(t => {
+      const transDate = new Date(t.date);
+      return transDate <= endDate;
+    });
+  };
+
+  // Get all ledger entries up to and including the selected date (for cumulative inventory calculation)
+  const getLedgerEntriesUpToDate = (entries: LedgerEntry[]) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+    let endDate: Date;
+    switch (selectedPeriod) {
+      case 'today':
+        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
+        break;
+      case 'yesterday':
+        endDate = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
+        break;
+      case 'custom':
+        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+        endDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+        break;
+      default:
+        endDate = new Date();
+    }
+
+    return entries.filter(e => {
+      const entryDate = new Date(e.date);
+      return entryDate <= endDate;
+    });
+  };
+
+  const calculateInventoryData = async (
+    transactionsUpToDate: Transaction[], 
+    customers: Customer[], 
+    ledgerEntriesUpToDate: LedgerEntry[],
+    dayTransactions: Transaction[],
+    dayLedgerEntries: LedgerEntry[]
+  ): Promise<InventoryData> => {
     let totalSales = 0;
     let totalPurchases = 0;
     let pendingTransactions = 0;
@@ -389,15 +455,14 @@ export const LedgerScreen: React.FC = () => {
     silverInventory.silver = baseInventory.silver;
     silverInventory.rupu = baseInventory.rupu;
 
-    transactions.forEach(transaction => {
+    // Calculate cumulative inventory using all transactions up to the selected date
+    transactionsUpToDate.forEach(transaction => {
       if (transaction.status === 'pending') {
         pendingTransactions++;
       }
 
       transaction.entries.forEach(entry => {
         if (entry.type === 'sell') {
-          totalSales += entry.subtotal;
-          
           // Track inventory going out
           if (entry.weight) {
             // For rani: deduct actual rani weight from rani inventory and actual gold given from gold999
@@ -421,8 +486,6 @@ export const LedgerScreen: React.FC = () => {
             }
           }
         } else if (entry.type === 'purchase') {
-          totalPurchases += entry.subtotal;
-          
           // Track inventory coming in
           if (entry.weight) {
             // For rupu with silver return: add rupu, subtract silver return
@@ -461,6 +524,17 @@ export const LedgerScreen: React.FC = () => {
       });
     });
 
+    // Calculate totalSales and totalPurchases from day's transactions only
+    dayTransactions.forEach(transaction => {
+      transaction.entries.forEach(entry => {
+        if (entry.type === 'sell') {
+          totalSales += entry.subtotal;
+        } else if (entry.type === 'purchase') {
+          totalPurchases += entry.subtotal;
+        }
+      });
+    });
+
     const netBalance = customers.reduce((sum, customer) => sum + customer.balance, 0);
     
     // Calculate inventory totals (excluding rani from gold and rupu from silver)
@@ -476,13 +550,17 @@ export const LedgerScreen: React.FC = () => {
     silverInventory.rupu = DatabaseService.roundInventoryValue(silverInventory.rupu, 'rupu');
     silverInventory.total = DatabaseService.roundInventoryValue(silverInventory.total, 'silver'); // Use silver precision for total
 
-    // Calculate actual money inventory from ledger entries: base money + sum(amountReceived) - sum(amountGiven)
-    const totalMoneyReceived = ledgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
-    const totalMoneyGiven = ledgerEntries.reduce((sum, entry) => sum + entry.amountGiven, 0);
+    // Calculate actual money inventory from all ledger entries up to date: base money + sum(amountReceived) - sum(amountGiven)
+    const totalMoneyReceived = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountReceived, 0);
+    const totalMoneyGiven = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountGiven, 0);
     const actualMoneyInventory = DatabaseService.roundInventoryValue(baseInventory.money + totalMoneyReceived - totalMoneyGiven, 'money');
 
+    // Calculate day's cash flow from day's ledger entries only
+    const dayMoneyReceived = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
+    const dayMoneyGiven = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountGiven, 0);
+
     return {
-      totalTransactions: transactions.length,
+      totalTransactions: dayTransactions.length,
       totalCustomers: customers.length,
       totalSales,
       totalPurchases,
@@ -491,10 +569,10 @@ export const LedgerScreen: React.FC = () => {
       goldInventory,
       silverInventory,
       cashFlow: {
-        totalIn: totalMoneyReceived,
-        totalOut: totalMoneyGiven,
-        netFlow: totalMoneyReceived - totalMoneyGiven,
-        moneyIn: actualMoneyInventory,  // Actual cash holdings
+        totalIn: dayMoneyReceived,
+        totalOut: dayMoneyGiven,
+        netFlow: dayMoneyReceived - dayMoneyGiven,
+        moneyIn: actualMoneyInventory,  // Actual cumulative cash holdings
         moneyOut: 0  // Not used for actual inventory
       }
     };
@@ -522,8 +600,19 @@ export const LedgerScreen: React.FC = () => {
         return entryDate >= selectedDate && entryDate <= endOfSelectedDay;
       });
 
+      // Get transactions up to the selected date for cumulative inventory
+      const transactionsUpToDate = transactions.filter(t => {
+        const transDate = new Date(t.date);
+        return transDate <= endOfSelectedDay;
+      });
+
+      const ledgerEntriesUpToDate = allLedgerEntries.filter(e => {
+        const entryDate = new Date(e.date);
+        return entryDate <= endOfSelectedDay;
+      });
+
       // Calculate inventory data
-      const data = await calculateInventoryData(filteredTrans, customers, filteredLedger);
+      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
 
       // Get entries for each subledger
       const goldEntries: EntryData[] = [];
@@ -1333,7 +1422,7 @@ export const LedgerScreen: React.FC = () => {
           {/* Gold Inventory Card */}
           <InventoryCard
             title="Gold"
-            value={formatWeight(inventoryData.goldInventory.total)}
+            value={formatWeight(inventoryData.goldInventory.gold999 + inventoryData.goldInventory.gold995)}
             icon="gold"
             backgroundColor="#FFF8E1"
             iconColor="#E65100"
@@ -1344,7 +1433,7 @@ export const LedgerScreen: React.FC = () => {
           {/* Silver Inventory Card */}
           <InventoryCard
             title="Silver"
-            value={formatWeight(inventoryData.silverInventory.total, true)}
+            value={formatWeight(inventoryData.silverInventory.silver, true)}
             icon="circle-outline"
             backgroundColor="#ECEFF1"
             iconColor="#455A64"

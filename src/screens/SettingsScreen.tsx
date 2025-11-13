@@ -7,7 +7,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as SecureStore from 'expo-secure-store';
 import { theme } from '../theme';
 import { useAppContext } from '../context/AppContext';
-import { DatabaseService } from '../services/database';
+import { CustomerService } from '../services/customer.service';
+import { InventoryService } from '../services/inventory.service';
+import { DatabaseService } from '../services/database.sqlite';
 import { NotificationService } from '../services/notificationService';
 import { BackupService } from '../services/backupService';
 import { EncryptionService } from '../services/encryptionService';
@@ -55,9 +57,9 @@ export const SettingsScreen: React.FC = () => {
 
         // Load customers and base inventory
         const [customersData, inventoryData, effectsData] = await Promise.all([
-          DatabaseService.getAllCustomers(),
-          DatabaseService.getBaseInventory(),
-          DatabaseService.calculateOpeningBalanceEffects()
+          CustomerService.getAllCustomers(),
+          InventoryService.getBaseInventory(),
+          InventoryService.calculateOpeningBalanceEffects()
         ]);
         
         setCustomers(customersData);
@@ -198,7 +200,7 @@ export const SettingsScreen: React.FC = () => {
         money: updatedData.money
       };
 
-      DatabaseService.setBaseInventory(finalInventory).then(success => {
+      InventoryService.setBaseInventory(finalInventory).then(success => {
         if (success) {
           setBaseInventory(finalInventory);
           showAlert('Success', 'Base inventory has been set successfully.');
@@ -629,14 +631,14 @@ export const SettingsScreen: React.FC = () => {
             description={
               isLoadingInventory
                 ? "Loading..."
-                : `Gold: ${DatabaseService.roundInventoryValue((baseInventory?.gold999 + baseInventory?.gold995 || 0), 'gold999')}g, Silver: ${DatabaseService.roundInventoryValue(baseInventory?.silver || 0, 'silver')}g, Money: ₹${formatIndianNumber(DatabaseService.roundInventoryValue(baseInventory?.money || 0, 'money'))}`
+                : `Gold: ${InventoryService.roundInventoryValue((baseInventory?.gold999 + baseInventory?.gold995 || 0), 'gold999')}g, Silver: ${InventoryService.roundInventoryValue(baseInventory?.silver || 0, 'silver')}g, Money: ₹${formatIndianNumber(InventoryService.roundInventoryValue(baseInventory?.money || 0, 'money'))}`
             }
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="package-variant-closed" />}
             onPress={() => {
               if (baseInventory) {
-                let message = `Gold 999: ${DatabaseService.roundInventoryValue(baseInventory.gold999, 'gold999')}g\nGold 995: ${DatabaseService.roundInventoryValue(baseInventory.gold995, 'gold995')}g\nSilver: ${DatabaseService.roundInventoryValue(baseInventory.silver, 'silver')}g\nRani: ${DatabaseService.roundInventoryValue(baseInventory.rani, 'rani')}g\nRupu: ${DatabaseService.roundInventoryValue(baseInventory.rupu, 'rupu')}g\nMoney: ₹${formatIndianNumber(DatabaseService.roundInventoryValue(baseInventory.money, 'money'))}`;
+                let message = `Gold 999: ${InventoryService.roundInventoryValue(baseInventory.gold999, 'gold999')}g\nGold 995: ${InventoryService.roundInventoryValue(baseInventory.gold995, 'gold995')}g\nSilver: ${InventoryService.roundInventoryValue(baseInventory.silver, 'silver')}g\nRani: ${InventoryService.roundInventoryValue(baseInventory.rani, 'rani')}g\nRupu: ${InventoryService.roundInventoryValue(baseInventory.rupu, 'rupu')}g\nMoney: ₹${formatIndianNumber(InventoryService.roundInventoryValue(baseInventory.money, 'money'))}`;
                 
                 showAlert(
                   'Base Inventory',
@@ -868,7 +870,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v2.6.8
+        message={`BullionDesk v3.2.6
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

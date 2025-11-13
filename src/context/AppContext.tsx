@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { Customer, TransactionEntry } from '../types';
-import { DatabaseService } from '../services/database';
+import { CustomerService } from '../services/customer.service';
+import { TransactionService } from '../services/transaction.service';
 
 interface AlertButton {
   text: string;
@@ -186,7 +187,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
     // Save customer in background
     try {
-      const saved = await DatabaseService.saveCustomer(newCustomer);
+      const saved = await CustomerService.saveCustomer(newCustomer);
       if (saved) {
         // Customer saved successfully
       } else {
@@ -240,7 +241,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
     try {
       // Save transaction to database (update if editingTransactionId exists)
-      const result = await DatabaseService.saveTransaction(
+      const result = await TransactionService.saveTransaction(
         currentCustomer, 
         currentEntries, 
         receivedAmount,
@@ -277,7 +278,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const loadTransactionForEdit = async (transactionId: string) => {
     try {
       // Get the specific transaction by ID
-      const transaction = await DatabaseService.getTransactionById(transactionId);
+      const transaction = await TransactionService.getTransactionById(transactionId);
 
       if (!transaction) {
         setSnackbarMessage('Transaction not found');
@@ -286,7 +287,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       }
 
       // Get the customer
-      const customer = await DatabaseService.getCustomerById(transaction.customerId);
+      const customer = await CustomerService.getCustomerById(transaction.customerId);
       if (!customer) {
         setSnackbarMessage('Customer not found');
         setSnackbarVisible(true);

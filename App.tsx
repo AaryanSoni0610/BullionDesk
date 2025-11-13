@@ -4,11 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { PaperProvider, Snackbar, Text } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFonts } from 'expo-font';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useNavigation, useNavigationState } from '@react-navigation/native';
 import {
   Roboto_100Thin,
@@ -37,30 +34,11 @@ import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
-import { TradeService } from './src/services/tradeService';
-
-const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
+import { DatabaseService } from './src/services/database.sqlite';
+import { TradeService } from './src/services/trade.service';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell';
-
-// Custom horizontal sliding interpolator for swipe gestures
-const horizontalSlideInterpolator = ({ current, next, inverted, layouts: { screen } }: any) => {
-  const translateX = Animated.multiply(
-    current.progress.interpolate({
-      inputRange: [0, 1],
-      outputRange: [screen.width, 0],
-      extrapolate: 'clamp',
-    }),
-    inverted
-  );
-
-  return {
-    cardStyle: {
-      transform: [{ translateX }],
-    },
-  };
-};
 
 // Main App Component with Context
 interface AppContentProps {
@@ -113,27 +91,53 @@ const AppContent: React.FC<AppContentProps> = ({
 
   // Main Tab Navigator Component with Stack for smooth transitions
   const MainTabNavigator = () => {
+    const Tab = createBottomTabNavigator();
     const navigation = useNavigation();
     const currentRouteName = useNavigationState(state => {
       if (!state) return 'Home';
       const route = state.routes[state.index];
       return route?.name || 'Home';
     });
-    
+
     return (
       <View style={{ flex: 1 }}>
-        <Stack.Navigator
-          screenOptions={{
+        <Tab.Navigator
+          screenOptions={({ route }: { route: any }) => ({
             headerShown: false,
-            animationEnabled: false,
-          }}
+            tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => {
+              let iconName;
+              if (route.name === 'Home') {
+                iconName = focused ? 'home' : 'home-outline';
+              } else if (route.name === 'History') {
+                iconName = focused ? 'history' : 'clock-outline';
+              } else if (route.name === 'Trade') {
+                iconName = focused ? 'swap-vertical-circle-outline' : 'swap-vertical';
+              } else if (route.name === 'Ledger') {
+                iconName = focused ? 'chart-line' : 'chart-line-variant';
+              }
+              return <Icon name={iconName as keyof typeof Icon.glyphMap} size={size} color={color} />;
+            },
+            tabBarActiveTintColor: theme.colors.primary,
+            tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
+            tabBarStyle: {
+              height: theme.dimensions.bottomNavHeight,
+              backgroundColor: theme.colors.surface,
+              elevation: theme.elevation.level3,
+              borderTopWidth: 0,
+            },
+            tabBarLabelStyle: {
+              fontSize: 12,
+              fontFamily: 'Roboto_500Medium',
+              marginTop: 2,
+            },
+          })}
         >
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="History" component={HistoryScreen} />
-        <Stack.Screen name="Trade" component={TradeScreen} />
-        <Stack.Screen name="Ledger" component={LedgerScreen} />
-      </Stack.Navigator>
-      
+          <Tab.Screen name="Home" component={HomeScreen} />
+          <Tab.Screen name="History" component={HistoryScreen} />
+          <Tab.Screen name="Trade" component={TradeScreen} />
+          <Tab.Screen name="Ledger" component={LedgerScreen} />
+        </Tab.Navigator>
+
       {/* Custom Bottom Tab Bar */}
       <View style={{
         height: theme.dimensions.bottomNavHeight,
@@ -162,7 +166,7 @@ const AppContent: React.FC<AppContentProps> = ({
                 (navigation as any).navigate(tab.name);
               }}
             >
-              <Icon 
+              <Icon
                 name={(isFocused ? tab.focusedIcon : tab.unfocusedIcon) as keyof typeof Icon.glyphMap}
                 size={24}
                 color={isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant}
@@ -184,11 +188,10 @@ const AppContent: React.FC<AppContentProps> = ({
   };
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <PaperProvider theme={theme}>
-          <NavigationContainer>
-          {appState === 'tabs' && (
+    <SafeAreaProvider>
+      <PaperProvider theme={theme}>
+        <NavigationContainer>
+        {appState === 'tabs' && (
             <MainTabNavigator />
           )}
           
@@ -270,7 +273,6 @@ const AppContent: React.FC<AppContentProps> = ({
         </NavigationContainer>
       </PaperProvider>
     </SafeAreaProvider>
-    </GestureHandlerRootView>
   );
 };
 
@@ -292,6 +294,9 @@ export default function App() {
   // Initialize services on app start
   React.useEffect(() => {
     const initializeServices = async () => {
+      // Initialize SQLite database first
+      await DatabaseService.initDatabase();
+      
       // Initialize notifications
       await NotificationService.initialize();
 

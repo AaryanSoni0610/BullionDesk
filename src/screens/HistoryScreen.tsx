@@ -5,7 +5,8 @@ import {
   ScrollView, 
   FlatList, 
   TouchableOpacity,
-  BackHandler
+  BackHandler,
+  Platform
 } from 'react-native';
 import {
   Surface,
@@ -23,9 +24,10 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver, formatIndianNumber } from '../utils/formatting';
-import { DatabaseService } from '../services/database';
+import { TransactionService } from '../services/transaction.service';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
@@ -38,7 +40,9 @@ export const HistoryScreen: React.FC = () => {
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'today' | 'last7days' | 'last30days' | 'custom'>('today');
+  const [selectedFilter, setSelectedFilter] = useState<'today' | 'last7days' | 'last30days' | 'custom'>('today');
+  const [customDate, setCustomDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { navigateToSettings, loadTransactionForEdit } = useAppContext();
   const navigation = useNavigation();
@@ -84,7 +88,7 @@ export const HistoryScreen: React.FC = () => {
         style: 'destructive',
         onPress: async () => {
           try {
-            const result = await DatabaseService.deleteTransaction(transaction.id);
+            const result = await TransactionService.deleteTransaction(transaction.id);
             
             if (result.success) {
               // Reload transactions
@@ -175,7 +179,7 @@ export const HistoryScreen: React.FC = () => {
 
   useEffect(() => {
     loadTransactions();
-  }, []);
+  }, [selectedFilter, customDate]);
 
   const loadTransactions = async (refresh = false) => {
     try {
@@ -184,12 +188,42 @@ export const HistoryScreen: React.FC = () => {
       }
       setError(null);
       
-      const allTransactions = await DatabaseService.getAllTransactions();
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let startDate: string;
+      let endDate: string;
       
-      // Sort by date (most recent first)
-      const sortedTransactions = allTransactions
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .filter(t => t.customerName.toLowerCase() !== 'adjust'); // Filter out 'Adjust' transactions
+      // Calculate date range based on filter
+      switch (selectedFilter) {
+        case 'today':
+          startDate = today.toISOString();
+          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          break;
+        case 'last7days':
+          // Last 7 days excluding today
+          startDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          endDate = new Date(today.getTime() - 1).toISOString();
+          break;
+        case 'last30days':
+          // Last 30 days excluding today
+          startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+          endDate = new Date(today.getTime() - 1).toISOString();
+          break;
+        case 'custom':
+          const customStart = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+          startDate = customStart.toISOString();
+          endDate = new Date(customStart.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          break;
+        default:
+          startDate = today.toISOString();
+          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+      }
+      
+      // Fetch transactions using database-level filtering
+      const allTransactions = await TransactionService.getTransactionsByDateRange(startDate, endDate);
+      
+      // Filter out 'Adjust' transactions
+      const sortedTransactions = allTransactions.filter(t => t.customerName.toLowerCase() !== 'adjust');
       
       setTransactions(sortedTransactions);
       
@@ -226,43 +260,10 @@ export const HistoryScreen: React.FC = () => {
         return customerMatch || itemMatch;
       });
     }
-
-    // Apply time filter
-    filtered = applyTimeFilter(filtered);
     
     setFilteredTransactions(filtered);
     setIsSearching(false);
-  }, [transactions, selectedFilter]);
-
-  const applyTimeFilter = (transactionList: Transaction[]) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    switch (selectedFilter) {
-      case 'today':
-        const endOfDay = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return transactionList.filter(transaction => {
-          const transDate = new Date(transaction.date);
-          return transDate >= today && transDate <= endOfDay;
-        });
-      case 'last7days':
-        // Last 7 days excluding today
-        const start7Days = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return transactionList.filter(transaction => {
-          const transDate = new Date(transaction.date);
-          return transDate >= start7Days && transDate < today;
-        });
-      case 'last30days':
-        // Last 30 days excluding today
-        const start30Days = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-        return transactionList.filter(transaction => {
-          const transDate = new Date(transaction.date);
-          return transDate >= start30Days && transDate < today;
-        });
-      default:
-        return transactionList;
-    }
-  };
+  }, [transactions]);
 
   const highlightSearchText = (text: string, searchTerm: string) => {
     if (!searchTerm.trim()) return text;
@@ -273,19 +274,20 @@ export const HistoryScreen: React.FC = () => {
   };
 
   const handleFilterChange = (filter: typeof selectedFilter) => {
-    if (filter === selectedFilter) {
-      // Deselect if tapping the same filter
-      setSelectedFilter('all');
-    } else {
-      setSelectedFilter(filter);
+    if (filter === 'custom') {
+      setShowDatePicker(true);
+    }
+    setSelectedFilter(filter);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setCustomDate(selectedDate);
     }
   };
 
   // Effects
-  useEffect(() => {
-    loadTransactions();
-  }, []);
-
   useEffect(() => {
     performSearch(searchQuery);
   }, [performSearch, searchQuery]);
@@ -294,7 +296,7 @@ export const HistoryScreen: React.FC = () => {
     if (transactions.length > 0) {
       performSearch(searchQuery);
     }
-  }, [selectedFilter, transactions.length]);
+  }, [transactions.length]);
 
   // Handle hardware back button - navigate to home screen
   useFocusEffect(
@@ -905,18 +907,26 @@ export const HistoryScreen: React.FC = () => {
               Last 30 Days
             </Chip>
             <Chip
-              mode={selectedFilter === 'all' ? 'flat' : 'outlined'}
-              selected={selectedFilter === 'all'}
-              onPress={() => handleFilterChange('all')}
+              mode={selectedFilter === 'custom' ? 'flat' : 'outlined'}
+              selected={selectedFilter === 'custom'}
+              onPress={() => handleFilterChange('custom')}
               style={styles.filterChip}
               compact
             >
-              All Time
+              {selectedFilter === 'custom' ? formatFullDate(customDate.toISOString()) : 'Select Date'}
             </Chip>
           </ScrollView>
         </View>
 
-
+        {showDatePicker && (
+          <DateTimePicker
+            value={customDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+            maximumDate={new Date()}
+          />
+        )}
 
         {filteredTransactions.length === 0 ? (
           error ? (

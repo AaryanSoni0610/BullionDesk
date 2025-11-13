@@ -21,7 +21,9 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Customer, LedgerEntry } from '../types';
 import { theme } from '../theme';
-import { DatabaseService } from '../services/database';
+import { CustomerService } from '../services/customer.service';
+import { LedgerService } from '../services/ledger.service';
+import { TransactionService } from '../services/transaction.service';
 import { formatFullDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import * as FileSystem from 'expo-file-system';
@@ -36,35 +38,30 @@ export const CustomerListScreen: React.FC = () => {
 
   const { navigateToSettings } = useAppContext();
 
-  // Debounced search function
+  // Debounced search function with database-level filtering
   const debouncedSearch = useCallback(
-    debounce((query: string) => {
+    debounce(async (query: string) => {
       if (query.trim() === '') {
         setFilteredCustomers([]);
       } else {
-        const filtered = customers.filter(customer =>
-          customer.name.toLowerCase().trim().includes(query.toLowerCase().trim())
-        );
-        setFilteredCustomers(filtered);
+        try {
+          // Use database-level filtering for better performance
+          const filtered = await CustomerService.searchCustomersByName(query.trim());
+          setFilteredCustomers(filtered);
+        } catch (error) {
+          console.error('Error searching customers:', error);
+          setFilteredCustomers([]);
+        }
       }
     }, 300),
-    [customers]
+    []
   );
 
-  // Load customers from database
+  // Load all customers initially (removed - only load on search now)
   useEffect(() => {
-    const loadCustomers = async () => {
-      try {
-        const allCustomers = await DatabaseService.getAllCustomers();
-        setCustomers(allCustomers);
-      } catch (error) {
-        console.error('Error loading customers:', error);
-        setCustomers([]);
-        setError('Failed to load customers');
-      }
-    };
-
-    loadCustomers();
+    // Initialize with empty list - customers load on search
+    setCustomers([]);
+    setFilteredCustomers([]);
   }, []);
 
   useEffect(() => {
@@ -530,8 +527,8 @@ export const CustomerListScreen: React.FC = () => {
     try {
       // Fetch both ledger entries and transactions for this customer directly from database
       const [moneyLedgerEntries, customerTransactions] = await Promise.all([
-        DatabaseService.getLedgerEntriesByCustomerId(customerId),
-        DatabaseService.getTransactionsByCustomerId(customerId)
+        LedgerService.getLedgerEntriesByCustomerId(customerId),
+        TransactionService.getTransactionsByCustomerId(customerId)
       ]);
 
       // Get metal transactions and convert them to ledger-like entries

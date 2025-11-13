@@ -7,7 +7,8 @@ import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatRelativeDate, formatIndianNumber, formatPureGoldPrecise, customFormatPureSilver, formatPureSilver } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
-import { DatabaseService } from '../services/database';
+import { TransactionService } from '../services/transaction.service';
+import { CustomerService } from '../services/customer.service';
 import { Transaction, Customer } from '../types';
 
 export const HomeScreen: React.FC = () => {
@@ -46,8 +47,8 @@ export const HomeScreen: React.FC = () => {
       
       // Load both transactions and customers
       const [allTransactions, allCustomers] = await Promise.all([
-        DatabaseService.getAllTransactions(),
-        DatabaseService.getAllCustomers()
+        TransactionService.getAllTransactions(),
+        CustomerService.getAllCustomers()
       ]);
       
       // Sort by date (most recent first) and take the first 20

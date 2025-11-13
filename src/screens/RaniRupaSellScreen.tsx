@@ -23,7 +23,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { formatPureGoldPrecise, customFormatPureSilver } from '../utils/formatting';
 import { theme } from '../theme';
 import { RaniRupaStockService } from '../services/raniRupaStockService';
-import { DatabaseService } from '../services/database';
+import { TransactionService } from '../services/transaction.service';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 import CustomAlert from '../components/CustomAlert';
@@ -312,7 +312,7 @@ export const RaniRupaSellScreen: React.FC = () => {
       }
 
       // Save transaction
-      const result = await DatabaseService.saveTransaction(
+      const result = await TransactionService.saveTransaction(
         customer,
         entries,
         0, // receivedAmount

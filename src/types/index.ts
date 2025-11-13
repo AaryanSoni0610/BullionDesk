@@ -20,15 +20,12 @@ export interface Transaction {
   customerName: string;
   date: string;
   entries: TransactionEntry[];
-  discount: number;
   discountExtraAmount: number; // Amount of discount (sell) or extra (purchase) applied
-  subtotal: number;
   total: number;
   amountPaid: number;
   lastGivenMoney: number; // Current total paid by customer
   lastToLastGivenMoney: number; // Previous total paid (for calculating delta)
   settlementType: 'full' | 'partial' | 'none';
-  status: 'completed' | 'pending';
   createdAt: string; // ISO datetime when transaction was created
   lastUpdatedAt: string; // ISO datetime when transaction was last updated
 }
@@ -43,12 +40,8 @@ export interface TransactionEntry {
   cut?: number; // For Rani purchase - cut percentage (cannot exceed touch)
   extraPerKg?: number; // For Rupu bonus
   pureWeight?: number; // Calculated for impure metals
-  actualGoldGiven?: number; // For Rani sell entries
   moneyType?: 'give' | 'receive'; // For money entries: 'give' = merchant gives money (outward), 'receive' = merchant receives money (inward)
   amount?: number; // For money entries
-  rupuReturnType?: 'money' | 'silver'; // For Rupu purchase entries
-  silverWeight?: number; // For Rupu silver return
-  netWeight?: number; // For Rupu silver return calculation
   metalOnly?: boolean; // For metal-only transactions (no money involved)
   stock_id?: string; // For Rani/Rupu entries - links to stock item
   subtotal: number;
@@ -80,7 +73,6 @@ export interface LedgerEntry {
   amountReceived: number; // Money received from customer (positive)
   amountGiven: number; // Money given to customer (positive)
   entries: TransactionEntry[]; // Copy of transaction entries at this point
-  notes?: string;
   createdAt: string; // Same as date for ledger entries
 }
 

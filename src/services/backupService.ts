@@ -5,14 +5,17 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Platform } from 'react-native';
 import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
-import { DatabaseService } from './database';
-import { RaniRupaStockService } from './raniRupaStockService';
+import { DatabaseService } from './database.sqlite';
+import { CustomerService } from './customer.service';
+import { TransactionService } from './transaction.service';
+import { LedgerService } from './ledger.service';
+import { InventoryService } from './inventory.service';
+import { SettingsService } from './settings.service';
+import { RaniRupaStockService } from './raniRupaStock.service';
 import { Customer, Transaction, TransactionEntry, RaniRupaStock } from '../types';
-import { STORAGE_KEYS } from './database';
 
 const SECURE_STORE_KEYS = {
   ENCRYPTION_KEY: 'backup_encryption_key',
@@ -119,12 +122,12 @@ export class BackupService {
   static async requestStoragePermission(): Promise<boolean> {
     try {
       if (Platform.OS !== 'android') {
-        await DatabaseService.setStoragePermissionGranted(true);
+        await SettingsService.setStoragePermissionGranted(true);
         return true;
       }
 
       // Check if permission was already granted
-      const permissionGranted = await DatabaseService.getStoragePermissionGranted();
+      const permissionGranted = await SettingsService.getStoragePermissionGranted();
       if (permissionGranted) {
         return true;
       }
@@ -139,7 +142,7 @@ export class BackupService {
       }
 
       if (finalStatus !== 'granted') {
-        await DatabaseService.setStoragePermissionGranted(false);
+        await SettingsService.setStoragePermissionGranted(false);
         return false;
       }
 
@@ -152,16 +155,16 @@ export class BackupService {
         }
         
         // If successful, store permission granted
-        await DatabaseService.setStoragePermissionGranted(true);
+        await SettingsService.setStoragePermissionGranted(true);
         return true;
       } catch (dirError) {
         console.error('Directory creation error:', dirError);
-        await DatabaseService.setStoragePermissionGranted(false);
+        await SettingsService.setStoragePermissionGranted(false);
         return false;
       }
     } catch (error) {
       console.error('Error requesting storage permission:', error);
-      await DatabaseService.setStoragePermissionGranted(false);
+      await SettingsService.setStoragePermissionGranted(false);
       return false;
     }
   }
@@ -171,7 +174,7 @@ export class BackupService {
    */
   static async hasStoragePermission(): Promise<boolean> {
     try {
-      return await DatabaseService.getStoragePermissionGranted();
+      return await SettingsService.getStoragePermissionGranted();
     } catch (error) {
       return false;
     }
@@ -352,10 +355,10 @@ export class BackupService {
    * Collect all data from database
    */
   private static async collectDatabaseData(): Promise<BackupData['records']> {
-    const customers = await DatabaseService.getAllCustomers();
-    const transactions = await DatabaseService.getAllTransactions();
-    const ledger = await DatabaseService.getAllLedgerEntries();
-    const baseInventory = await DatabaseService.getBaseInventory();
+    const customers = await CustomerService.getAllCustomers();
+    const transactions = await TransactionService.getAllTransactions();
+    const ledger = await LedgerService.getAllLedgerEntries();
+    const baseInventory = await InventoryService.getBaseInventory();
     const raniRupaStock = await RaniRupaStockService.getAllStock();
 
     return {
@@ -409,16 +412,16 @@ export class BackupService {
 
       // Step 1: Collect data with granular progress updates
       this.updateProgressAlert('Loading customers... 10%');
-      const customers = await DatabaseService.getAllCustomers();
+      const customers = await CustomerService.getAllCustomers();
       
       this.updateProgressAlert('Loading transactions... 30%');
-      const transactions = await DatabaseService.getAllTransactions();
+      const transactions = await TransactionService.getAllTransactions();
       
       this.updateProgressAlert('Loading ledger... 50%');
-      const ledger = await DatabaseService.getAllLedgerEntries();
+      const ledger = await LedgerService.getAllLedgerEntries();
       
       this.updateProgressAlert('Loading inventory... 55%');
-      const baseInventory = await DatabaseService.getBaseInventory();
+      const baseInventory = await InventoryService.getBaseInventory();
       
       this.updateProgressAlert('Loading stock... 58%');
       const raniRupaStock = await RaniRupaStockService.getAllStock();
@@ -674,12 +677,12 @@ export class BackupService {
     const { records } = backupData;
 
     // Merge customers (by ID)
-    const existingCustomers = await DatabaseService.getAllCustomers();
+    const existingCustomers = await CustomerService.getAllCustomers();
     const customerMap = new Map(existingCustomers.map((c) => [c.id, c]));
 
     for (const customer of records.customers) {
       if (!customerMap.has(customer.id)) {
-        await DatabaseService.saveCustomer(customer);
+        await CustomerService.saveCustomer(customer);
       } else {
         // Update if backup is newer
         const existing = customerMap.get(customer.id)!;
@@ -687,13 +690,13 @@ export class BackupService {
           new Date(customer.lastTransaction || 0) >
           new Date(existing.lastTransaction || 0)
         ) {
-          await DatabaseService.saveCustomer(customer);
+          await CustomerService.saveCustomer(customer);
         }
       }
     }
 
     // Merge transactions (conflict-free by txn_id + device_id)
-    const existingTransactions = await DatabaseService.getAllTransactions();
+    const existingTransactions = await TransactionService.getAllTransactions();
     const transactionMap = new Map(
       existingTransactions.map((t) => [`${t.id}_${currentDeviceId}`, t])
     );
@@ -712,7 +715,7 @@ export class BackupService {
         }
 
         // Get the customer for this transaction
-        const customer = await DatabaseService.getCustomerById(transaction.customerId);
+        const customer = await CustomerService.getCustomerById(transaction.customerId);
         if (customer) {
           // Import transaction with all side effects
           await this.importTransactionWithSideEffects(transaction, customer);
@@ -723,22 +726,23 @@ export class BackupService {
     }
 
     // Merge ledger entries (by ID) - only add if doesn't exist
-    const existingLedger = await DatabaseService.getAllLedgerEntries();
+    const existingLedger = await LedgerService.getAllLedgerEntries();
     const ledgerMap = new Map(existingLedger.map((l) => [l.id, l]));
 
     // Save ledger entries that don't exist
     for (const ledgerEntry of records.ledger) {
       if (!ledgerMap.has(ledgerEntry.id)) {
-        // Save ledger entry directly to AsyncStorage
-        const allLedger = await DatabaseService.getAllLedgerEntries();
-        allLedger.push(ledgerEntry);
-        await AsyncStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(allLedger));
+        // Import ledger entry directly - requires the full transaction
+        const transaction = records.transactions.find(t => t.id === ledgerEntry.transactionId);
+        if (transaction) {
+          await LedgerService.createLedgerEntry(transaction, 0, ledgerEntry.date);
+        }
       }
     }
 
     // Handle base inventory - only set if present in backup and user confirms override if different
     if (records.baseInventory) {
-      const currentBaseInventory = await DatabaseService.getBaseInventory();
+      const currentBaseInventory = await InventoryService.getBaseInventory();
       
       // Check if current base inventory differs from backup
       const isDifferent = Object.keys(records.baseInventory).some(key => 
@@ -762,11 +766,11 @@ export class BackupService {
           // Skip setting base inventory
           console.log('User chose to skip base inventory override');
         } else {
-          await DatabaseService.setBaseInventory(records.baseInventory);
+          await InventoryService.setBaseInventory(records.baseInventory);
         }
       } else {
         // Base inventories match, safe to set
-        await DatabaseService.setBaseInventory(records.baseInventory);
+        await InventoryService.setBaseInventory(records.baseInventory);
       }
     }
     // Note: If baseInventory is not present in backup (e.g., 'today' export), current base inventory is left unchanged
@@ -778,16 +782,18 @@ export class BackupService {
 
       for (const stockItem of records.raniRupaStock) {
         if (!stockMap.has(stockItem.stock_id)) {
-          // Add new stock item
-          const allStock = await RaniRupaStockService.getAllStock();
-          allStock.push(stockItem);
-          await AsyncStorage.setItem(STORAGE_KEYS.RANI_RUPA_STOCK, JSON.stringify(allStock));
+          // Add new stock item using restore method to preserve stock_id
+          await RaniRupaStockService.restoreStock(
+            stockItem.stock_id,
+            stockItem.itemtype,
+            stockItem.weight,
+            stockItem.touch
+          );
         }
       }
     }
 
-    // Clear caches to ensure fresh data
-    DatabaseService.clearCache();
+    // Note: SQLite doesn't require cache clearing
   }
 
   /**
@@ -798,11 +804,61 @@ export class BackupService {
     customer: Customer
   ): Promise<void> {
     try {
-      // Save the transaction directly first
-      const allTransactions = await DatabaseService.getAllTransactions();
-      allTransactions.push(transaction);
-      await AsyncStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(allTransactions));
-      DatabaseService.clearCache();
+      // Import transaction directly using TransactionService
+      // Note: This bypasses normal transaction save logic to preserve imported transaction as-is
+      const db = DatabaseService.getDatabase();
+      
+      // Insert transaction
+      await db.runAsync(
+        `INSERT OR REPLACE INTO transactions 
+         (id, deviceId, customerId, customerName, date, discountExtraAmount, total, 
+          amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, createdAt, lastUpdatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          transaction.id,
+          transaction.deviceId || null,
+          transaction.customerId,
+          transaction.customerName,
+          transaction.date,
+          transaction.discountExtraAmount || 0,
+          transaction.total,
+          transaction.amountPaid,
+          transaction.lastGivenMoney,
+          transaction.lastToLastGivenMoney,
+          transaction.settlementType || 'partial',
+          transaction.createdAt,
+          transaction.lastUpdatedAt
+        ]
+      );
+
+      // Insert transaction entries
+      for (const entry of transaction.entries) {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO transaction_entries 
+           (id, transaction_id, type, itemType, weight, price, touch, cut, extraPerKg, 
+            pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entry.id,
+            transaction.id,
+            entry.type,
+            entry.itemType,
+            entry.weight || null,
+            entry.price || null,
+            entry.touch || null,
+            entry.cut || null,
+            entry.extraPerKg || null,
+            entry.pureWeight || null,
+            entry.moneyType || null,
+            entry.amount || null,
+            entry.metalOnly ? 1 : 0,
+            entry.stock_id || null,
+            entry.subtotal,
+            entry.createdAt || transaction.createdAt,
+            entry.lastUpdatedAt || transaction.lastUpdatedAt
+          ]
+        );
+      }
 
       // Update customer balance based on transaction
       const isMetalOnly = transaction.entries.some((entry: TransactionEntry) => entry.metalOnly === true);
@@ -854,7 +910,7 @@ export class BackupService {
         });
       }
 
-      await DatabaseService.saveCustomer(updatedCustomer);
+      await CustomerService.saveCustomer(updatedCustomer);
 
       // Note: Ledger entries are imported separately in mergeData method
       // No need to create them here to avoid duplication
@@ -876,7 +932,7 @@ export class BackupService {
       }
 
       // Check if enabled
-      const enabled = await DatabaseService.getAutoBackupEnabled();
+      const enabled = await SettingsService.getAutoBackupEnabled();
       if (!enabled) {
         await this.logAction('Auto backup skipped: Disabled');
         return false;
@@ -946,7 +1002,7 @@ export class BackupService {
       );
 
       // Update last backup time
-      await DatabaseService.setLastBackupTime(Date.now());
+      await SettingsService.setLastBackupTime(Date.now());
 
       await this.logAction(
         `Auto backup completed: ${backupData.recordCount} records, file: ${filename} (SAF)`
@@ -965,7 +1021,7 @@ export class BackupService {
    */
   static async setAutoBackupEnabled(enabled: boolean): Promise<void> {
     try {
-      const success = await DatabaseService.setAutoBackupEnabled(enabled);
+      const success = await SettingsService.setAutoBackupEnabled(enabled);
       if (!success) {
         throw new Error('Failed to save auto backup setting');
       }
@@ -991,7 +1047,7 @@ export class BackupService {
             await this.markFirstExportOrAutoBackupDone();
           } else {
             // User denied permission, disable auto backup and unregister task
-            await DatabaseService.setAutoBackupEnabled(false);
+            await SettingsService.setAutoBackupEnabled(false);
             await this.unregisterBackgroundTask();
             throw new Error('Storage permission required for auto backup');
           }
@@ -1010,7 +1066,7 @@ export class BackupService {
    */
   static async isAutoBackupEnabled(): Promise<boolean> {
     try {
-      return await DatabaseService.getAutoBackupEnabled();
+      return await SettingsService.getAutoBackupEnabled();
     } catch (error) {
       console.error('Error checking auto backup status:', error);
       return false;
@@ -1029,7 +1085,7 @@ export class BackupService {
         return false;
       }
 
-      const lastBackup = await DatabaseService.getLastBackupTime();
+      const lastBackup = await SettingsService.getLastBackupTime();
       if (!lastBackup) {
         return true;
       }

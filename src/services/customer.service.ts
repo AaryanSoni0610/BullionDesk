@@ -1,0 +1,278 @@
+import { Customer } from '../types';
+import { DatabaseService } from './database.sqlite';
+
+export class CustomerService {
+  // Get all customers
+  static async getAllCustomers(): Promise<Customer[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      // Get all customers
+      const customers = await db.getAllAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>('SELECT id, name, lastTransaction, avatar FROM customers ORDER BY name ASC');
+
+      // Get balances for each customer
+      const customersWithBalances: Customer[] = [];
+      
+      for (const customer of customers) {
+        const balanceRow = await db.getFirstAsync<{
+          balance: number;
+          gold999: number | null;
+          gold995: number | null;
+          rani: number | null;
+          silver: number | null;
+          rupu: number | null;
+        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+
+        const customerObj: Customer = {
+          id: customer.id,
+          name: customer.name.trim(),
+          lastTransaction: customer.lastTransaction || undefined,
+          avatar: customer.avatar || undefined,
+          balance: balanceRow?.balance || 0,
+          metalBalances: {
+            gold999: balanceRow?.gold999 || 0,
+            gold995: balanceRow?.gold995 || 0,
+            rani: balanceRow?.rani || 0,
+            silver: balanceRow?.silver || 0,
+            rupu: balanceRow?.rupu || 0,
+          }
+        };
+
+        customersWithBalances.push(customerObj);
+      }
+
+      return customersWithBalances;
+    } catch (error) {
+      console.error('Error getting customers:', error);
+      return [];
+    }
+  }
+
+  // Search customers by name (database-level filtering)
+  static async searchCustomersByName(searchQuery: string): Promise<Customer[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      // Use LIKE for case-insensitive search
+      const searchPattern = `%${searchQuery}%`;
+      const customers = await db.getAllAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>('SELECT id, name, lastTransaction, avatar FROM customers WHERE name LIKE ? ORDER BY name ASC', [searchPattern]);
+
+      const customersWithBalances: Customer[] = [];
+      
+      for (const customer of customers) {
+        const balanceRow = await db.getFirstAsync<{
+          balance: number;
+          gold999: number | null;
+          gold995: number | null;
+          rani: number | null;
+          silver: number | null;
+          rupu: number | null;
+        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+
+        const customerObj: Customer = {
+          id: customer.id,
+          name: customer.name.trim(),
+          lastTransaction: customer.lastTransaction || undefined,
+          avatar: customer.avatar || undefined,
+          balance: balanceRow?.balance || 0,
+          metalBalances: {
+            gold999: balanceRow?.gold999 || 0,
+            gold995: balanceRow?.gold995 || 0,
+            rani: balanceRow?.rani || 0,
+            silver: balanceRow?.silver || 0,
+            rupu: balanceRow?.rupu || 0,
+          }
+        };
+
+        customersWithBalances.push(customerObj);
+      }
+
+      return customersWithBalances;
+    } catch (error) {
+      console.error('Error searching customers:', error);
+      return [];
+    }
+  }
+
+  // Save or update customer
+  static async saveCustomer(customer: Customer): Promise<boolean> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      // Ensure customer name is trimmed
+      const trimmedName = customer.name.trim();
+
+      // Check if customer exists
+      const existing = await db.getFirstAsync<{ id: string }>(
+        'SELECT id FROM customers WHERE id = ?',
+        [customer.id]
+      );
+
+      if (existing) {
+        // Update existing customer
+        await db.runAsync(
+          'UPDATE customers SET name = ?, lastTransaction = ?, avatar = ? WHERE id = ?',
+          [trimmedName, customer.lastTransaction || null, customer.avatar || null, customer.id]
+        );
+
+        // Update balances
+        await db.runAsync(
+          `UPDATE customer_balances 
+           SET balance = ?, gold999 = ?, gold995 = ?, rani = ?, silver = ?, rupu = ? 
+           WHERE customer_id = ?`,
+          [
+            customer.balance,
+            customer.metalBalances?.gold999 || 0,
+            customer.metalBalances?.gold995 || 0,
+            customer.metalBalances?.rani || 0,
+            customer.metalBalances?.silver || 0,
+            customer.metalBalances?.rupu || 0,
+            customer.id
+          ]
+        );
+      } else {
+        // Insert new customer
+        await db.runAsync(
+          'INSERT INTO customers (id, name, lastTransaction, avatar) VALUES (?, ?, ?, ?)',
+          [customer.id, trimmedName, customer.lastTransaction || null, customer.avatar || null]
+        );
+
+        // Insert balances
+        await db.runAsync(
+          `INSERT INTO customer_balances (customer_id, balance, gold999, gold995, rani, silver, rupu) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            customer.id,
+            customer.balance,
+            customer.metalBalances?.gold999 || 0,
+            customer.metalBalances?.gold995 || 0,
+            customer.metalBalances?.rani || 0,
+            customer.metalBalances?.silver || 0,
+            customer.metalBalances?.rupu || 0
+          ]
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error saving customer:', error);
+      return false;
+    }
+  }
+
+  // Get customer by ID
+  static async getCustomerById(id: string): Promise<Customer | null> {
+    try {
+      const db = DatabaseService.getDatabase();
+
+      const customer = await db.getFirstAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>('SELECT id, name, lastTransaction, avatar FROM customers WHERE id = ?', [id]);
+
+      if (!customer) return null;
+
+      const balanceRow = await db.getFirstAsync<{
+        balance: number;
+        gold999: number | null;
+        gold995: number | null;
+        rani: number | null;
+        silver: number | null;
+        rupu: number | null;
+      }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [id]);
+
+      return {
+        id: customer.id,
+        name: customer.name.trim(),
+        lastTransaction: customer.lastTransaction || undefined,
+        avatar: customer.avatar || undefined,
+        balance: balanceRow?.balance || 0,
+        metalBalances: {
+          gold999: balanceRow?.gold999 || 0,
+          gold995: balanceRow?.gold995 || 0,
+          rani: balanceRow?.rani || 0,
+          silver: balanceRow?.silver || 0,
+          rupu: balanceRow?.rupu || 0,
+        }
+      };
+    } catch (error) {
+      console.error('Error getting customer by ID:', error);
+      return null;
+    }
+  }
+
+  // Update customer balance
+  static async updateCustomerBalance(customerId: string, newBalance: number): Promise<boolean> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      await db.runAsync(
+        'UPDATE customer_balances SET balance = ? WHERE customer_id = ?',
+        [newBalance, customerId]
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error updating customer balance:', error);
+      return false;
+    }
+  }
+
+  // Update customer metal balance
+  static async updateCustomerMetalBalance(
+    customerId: string,
+    itemType: string,
+    amount: number
+  ): Promise<boolean> {
+    try {
+      const db = DatabaseService.getDatabase();
+
+      // Get current balance
+      const currentRow = await db.getFirstAsync<{ [key: string]: number }>(
+        `SELECT ${itemType} FROM customer_balances WHERE customer_id = ?`,
+        [customerId]
+      );
+
+      const currentBalance = currentRow?.[itemType] || 0;
+      const newBalance = currentBalance + amount;
+
+      // Update balance
+      await db.runAsync(
+        `UPDATE customer_balances SET ${itemType} = ? WHERE customer_id = ?`,
+        [newBalance, customerId]
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error updating customer metal balance:', error);
+      return false;
+    }
+  }
+
+  // Delete customer
+  static async deleteCustomer(customerId: string): Promise<boolean> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      // Foreign key cascade will handle deleting balances and related records
+      await db.runAsync('DELETE FROM customers WHERE id = ?', [customerId]);
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      return false;
+    }
+  }
+}

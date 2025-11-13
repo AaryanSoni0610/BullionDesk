@@ -19,10 +19,36 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
 import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime, customFormatPureSilver } from '../utils/formatting';
-import { DatabaseService } from '../services/database';
+import { TransactionService } from '../services/transaction.service';
+import { CustomerService } from '../services/customer.service';
+import { LedgerService } from '../services/ledger.service';
+import { InventoryService } from '../services/inventory.service';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
+
+// Extended transaction entry with additional fields used in calculations
+interface ExtendedTransactionEntry {
+  id: string;
+  type: 'sell' | 'purchase' | 'money';
+  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'rupu' | 'money';
+  weight?: number;
+  price?: number;
+  touch?: number;
+  cut?: number;
+  extraPerKg?: number;
+  pureWeight?: number;
+  moneyType?: 'give' | 'receive';
+  amount?: number;
+  metalOnly?: boolean;
+  stock_id?: string;
+  subtotal: number;
+  createdAt?: string;
+  lastUpdatedAt?: string;
+  actualGoldGiven?: number; // For rani purchases - actual gold 999 given
+  rupuReturnType?: 'silver'; // For rupu entries
+  silverWeight?: number; // For rupu entries with silver return
+}
 
 interface InventoryData {
   totalTransactions: number;
@@ -30,7 +56,6 @@ interface InventoryData {
   totalSales: number;
   totalPurchases: number;
   netBalance: number;
-  pendingTransactions: number;
   goldInventory: {
     gold999: number;
     gold995: number;
@@ -157,21 +182,45 @@ export const LedgerScreen: React.FC = () => {
         setIsLoading(true);
       }
 
-      const [transactions, customers, allLedgerEntries] = await Promise.all([
-        DatabaseService.getAllTransactions(),
-        DatabaseService.getAllCustomers(),
-        DatabaseService.getAllLedgerEntries()
-      ]);
-
-      // Filter transactions by selected period (for display only)
-      const filteredTrans = filterTransactionsByPeriod(transactions);
+      // Calculate date range based on selected period
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let startDate: string;
+      let endDate: string;
+      let upToEndDate: string;
       
-      // Filter ledger entries by selected period (for display only)
-      const filteredLedger = filterLedgerEntriesByPeriod(allLedgerEntries);
+      switch (selectedPeriod) {
+        case 'today':
+          startDate = today.toISOString();
+          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          upToEndDate = endDate;
+          break;
+        case 'yesterday':
+          const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+          startDate = yesterday.toISOString();
+          endDate = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          upToEndDate = endDate;
+          break;
+        case 'custom':
+          const customStart = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+          startDate = customStart.toISOString();
+          endDate = new Date(customStart.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          upToEndDate = endDate;
+          break;
+        default:
+          startDate = today.toISOString();
+          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          upToEndDate = endDate;
+      }
 
-      // Get transactions up to the end of selected period (for cumulative inventory calculation)
-      const transactionsUpToDate = getTransactionsUpToDate(transactions);
-      const ledgerEntriesUpToDate = getLedgerEntriesUpToDate(allLedgerEntries);
+      // Use database-level filtering for better performance
+      const [filteredTrans, customers, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate] = await Promise.all([
+        TransactionService.getTransactionsByDateRange(startDate, endDate),
+        CustomerService.getAllCustomers(),
+        LedgerService.getLedgerEntriesByDateRange(startDate, endDate),
+        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All transactions up to end date
+        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', upToEndDate) // All ledger entries up to end date
+      ]);
 
       const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
       setInventoryData(data);
@@ -202,11 +251,11 @@ export const LedgerScreen: React.FC = () => {
           balance: 0,
           metalBalances: {}
         };
-        await DatabaseService.saveCustomer(adjustCustomer);
+        await CustomerService.saveCustomer(adjustCustomer);
         // Refresh customers list
-        const updatedCustomers = await DatabaseService.getAllCustomers();
+        const updatedCustomers = await CustomerService.getAllCustomers();
         setCustomers(updatedCustomers);
-        adjustCustomer = updatedCustomers.find(c => c.name === 'Adjust')!;
+        adjustCustomer = updatedCustomers.find((c: any) => c.name === 'Adjust')!;
       }
 
       // Handle metal adjustments (gold and silver) as one transaction
@@ -259,7 +308,7 @@ export const LedgerScreen: React.FC = () => {
         }
 
         // Save transaction
-        const result = await DatabaseService.saveTransaction(
+        const result = await TransactionService.saveTransaction(
           adjustCustomer,
           entries,
           0, // receivedAmount
@@ -291,7 +340,7 @@ export const LedgerScreen: React.FC = () => {
           lastUpdatedAt: new Date().toISOString(),
         });
         
-        const resultNew = await DatabaseService.saveTransaction(
+        const resultNew = await TransactionService.saveTransaction(
           adjustCustomer,
           entriesNew,
           0, // receivedAmount
@@ -315,122 +364,6 @@ export const LedgerScreen: React.FC = () => {
     }
   };
 
-  const filterTransactionsByPeriod = (transactions: Transaction[]) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-
-    switch (selectedPeriod) {
-      case 'today':
-        const endOfDay = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return transactions.filter(t => {
-          const transDate = new Date(t.date);
-          return transDate >= today && transDate <= endOfDay;
-        });
-      case 'yesterday':
-        const endOfYesterday = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return transactions.filter(t => {
-          const transDate = new Date(t.date);
-          return transDate >= yesterday && transDate <= endOfYesterday;
-        });
-      case 'custom':
-        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
-        const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return transactions.filter(t => {
-          const transDate = new Date(t.date);
-          return transDate >= selectedDate && transDate <= endOfSelectedDay;
-        });
-      default:
-        return transactions;
-    }
-  };
-
-  const filterLedgerEntriesByPeriod = (entries: LedgerEntry[]) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-
-    switch (selectedPeriod) {
-      case 'today':
-        const endOfDay = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return entries.filter(e => {
-          const entryDate = new Date(e.date);
-          return entryDate >= today && entryDate <= endOfDay;
-        });
-      case 'yesterday':
-        const endOfYesterday = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return entries.filter(e => {
-          const entryDate = new Date(e.date);
-          return entryDate >= yesterday && entryDate <= endOfYesterday;
-        });
-      case 'custom':
-        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
-        const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
-        return entries.filter(e => {
-          const entryDate = new Date(e.date);
-          return entryDate >= selectedDate && entryDate <= endOfSelectedDay;
-        });
-      default:
-        return entries;
-    }
-  };
-
-  // Get all transactions up to and including the selected date (for cumulative inventory calculation)
-  const getTransactionsUpToDate = (transactions: Transaction[]) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-
-    let endDate: Date;
-    switch (selectedPeriod) {
-      case 'today':
-        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
-        break;
-      case 'yesterday':
-        endDate = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
-        break;
-      case 'custom':
-        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
-        endDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
-        break;
-      default:
-        endDate = new Date();
-    }
-
-    return transactions.filter(t => {
-      const transDate = new Date(t.date);
-      return transDate <= endDate;
-    });
-  };
-
-  // Get all ledger entries up to and including the selected date (for cumulative inventory calculation)
-  const getLedgerEntriesUpToDate = (entries: LedgerEntry[]) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-
-    let endDate: Date;
-    switch (selectedPeriod) {
-      case 'today':
-        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1);
-        break;
-      case 'yesterday':
-        endDate = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1);
-        break;
-      case 'custom':
-        const selectedDate = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
-        endDate = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
-        break;
-      default:
-        endDate = new Date();
-    }
-
-    return entries.filter(e => {
-      const entryDate = new Date(e.date);
-      return entryDate <= endDate;
-    });
-  };
-
   const calculateInventoryData = async (
     transactionsUpToDate: Transaction[], 
     customers: Customer[], 
@@ -440,13 +373,12 @@ export const LedgerScreen: React.FC = () => {
   ): Promise<InventoryData> => {
     let totalSales = 0;
     let totalPurchases = 0;
-    let pendingTransactions = 0;
 
     const goldInventory = { gold999: 0, gold995: 0, rani: 0, total: 0 };
     const silverInventory = { silver: 0, rupu: 0, total: 0 };
 
     // Get base inventory
-    const baseInventory = await DatabaseService.getBaseInventory();
+    const baseInventory = await InventoryService.getBaseInventory();
     
     // Initialize with base values
     goldInventory.gold999 = baseInventory.gold999;
@@ -457,63 +389,61 @@ export const LedgerScreen: React.FC = () => {
 
     // Calculate cumulative inventory using all transactions up to the selected date
     transactionsUpToDate.forEach(transaction => {
-      if (transaction.status === 'pending') {
-        pendingTransactions++;
-      }
 
       transaction.entries.forEach(entry => {
-        if (entry.type === 'sell') {
+        const extEntry = entry as ExtendedTransactionEntry; // Cast to access extended properties
+        if (extEntry.type === 'sell') {
           // Track inventory going out
-          if (entry.weight) {
+          if (extEntry.weight) {
             // For rani: deduct actual rani weight from rani inventory and actual gold given from gold999
-            if (entry.itemType === 'rani') {
-              goldInventory.rani -= entry.weight; // Rani weight goes out
-              if (entry.actualGoldGiven) {
-                goldInventory.gold999 -= entry.actualGoldGiven; // Actual gold 999 given goes out
+            if (extEntry.itemType === 'rani') {
+              goldInventory.rani -= extEntry.weight; // Rani weight goes out
+              if (extEntry.actualGoldGiven) {
+                goldInventory.gold999 -= extEntry.actualGoldGiven; // Actual gold 999 given goes out
               }
             } else {
-              const weight = entry.pureWeight || entry.weight;
-              switch (entry.itemType) {
+              const weight = extEntry.pureWeight || extEntry.weight;
+              switch (extEntry.itemType) {
                 case 'gold999':
                 case 'gold995':
-                  goldInventory[entry.itemType] -= weight;
+                  goldInventory[extEntry.itemType] -= weight;
                   break;
                 case 'silver':
                 case 'rupu':
-                  silverInventory[entry.itemType] -= weight;
+                  silverInventory[extEntry.itemType] -= weight;
                   break;
               }
             }
           }
-        } else if (entry.type === 'purchase') {
+        } else if (extEntry.type === 'purchase') {
           // Track inventory coming in
-          if (entry.weight) {
+          if (extEntry.weight) {
             // For rupu with silver return: add rupu, subtract silver return
-            if (entry.itemType === 'rupu' && entry.rupuReturnType === 'silver') {
-              silverInventory.rupu += entry.weight; // Rupu weight comes in
-              if (entry.silverWeight) {
-                silverInventory.silver -= entry.silverWeight; // Silver return goes out
+            if (extEntry.itemType === 'rupu' && extEntry.rupuReturnType === 'silver') {
+              silverInventory.rupu += extEntry.weight; // Rupu weight comes in
+              if (extEntry.silverWeight) {
+                silverInventory.silver -= extEntry.silverWeight; // Silver return goes out
               }
             } else {
-              let weight = entry.pureWeight || entry.weight;
+              let weight = extEntry.pureWeight || extEntry.weight;
               
               // For Rani entries, recalculate pure weight with precise formatting
-              if (entry.itemType === 'rani') {
-                const touchNum = entry.touch || 0;
-                const weightNum = entry.weight || 0;
+              if (extEntry.itemType === 'rani') {
+                const touchNum = extEntry.touch || 0;
+                const weightNum = extEntry.weight || 0;
                 const pureGoldPrecise = (weightNum * touchNum) / 100;
                 weight = formatPureGoldPrecise(pureGoldPrecise);
               }
               
-              switch (entry.itemType) {
+              switch (extEntry.itemType) {
                 case 'gold999':
                 case 'gold995':
                 case 'rani':
-                  goldInventory[entry.itemType] += weight;
+                  (goldInventory as any)[extEntry.itemType] += weight;
                   break;
                 case 'silver':
                 case 'rupu':
-                  silverInventory[entry.itemType] += weight;
+                  (silverInventory as any)[extEntry.itemType] += weight;
                   break;
               }
             }
@@ -542,18 +472,18 @@ export const LedgerScreen: React.FC = () => {
     silverInventory.total = silverInventory.silver + silverInventory.rupu;
 
     // Apply rounding to prevent floating point precision issues in display
-    goldInventory.gold999 = DatabaseService.roundInventoryValue(goldInventory.gold999, 'gold999');
-    goldInventory.gold995 = DatabaseService.roundInventoryValue(goldInventory.gold995, 'gold995');
-    goldInventory.rani = DatabaseService.roundInventoryValue(goldInventory.rani, 'rani');
-    goldInventory.total = DatabaseService.roundInventoryValue(goldInventory.total, 'gold999'); // Use gold999 precision for total
-    silverInventory.silver = DatabaseService.roundInventoryValue(silverInventory.silver, 'silver');
-    silverInventory.rupu = DatabaseService.roundInventoryValue(silverInventory.rupu, 'rupu');
-    silverInventory.total = DatabaseService.roundInventoryValue(silverInventory.total, 'silver'); // Use silver precision for total
+    goldInventory.gold999 = InventoryService.roundInventoryValue(goldInventory.gold999, 'gold999');
+    goldInventory.gold995 = InventoryService.roundInventoryValue(goldInventory.gold995, 'gold995');
+    goldInventory.rani = InventoryService.roundInventoryValue(goldInventory.rani, 'rani');
+    goldInventory.total = InventoryService.roundInventoryValue(goldInventory.total, 'gold999'); // Use gold999 precision for total
+    silverInventory.silver = InventoryService.roundInventoryValue(silverInventory.silver, 'silver');
+    silverInventory.rupu = InventoryService.roundInventoryValue(silverInventory.rupu, 'rupu');
+    silverInventory.total = InventoryService.roundInventoryValue(silverInventory.total, 'silver'); // Use silver precision for total
 
     // Calculate actual money inventory from all ledger entries up to date: base money + sum(amountReceived) - sum(amountGiven)
     const totalMoneyReceived = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountReceived, 0);
     const totalMoneyGiven = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountGiven, 0);
-    const actualMoneyInventory = DatabaseService.roundInventoryValue(baseInventory.money + totalMoneyReceived - totalMoneyGiven, 'money');
+    const actualMoneyInventory = InventoryService.roundInventoryValue(baseInventory.money + totalMoneyReceived - totalMoneyGiven, 'money');
 
     // Calculate day's cash flow from day's ledger entries only
     const dayMoneyReceived = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
@@ -565,7 +495,6 @@ export const LedgerScreen: React.FC = () => {
       totalSales,
       totalPurchases,
       netBalance,
-      pendingTransactions,
       goldInventory,
       silverInventory,
       cashFlow: {
@@ -580,36 +509,22 @@ export const LedgerScreen: React.FC = () => {
 
   const exportLedgerToPDF = async (date: Date) => {
     try {
-      // Get data for the selected date
-      const [transactions, allLedgerEntries] = await Promise.all([
-        DatabaseService.getAllTransactions(),
-        DatabaseService.getAllLedgerEntries()
-      ]);
-
-      // Filter transactions and ledger for the date
+      // Calculate date range for the selected date
       const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
       const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+      const startDateStr = selectedDate.toISOString();
+      const endDateStr = endOfSelectedDay.toISOString();
 
-      const filteredTrans = transactions.filter(t => {
-        const transDate = new Date(t.date);
-        return transDate >= selectedDate && transDate <= endOfSelectedDay;
-      });
+      // Use database-level filtering for better performance
+      const [filteredTrans, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate] = await Promise.all([
+        TransactionService.getTransactionsByDateRange(startDateStr, endDateStr),
+        LedgerService.getLedgerEntriesByDateRange(startDateStr, endDateStr),
+        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
+        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', endDateStr)
+      ]);
 
-      const filteredLedger = allLedgerEntries.filter(e => {
-        const entryDate = new Date(e.date);
-        return entryDate >= selectedDate && entryDate <= endOfSelectedDay;
-      });
-
-      // Get transactions up to the selected date for cumulative inventory
-      const transactionsUpToDate = transactions.filter(t => {
-        const transDate = new Date(t.date);
-        return transDate <= endOfSelectedDay;
-      });
-
-      const ledgerEntriesUpToDate = allLedgerEntries.filter(e => {
-        const entryDate = new Date(e.date);
-        return entryDate <= endOfSelectedDay;
-      });
+      // transactionsUpToDate and ledgerEntriesUpToDate already contain all data up to selected date
+      // No need for additional filtering
 
       // Calculate inventory data
       const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
@@ -624,17 +539,18 @@ export const LedgerScreen: React.FC = () => {
         const customer = customers.find(c => c.id === transaction.customerId);
         const customerName = customer?.name || 'Unknown Customer';
         transaction.entries.forEach(entry => {
-          if (entry.type === 'money') return;
-          if (entry.itemType.startsWith('gold') || entry.itemType === 'rani') {
-            if (entry.itemType === 'rani' && entry.type === 'purchase' && entry.actualGoldGiven) {
+          const extEntry = entry as ExtendedTransactionEntry;
+          if (extEntry.type === 'money') return;
+          if (extEntry.itemType.startsWith('gold') || extEntry.itemType === 'rani') {
+            if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
               goldEntries.push({
                 transactionId: transaction.id,
                 customerName,
                 entry: {
-                  ...entry,
+                  ...extEntry,
                   type: 'sell',
                   itemType: 'gold999',
-                  weight: entry.actualGoldGiven,
+                  weight: extEntry.actualGoldGiven,
                   subtotal: 0
                 },
                 date: transaction.date
@@ -655,18 +571,19 @@ export const LedgerScreen: React.FC = () => {
         const customer = customers.find(c => c.id === transaction.customerId);
         const customerName = customer?.name || 'Unknown Customer';
         transaction.entries.forEach(entry => {
-          if (entry.type === 'money') return;
-          if (entry.itemType.startsWith('silver') || entry.itemType === 'rupu') {
-            if (entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver') {
-              if (entry.silverWeight && entry.silverWeight > 0) {
+          const extEntry = entry as ExtendedTransactionEntry;
+          if (extEntry.type === 'money') return;
+          if (extEntry.itemType.startsWith('silver') || extEntry.itemType === 'rupu') {
+            if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
+              if (extEntry.silverWeight && extEntry.silverWeight > 0) {
                 silverEntries.push({
                   transactionId: transaction.id,
                   customerName,
                   entry: {
-                    ...entry,
+                    ...extEntry,
                     type: 'sell',
                     itemType: 'silver',
-                    weight: entry.silverWeight,
+                    weight: extEntry.silverWeight,
                     subtotal: 0
                   },
                   date: transaction.date
@@ -785,11 +702,11 @@ export const LedgerScreen: React.FC = () => {
       });
 
       // Apply rounding to opening balances
-      goldOpeningBalances.gold999 = DatabaseService.roundInventoryValue(goldOpeningBalances.gold999, 'gold999');
-      goldOpeningBalances.gold995 = DatabaseService.roundInventoryValue(goldOpeningBalances.gold995, 'gold995');
-      goldOpeningBalances.rani = DatabaseService.roundInventoryValue(goldOpeningBalances.rani, 'rani');
-      silverOpeningBalances.silver = DatabaseService.roundInventoryValue(silverOpeningBalances.silver, 'silver');
-      silverOpeningBalances.rupu = DatabaseService.roundInventoryValue(silverOpeningBalances.rupu, 'rupu');
+      goldOpeningBalances.gold999 = InventoryService.roundInventoryValue(goldOpeningBalances.gold999, 'gold999');
+      goldOpeningBalances.gold995 = InventoryService.roundInventoryValue(goldOpeningBalances.gold995, 'gold995');
+      goldOpeningBalances.rani = InventoryService.roundInventoryValue(goldOpeningBalances.rani, 'rani');
+      silverOpeningBalances.silver = InventoryService.roundInventoryValue(silverOpeningBalances.silver, 'silver');
+      silverOpeningBalances.rupu = InventoryService.roundInventoryValue(silverOpeningBalances.rupu, 'rupu');
 
       // Generate HTML
       const htmlContent = `
@@ -1077,21 +994,22 @@ export const LedgerScreen: React.FC = () => {
             return;
           }
           
+          const extEntry = entry as ExtendedTransactionEntry;
           let includeEntry = false;
           
           if (selectedInventory === 'gold') {
-            includeEntry = entry.itemType.startsWith('gold') || entry.itemType === 'rani';
+            includeEntry = extEntry.itemType.startsWith('gold') || extEntry.itemType === 'rani';
             
             // Add rani return (actualGoldGiven) as a separate sell entry
-            if (entry.itemType === 'rani' && entry.type === 'purchase' && entry.actualGoldGiven) {
+            if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
               entries.push({
                 transactionId: transaction.id,
                 customerName,
                 entry: {
-                  ...entry,
+                  ...extEntry,
                   type: 'sell',
                   itemType: 'gold999',
-                  weight: entry.actualGoldGiven,
+                  weight: extEntry.actualGoldGiven,
                   subtotal: 0 // Not shown in subledger
                 },
                 date: transaction.date
@@ -1099,19 +1017,19 @@ export const LedgerScreen: React.FC = () => {
             }
           }
           else if (selectedInventory === 'silver') {
-            includeEntry = entry.itemType.startsWith('silver') || entry.itemType === 'rupu';
+            includeEntry = extEntry.itemType.startsWith('silver') || extEntry.itemType === 'rupu';
             
             // Add rupu silver returns as separate sell entries
-            if (entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver') {
-              if (entry.silverWeight && entry.silverWeight > 0) {
+            if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
+              if (extEntry.silverWeight && extEntry.silverWeight > 0) {
                 entries.push({
                   transactionId: transaction.id,
                   customerName,
                   entry: {
-                    ...entry,
+                    ...extEntry,
                     type: 'sell',
                     itemType: 'silver',
-                    weight: entry.silverWeight,
+                    weight: extEntry.silverWeight,
                     subtotal: 0
                   },
                   date: transaction.date

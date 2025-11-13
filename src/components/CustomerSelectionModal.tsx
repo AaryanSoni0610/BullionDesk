@@ -21,7 +21,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Customer } from '../types';
 import { theme } from '../theme';
-import { DatabaseService } from '../services/database';
+import { CustomerService } from '../services/customer.service';
 import { formatIndianNumber } from '../utils/formatting';
 
 interface CustomerSelectionModalProps {
@@ -118,7 +118,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   useEffect(() => {
     const loadCustomers = async () => {
       try {
-        const allCustomers = await DatabaseService.getAllCustomers();
+        const allCustomers = await CustomerService.getAllCustomers();
         const filteredCustomers = allCustomers.filter(c => c.name.toLowerCase() !== 'adjust'); // Filter out 'Adjust' customer
         setCustomers(filteredCustomers);
         

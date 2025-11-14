@@ -38,35 +38,41 @@ export const CustomerListScreen: React.FC = () => {
 
   const { navigateToSettings } = useAppContext();
 
-  // Debounced search function with database-level filtering
+  // Debounced search function with local filtering
   const debouncedSearch = useCallback(
-    debounce(async (query: string) => {
+    debounce((query: string) => {
       if (query.trim() === '') {
-        setFilteredCustomers([]);
+        setFilteredCustomers(customers); // Show all customers when no search
       } else {
-        try {
-          // Use database-level filtering for better performance
-          const filtered = await CustomerService.searchCustomersByName(query.trim());
-          setFilteredCustomers(filtered);
-        } catch (error) {
-          console.error('Error searching customers:', error);
-          setFilteredCustomers([]);
-        }
+        // Filter locally from loaded customers
+        const filtered = customers.filter(customer =>
+          customer.name.toLowerCase().includes(query.toLowerCase().trim())
+        );
+        setFilteredCustomers(filtered);
       }
     }, 300),
-    []
+    [customers] // Depend on customers so it updates when customers load
   );
 
-  // Load all customers initially (removed - only load on search now)
+  // Load all customers initially
   useEffect(() => {
-    // Initialize with empty list - customers load on search
-    setCustomers([]);
-    setFilteredCustomers([]);
+    loadAllCustomers();
   }, []);
+
+  const loadAllCustomers = async () => {
+    try {
+      const allCustomers = await CustomerService.getAllCustomers();
+      setCustomers(allCustomers);
+      setFilteredCustomers(allCustomers); // Initially show all customers
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      setError('Failed to load customers');
+    }
+  };
 
   useEffect(() => {
     debouncedSearch(searchQuery);
-  }, [searchQuery, debouncedSearch]);
+  }, [searchQuery, debouncedSearch, customers]);
 
   // Handle hardware back button - navigate to settings
   useFocusEffect(
@@ -158,11 +164,14 @@ export const CustomerListScreen: React.FC = () => {
 
   const exportCustomersToPDF = async () => {
     try {
+      // Load all customers for PDF export (not just searched ones)
+      const allCustomers = await CustomerService.getAllCustomers();
+      
       // Prepare data for PDF - export all customers with debt/balance
       const pdfData: Array<{customer: string, balance: string, debt: string}> = [];
       
       // Filter customers to only include those with debt/balance
-      const customersWithBalances = customers.filter(customer => {
+      const customersWithBalances = allCustomers.filter(customer => {
         // Check money balance
         if (customer.balance !== 0) return true;
         

@@ -8,6 +8,7 @@ import {
   BackHandler,
   Platform
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Surface,
   Text,
@@ -24,7 +25,6 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver, formatIndianNumber } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
@@ -41,11 +41,16 @@ export const HistoryScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'today' | 'last7days' | 'last30days' | 'custom'>('today');
-  const [customDate, setCustomDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { navigateToSettings, loadTransactionForEdit } = useAppContext();
   const navigation = useNavigation();
+  
+  // Custom date range states
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [previousFilter, setPreviousFilter] = useState<'today' | 'last7days' | 'last30days'>('today');
   
   type AlertButton = {
     text: string;
@@ -90,7 +95,7 @@ export const HistoryScreen: React.FC = () => {
           try {
             const result = await TransactionService.deleteTransaction(transaction.id);
             
-            if (result.success) {
+            if (result) {
               // Reload transactions
               await loadTransactions(true);
               setAlertTitle('Success');
@@ -99,7 +104,7 @@ export const HistoryScreen: React.FC = () => {
               setAlertVisible(true);
             } else {
               setAlertTitle('Error');
-              setAlertMessage(result.error || 'Failed to delete transaction');
+              setAlertMessage('Failed to delete transaction');
               setAlertButtons([{ text: 'OK' }]);
               setAlertVisible(true);
             }
@@ -179,7 +184,7 @@ export const HistoryScreen: React.FC = () => {
 
   useEffect(() => {
     loadTransactions();
-  }, [selectedFilter, customDate]);
+  }, [selectedFilter, customEndDate]);
 
   const loadTransactions = async (refresh = false) => {
     try {
@@ -210,9 +215,20 @@ export const HistoryScreen: React.FC = () => {
           endDate = new Date(today.getTime() - 1).toISOString();
           break;
         case 'custom':
-          const customStart = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
-          startDate = customStart.toISOString();
-          endDate = new Date(customStart.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          // Custom date range - whole day (00:00:00 to 23:59:59)
+          if (!customStartDate || !customEndDate) {
+            // If custom dates not set, fall back to today
+            startDate = today.toISOString();
+            endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+          } else {
+            const start = new Date(customStartDate);
+            start.setHours(0, 0, 0, 0);
+            startDate = start.toISOString();
+            
+            const end = new Date(customEndDate);
+            end.setHours(23, 59, 59, 999);
+            endDate = end.toISOString();
+          }
           break;
         default:
           startDate = today.toISOString();
@@ -275,19 +291,125 @@ export const HistoryScreen: React.FC = () => {
 
   const handleFilterChange = (filter: typeof selectedFilter) => {
     if (filter === 'custom') {
-      setShowDatePicker(true);
+      // Save current filter as previous before showing date picker
+      if (selectedFilter !== 'custom') {
+        setPreviousFilter(selectedFilter);
+      }
+      // Show start date picker
+      setShowStartDatePicker(true);
+    } else {
+      // Reset custom dates when switching away from custom filter
+      setCustomStartDate(null);
+      setCustomEndDate(null);
+      setSelectedFilter(filter);
+      // Save non-custom filters as previous
+      setPreviousFilter(filter);
     }
-    setSelectedFilter(filter);
   };
-
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
+  
+  // Handle start date selection
+  const handleStartDateChange = (event: any, selectedDate?: Date) => {
+    setShowStartDatePicker(false);
+    
+    if (event.type === 'dismissed') {
+      // User cancelled - revert to previous filter
+      if (selectedFilter === 'custom' && !customStartDate) {
+        setSelectedFilter(previousFilter);
+      }
+      return;
+    }
+    
     if (selectedDate) {
-      setCustomDate(selectedDate);
+      // Validate: start date cannot be today or future
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selected = new Date(selectedDate);
+      selected.setHours(0, 0, 0, 0);
+      
+      if (selected >= today) {
+        setAlertTitle('Invalid Date');
+        setAlertMessage('Start date must be at least 1 day before today.');
+        setAlertButtons([{ text: 'OK', onPress: () => setSelectedFilter(previousFilter) }]);
+        setAlertVisible(true);
+        return;
+      }
+      
+      setCustomStartDate(selectedDate);
+      // Show end date picker after start date is selected
+      setShowEndDatePicker(true);
     }
   };
+  
+  // Handle end date selection
+  const handleEndDateChange = (event: any, selectedDate?: Date) => {
+    setShowEndDatePicker(false);
+    
+    if (event.type === 'dismissed') {
+      // User cancelled - revert to previous filter
+      setCustomStartDate(null);
+      setSelectedFilter(previousFilter);
+      return;
+    }
+    
+    if (selectedDate && customStartDate) {
+      // Validate: end date cannot be future, and must be >= start date
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // End of today
+      const selected = new Date(selectedDate);
+      selected.setHours(23, 59, 59, 999);
+      const start = new Date(customStartDate);
+      start.setHours(0, 0, 0, 0);
+      
+      if (selected > today) {
+        setAlertTitle('Invalid Date');
+        setAlertMessage('End date cannot be in the future.');
+        setAlertButtons([{ text: 'OK', onPress: () => {
+          setCustomStartDate(null);
+          setSelectedFilter(previousFilter);
+        }}]);
+        setAlertVisible(true);
+        return;
+      }
+      
+      if (selected < start) {
+        setAlertTitle('Invalid Date');
+        setAlertMessage('End date cannot be before start date.');
+        setAlertButtons([{ text: 'OK', onPress: () => {
+          setCustomStartDate(null);
+          setSelectedFilter(previousFilter);
+        }}]);
+        setAlertVisible(true);
+        return;
+      }
+      
+      setCustomEndDate(selectedDate);
+      setSelectedFilter('custom');
+    }
+  };
+  
+  // Format custom date range label
+  const getCustomDateLabel = () => {
+    if (!customStartDate || !customEndDate) return 'Select Date Range';
+    
+    const formatDate = (date: Date) => {
+      const day = date.getDate();
+      const month = date.toLocaleString('en-US', { month: 'short' });
+      const year = date.getFullYear();
+      return `${day} ${month} ${year}`;
+    };
+    
+    const start = formatDate(customStartDate);
+    const end = formatDate(customEndDate);
+    
+    // If same date, show only once
+    if (customStartDate.toDateString() === customEndDate.toDateString()) {
+      return start;
+    }
+    
+    return `${start} - ${end}`;
+  };
 
-  // Effects
+
   useEffect(() => {
     performSearch(searchQuery);
   }, [performSearch, searchQuery]);
@@ -913,20 +1035,12 @@ export const HistoryScreen: React.FC = () => {
               style={styles.filterChip}
               compact
             >
-              {selectedFilter === 'custom' ? formatFullDate(customDate.toISOString()) : 'Select Date'}
+              {getCustomDateLabel()}
             </Chip>
           </ScrollView>
         </View>
 
-        {showDatePicker && (
-          <DateTimePicker
-            value={customDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleDateChange}
-            maximumDate={new Date()}
-          />
-        )}
+
 
         {filteredTransactions.length === 0 ? (
           error ? (
@@ -983,6 +1097,28 @@ export const HistoryScreen: React.FC = () => {
       </View>
     </SafeAreaView>
     <CustomAlert visible={alertVisible} title={alertTitle} message={alertMessage} buttons={alertButtons} onDismiss={() => setAlertVisible(false)} />
+    
+    {/* Date Pickers for Custom Date Range */}
+    {showStartDatePicker && (
+      <DateTimePicker
+        value={customStartDate || new Date()}
+        mode="date"
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        onChange={handleStartDateChange}
+        maximumDate={new Date(new Date().setDate(new Date().getDate() - 1))}
+      />
+    )}
+    
+    {showEndDatePicker && customStartDate && (
+      <DateTimePicker
+        value={customEndDate || customStartDate}
+        mode="date"
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        onChange={handleEndDateChange}
+        minimumDate={customStartDate}
+        maximumDate={new Date()} // Allow selecting today
+      />
+    )}
     </>
   );
 };

@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { View, Animated, TouchableOpacity } from 'react-native';
+import { Pressable } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { PaperProvider, Snackbar, Text } from 'react-native-paper';
+import { PaperProvider, Snackbar } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFonts } from 'expo-font';
-import { useNavigation, useNavigationState } from '@react-navigation/native';
 import {
   Roboto_100Thin,
   Roboto_300Light,
@@ -39,6 +38,76 @@ import { TradeService } from './src/services/trade.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell';
+
+// Custom Tab Bar Button with Rectangular Touch Area and Ripple Effect
+const CustomTabBarButton = ({ children, onPress, accessibilityState }: any) => {
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'transparent',
+        opacity: pressed ? 0.7 : 1, // Fallback opacity for iOS
+      })}
+      android_ripple={{
+        color: theme.colors.primaryContainer,
+        borderless: false,
+        radius: undefined, // Use default radius (rectangular)
+      }}
+    >
+      {children}
+    </Pressable>
+  );
+};
+
+// Main Tab Navigator Component with Stack for smooth transitions
+const MainTabNavigator = () => {
+  const Tab = createBottomTabNavigator();
+
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }: { route: any }) => ({
+        headerShown: false,
+        tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => {
+          let iconName;
+          if (route.name === 'Home') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'History') {
+            iconName = focused ? 'history' : 'clock-outline';
+          } else if (route.name === 'Trade') {
+            iconName = focused ? 'swap-vertical-circle-outline' : 'swap-vertical';
+          } else if (route.name === 'Ledger') {
+            iconName = focused ? 'chart-line' : 'chart-line-variant';
+          }
+          return <Icon name={iconName as keyof typeof Icon.glyphMap} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
+        tabBarStyle: {
+          height: theme.dimensions.bottomNavHeight,
+          backgroundColor: theme.colors.surface,
+          elevation: theme.elevation.level3,
+          borderTopWidth: 0,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontFamily: 'Roboto_500Medium',
+          marginTop: 2,
+        },
+        tabBarButton: CustomTabBarButton,
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="History" component={HistoryScreen} />
+      <Tab.Screen name="Trade" component={TradeScreen} />
+      <Tab.Screen name="Ledger" component={LedgerScreen} />
+    </Tab.Navigator>
+  );
+};
 
 // Main App Component with Context
 interface AppContentProps {
@@ -87,104 +156,6 @@ const AppContent: React.FC<AppContentProps> = ({
 
   const handleAddMoreEntry = () => {
     onNavigateToEntry();
-  };
-
-  // Main Tab Navigator Component with Stack for smooth transitions
-  const MainTabNavigator = () => {
-    const Tab = createBottomTabNavigator();
-    const navigation = useNavigation();
-    const currentRouteName = useNavigationState(state => {
-      if (!state) return 'Home';
-      const route = state.routes[state.index];
-      return route?.name || 'Home';
-    });
-
-    return (
-      <View style={{ flex: 1 }}>
-        <Tab.Navigator
-          screenOptions={({ route }: { route: any }) => ({
-            headerShown: false,
-            tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => {
-              let iconName;
-              if (route.name === 'Home') {
-                iconName = focused ? 'home' : 'home-outline';
-              } else if (route.name === 'History') {
-                iconName = focused ? 'history' : 'clock-outline';
-              } else if (route.name === 'Trade') {
-                iconName = focused ? 'swap-vertical-circle-outline' : 'swap-vertical';
-              } else if (route.name === 'Ledger') {
-                iconName = focused ? 'chart-line' : 'chart-line-variant';
-              }
-              return <Icon name={iconName as keyof typeof Icon.glyphMap} size={size} color={color} />;
-            },
-            tabBarActiveTintColor: theme.colors.primary,
-            tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-            tabBarStyle: {
-              height: theme.dimensions.bottomNavHeight,
-              backgroundColor: theme.colors.surface,
-              elevation: theme.elevation.level3,
-              borderTopWidth: 0,
-            },
-            tabBarLabelStyle: {
-              fontSize: 12,
-              fontFamily: 'Roboto_500Medium',
-              marginTop: 2,
-            },
-          })}
-        >
-          <Tab.Screen name="Home" component={HomeScreen} />
-          <Tab.Screen name="History" component={HistoryScreen} />
-          <Tab.Screen name="Trade" component={TradeScreen} />
-          <Tab.Screen name="Ledger" component={LedgerScreen} />
-        </Tab.Navigator>
-
-      {/* Custom Bottom Tab Bar */}
-      <View style={{
-        height: theme.dimensions.bottomNavHeight,
-        backgroundColor: theme.colors.surface,
-        elevation: theme.elevation.level3,
-        borderTopWidth: 0,
-        flexDirection: 'row',
-      }}>
-        {[
-          { name: 'Home', label: 'Home', focusedIcon: 'home', unfocusedIcon: 'home-outline' },
-          { name: 'History', label: 'History', focusedIcon: 'history', unfocusedIcon: 'clock-outline' },
-          { name: 'Trade', label: 'Trade', focusedIcon: 'swap-vertical-circle-outline', unfocusedIcon: 'swap-vertical' },
-          { name: 'Ledger', label: 'Ledger', focusedIcon: 'chart-line', unfocusedIcon: 'chart-line-variant' },
-        ].map((tab) => {
-          const isFocused = currentRouteName === tab.name;
-          return (
-            <TouchableOpacity
-              key={tab.name}
-              style={{
-                flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 4,
-              }}
-              onPress={() => {
-                (navigation as any).navigate(tab.name);
-              }}
-            >
-              <Icon
-                name={(isFocused ? tab.focusedIcon : tab.unfocusedIcon) as keyof typeof Icon.glyphMap}
-                size={24}
-                color={isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant}
-              />
-              <Text style={{
-                fontSize: 12,
-                fontFamily: 'Roboto_500Medium',
-                marginTop: 2,
-                color: isFocused ? theme.colors.primary : theme.colors.onSurfaceVariant,
-              }}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-    );
   };
 
   return (

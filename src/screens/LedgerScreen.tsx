@@ -23,6 +23,7 @@ import { TransactionService } from '../services/transaction.service';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
 import { InventoryService } from '../services/inventory.service';
+import { RaniRupaStockService } from '../services/raniRupaStock.service';
 import { Transaction, Customer, LedgerEntry } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
@@ -108,6 +109,8 @@ export const LedgerScreen: React.FC = () => {
   const [showExportDatePicker, setShowExportDatePicker] = useState(false);
   const [exportDate, setExportDate] = useState<Date>(new Date());
   const [showAdjustAlert, setShowAdjustAlert] = useState(false);
+  const [raniStock, setRaniStock] = useState<any[]>([]);
+  const [rupuStock, setRupuStock] = useState<any[]>([]);
   const { navigateToSettings } = useAppContext();
   const navigation = useNavigation();
 
@@ -214,12 +217,14 @@ export const LedgerScreen: React.FC = () => {
       }
 
       // Use database-level filtering for better performance
-      const [filteredTrans, customers, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate] = await Promise.all([
+      const [filteredTrans, customers, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate, raniStockData, rupuStockData] = await Promise.all([
         TransactionService.getTransactionsByDateRange(startDate, endDate),
         CustomerService.getAllCustomers(),
         LedgerService.getLedgerEntriesByDateRange(startDate, endDate),
         TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All transactions up to end date
-        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', upToEndDate) // All ledger entries up to end date
+        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All ledger entries up to end date
+        RaniRupaStockService.getStockByType('rani'),
+        RaniRupaStockService.getStockByType('rupu')
       ]);
 
       const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
@@ -227,12 +232,28 @@ export const LedgerScreen: React.FC = () => {
       setFilteredTransactions(filteredTrans);
       setFilteredLedgerEntries(filteredLedger);
       setCustomers(customers);
+      setRaniStock(raniStockData);
+      setRupuStock(rupuStockData);
     } catch (error) {
       console.error('Error loading inventory data:', error);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
+  };
+
+  // Calculate total pure weight from stock data
+  const calculateTotalStockWeight = (stock: any[], type: 'rani' | 'rupu'): number => {
+    return stock.reduce((total, item) => {
+      if (type === 'rani') {
+        // For rani: calculate pure gold weight with precise formatting
+        const pureWeight = (item.weight * item.touch) / 100;
+        return total + formatPureGoldPrecise(pureWeight);
+      } else {
+        // For rupu: use custom silver formatting
+        return total + customFormatPureSilver(item.weight, item.touch);
+      }
+    }, 0);
   };
 
   const handleInventoryAdjustment = async (values: Record<string, any>) => {
@@ -516,11 +537,13 @@ export const LedgerScreen: React.FC = () => {
       const endDateStr = endOfSelectedDay.toISOString();
 
       // Use database-level filtering for better performance
-      const [filteredTrans, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate] = await Promise.all([
+      const [filteredTrans, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate, raniStockData, rupuStockData] = await Promise.all([
         TransactionService.getTransactionsByDateRange(startDateStr, endDateStr),
         LedgerService.getLedgerEntriesByDateRange(startDateStr, endDateStr),
         TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
-        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', endDateStr)
+        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
+        RaniRupaStockService.getStockByType('rani'),
+        RaniRupaStockService.getStockByType('rupu')
       ]);
 
       // transactionsUpToDate and ledgerEntriesUpToDate already contain all data up to selected date
@@ -620,17 +643,15 @@ export const LedgerScreen: React.FC = () => {
       silverEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       moneyEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      // Calculate opening balances for gold and silver
-      // Opening = Current + sum(sold weights) - sum(purchased weights)
       const goldOpeningBalances = {
         gold999: data.goldInventory.gold999,
         gold995: data.goldInventory.gold995,
-        rani: data.goldInventory.rani
+        rani: calculateTotalStockWeight(raniStockData, 'rani')
       };
 
       const silverOpeningBalances = {
         silver: data.silverInventory.silver,
-        rupu: data.silverInventory.rupu
+        rupu: calculateTotalStockWeight(rupuStockData, 'rupu')
       };
 
       // Calculate gold opening balances
@@ -782,8 +803,6 @@ export const LedgerScreen: React.FC = () => {
           <div class="chips">
             <span class="chip">Gold 999: ${formatWeight(goldOpeningBalances.gold999)}</span>
             <span class="chip">Gold 995: ${formatWeight(goldOpeningBalances.gold995)}</span>
-            <span class="chip">Rani: ${goldOpeningBalances.rani.toFixed(3)}g</span>
-          </div>
           <table>
             <thead>
               <tr>
@@ -819,8 +838,8 @@ export const LedgerScreen: React.FC = () => {
                 return `
                   <tr>
                     <td>${entry.customerName}</td>
-                    <td>${purchaseWeight > 0 ? formatRaniDetails(entry.entry, purchaseWeight) : '-'}</td>
-                    <td>${sellWeight > 0 ? formatRaniDetails(entry.entry, sellWeight) : '-'}</td>
+                    <td>${purchaseWeight > 0 ? formatRaniDetails(entry.entry, purchaseWeight) : '-'} ${purchaseWeight > 0 ? entry.entry.itemType : ''}</td>
+                    <td>${sellWeight > 0 ? formatRaniDetails(entry.entry, sellWeight) : '-'} ${sellWeight > 0 ? entry.entry.itemType : ''}</td>
                   </tr>
                 `;
               }).join('')}
@@ -829,7 +848,7 @@ export const LedgerScreen: React.FC = () => {
           <div class="chips">
             <span class="chip">Gold 999: ${formatWeight(data.goldInventory.gold999)}</span>
             <span class="chip">Gold 995: ${formatWeight(data.goldInventory.gold995)}</span>
-            <span class="chip">Rani: ${data.goldInventory.rani.toFixed(3)}g</span>
+            <span class="chip">Rani: ${calculateTotalStockWeight(raniStockData, 'rani').toFixed(3)}g</span>
           </div>
           
           <hr/>
@@ -838,7 +857,6 @@ export const LedgerScreen: React.FC = () => {
           <h3 style="color: #B0BEC5;">Silver Subledger</h3>
           <div class="chips">
             <span class="chip">Silver: ${formatWeight(silverOpeningBalances.silver, true)}</span>
-            <span class="chip">Rupu: ${formatWeight(silverOpeningBalances.rupu, true)}</span>
           </div>
           <table>
             <thead>
@@ -878,7 +896,7 @@ export const LedgerScreen: React.FC = () => {
           </table>
           <div class="chips">
             <span class="chip">Silver: ${formatWeight(data.silverInventory.silver, true)}</span>
-            <span class="chip">Rupu: ${formatWeight(data.silverInventory.rupu, true)}</span>
+            <span class="chip">Rupu: ${calculateTotalStockWeight(rupuStockData, 'rupu').toFixed(1)}g</span>
           </div>
 
           <hr/>
@@ -1396,7 +1414,7 @@ export const LedgerScreen: React.FC = () => {
                   style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
                   textStyle={{ color: '#E65100' }}
                 >
-                  Rani: {inventoryData.goldInventory.rani.toFixed(3)}g
+                  Rani: {calculateTotalStockWeight(raniStock, 'rani').toFixed(3)}g
                 </Chip>
               </>
             ) : selectedInventory === 'silver' ? (
@@ -1413,7 +1431,7 @@ export const LedgerScreen: React.FC = () => {
                   style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
                   textStyle={{ color: '#455A64' }}
                 >
-                  Rupu: {formatWeight(inventoryData.silverInventory.rupu, true)}
+                  Rupu: {calculateTotalStockWeight(rupuStock, 'rupu').toFixed(1)}g
                 </Chip>
               </>
             ) : selectedInventory === 'money' ? (

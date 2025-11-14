@@ -3,7 +3,8 @@ import { Platform } from 'react-native';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DatabaseService } from './database';
+import { CustomerService } from './customer.service';
+import { TransactionService } from './transaction.service';
 import { Customer } from '../types';
 
 const STORAGE_KEYS = {
@@ -176,8 +177,8 @@ export class NotificationService {
    */
   private static async getCustomersWithPendingDebt(): Promise<Array<{ customer: Customer; daysPending: number }>> {
     try {
-      const customers = await DatabaseService.getAllCustomers();
-      const transactions = await DatabaseService.getAllTransactions();
+      const customers = await CustomerService.getAllCustomers();
+      const transactions = await TransactionService.getAllTransactions();
       const today = new Date();
       const customersWithDebt: Array<{ customer: Customer; daysPending: number }> = [];
 

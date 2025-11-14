@@ -44,6 +44,9 @@ export interface TransactionEntry {
   amount?: number; // For money entries
   metalOnly?: boolean; // For metal-only transactions (no money involved)
   stock_id?: string; // For Rani/Rupu entries - links to stock item
+  rupuReturnType?: 'money' | 'silver'; // For Rupu entries - how merchant returns value
+  silverWeight?: number; // For Rupu entries when return type is silver
+  netWeight?: number; // For Rupu entries - calculated net weight after silver return
   subtotal: number;
   createdAt?: string; // ISO datetime when entry was created
   lastUpdatedAt?: string; // ISO datetime when entry was last updated

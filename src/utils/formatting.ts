@@ -122,8 +122,13 @@ export const formatPureGoldPrecise = (value: number): number => {
   if (isNaN(value)) return 0;
 
   // Truncate to 3 decimal places (don't round)
-  const truncated = Math.floor(value * 1000) / 1000;
-  return truncated;
+  const rounded4digit = Math.round(value * 10000) / 10000;
+  let rounded3digit = Math.round(value * 1000) / 1000;
+  const lastFloatDigit = (rounded4digit - rounded3digit) * 10000;
+  if (lastFloatDigit >= 8) {
+    rounded3digit += 0.001;
+  }
+  return rounded3digit;
 };
 
 /**

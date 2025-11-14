@@ -22,6 +22,7 @@ interface InventoryInputDialogProps {
   onSubmit: (values: Record<string, any>) => void;
   onRadioChange?: (key: string, value: string) => void;
   requireAtLeastOneNumeric?: boolean;
+  allowDefaults?: boolean; // New prop to allow proceeding with default values
 }
 
 export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
@@ -33,6 +34,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   onSubmit,
   onRadioChange,
   requireAtLeastOneNumeric = false,
+  allowDefaults = false, // Default to false to maintain existing behavior
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
@@ -100,6 +102,11 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   };
 
   const validateInputs = (): boolean => {
+    // Skip validation if allowDefaults is enabled
+    if (allowDefaults) {
+      return true;
+    }
+
     const newErrors: Record<string, string> = {};
     let hasErrors = false;
 
@@ -171,7 +178,13 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
     const result: Record<string, any> = {};
     inputs.forEach(input => {
       if (input.type === 'text' && input.keyboardType === 'numeric') {
-        result[input.key] = parseFloat(values[input.key]);
+        const value = values[input.key] || '';
+        if (value.trim() === '') {
+          // Use default value of 0 when allowDefaults is enabled and field is empty
+          result[input.key] = 0;
+        } else {
+          result[input.key] = parseFloat(value);
+        }
       } else {
         result[input.key] = values[input.key];
       }
@@ -287,7 +300,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                 mode="contained"
                 onPress={handleSubmit}
                 style={styles.button}
-                disabled={!hasValuesChanged()}
+                disabled={!allowDefaults && !hasValuesChanged()}
               >
                 Next
               </Button>

@@ -146,15 +146,13 @@ export const SettingsScreen: React.FC = () => {
     setInventoryInputs([
       {
         key: 'gold999',
-        label: 'Gold 999 (grams)',
-        value: (baseInventory?.gold999 || 300).toString(),
-        placeholder: '300'
+        label: 'Gold 999 (g)',
+        value: (0).toFixed(3),
       },
       {
         key: 'gold995',
-        label: 'Gold 995 (grams)',
-        value: (baseInventory?.gold995 || 100).toString(),
-        placeholder: '100'
+        label: 'Gold 995 (g)',
+        value: (0).toFixed(3),
       }
     ]);
     setCollectedInventoryData({});
@@ -166,38 +164,36 @@ export const SettingsScreen: React.FC = () => {
     setCollectedInventoryData(updatedData);
 
     if (inventoryDialogStep === 'gold') {
-      // Move to silver
+      // Move to silver - always allow progression with defaults
       setInventoryDialogStep('silver');
       setInventoryInputs([
         {
           key: 'silver',
-          label: 'Base Silver (grams)',
-          value: (baseInventory?.silver || 10000).toString(),
-          placeholder: '10000'
+          label: 'Base Silver (g)',
+          value: (updatedData.silver !== undefined ? updatedData.silver : 0).toFixed(1),
         }
       ]);
     } else if (inventoryDialogStep === 'silver') {
-      // Move to money
+      // Move to money - always allow progression with defaults
       setInventoryDialogStep('money');
       setInventoryInputs([
         {
           key: 'money',
           label: 'Money (₹)',
-          value: (baseInventory?.money || 3000000).toString(),
-          placeholder: '3000000'
+          value: (updatedData.money !== undefined ? updatedData.money : 0).toString(),
         }
       ]);
     } else if (inventoryDialogStep === 'money') {
-      // All steps complete, save the inventory
+      // All steps complete, save the inventory with defaults if not provided
       setShowInventoryDialog(false);
-      
+
       const finalInventory = {
-        gold999: updatedData.gold999,
-        gold995: updatedData.gold995,
-        silver: updatedData.silver,
-        rani: baseInventory?.rani || 0,
-        rupu: baseInventory?.rupu || 0,
-        money: updatedData.money
+        gold999: updatedData.gold999 !== undefined ? updatedData.gold999 : 0,
+        gold995: updatedData.gold995 !== undefined ? updatedData.gold995 : 0,
+        silver: updatedData.silver !== undefined ? updatedData.silver : 0,
+        rani: 0, // Rani stock is tracked separately
+        rupu: 0, // Rupu stock is tracked separately
+        money: updatedData.money !== undefined ? updatedData.money : 0
       };
 
       InventoryService.setBaseInventory(finalInventory).then(success => {
@@ -522,8 +518,8 @@ export const SettingsScreen: React.FC = () => {
               if (success) {
                 // Reload data after clearing
                 const [customersData, inventoryData] = await Promise.all([
-                  DatabaseService.getAllCustomers(),
-                  DatabaseService.getBaseInventory()
+                  CustomerService.getAllCustomers(),
+                  InventoryService.getBaseInventory()
                 ]);
                 setCustomers(customersData);
                 setBaseInventory(inventoryData);
@@ -782,6 +778,7 @@ export const SettingsScreen: React.FC = () => {
         inputs={inventoryInputs}
         onSubmit={handleInventoryDialogSubmit}
         onCancel={handleInventoryDialogCancel}
+        allowDefaults={true}
       />
 
       {/* Privacy Policy Dialog */}

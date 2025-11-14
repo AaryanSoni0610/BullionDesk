@@ -50,6 +50,34 @@ export const TradeScreen: React.FC = () => {
     }
   };
 
+  const handleDeleteTrade = async (trade: Trade) => {
+    showAlert(
+      'Delete Trade',
+      `Are you sure you want to delete this trade?\n\nCustomer: ${trade.customerName}\nDate: ${formatFullDate(trade.date)}\n\nThis action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await TradeService.deleteTrade(trade.id);
+              if (result) {
+                showAlert('Success', 'Trade deleted successfully');
+                loadTrades(); // Refresh the list
+              } else {
+                showAlert('Error', 'Failed to delete trade');
+              }
+            } catch (error) {
+              console.error('Error deleting trade:', error);
+              showAlert('Error', 'Failed to delete trade');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const toggleCardExpansion = (tradeId: string) => {
     const newExpanded = new Set(expandedCards);
     if (newExpanded.has(tradeId)) {
@@ -257,12 +285,21 @@ export const TradeScreen: React.FC = () => {
             />
           )}
           right={() => (
-            <IconButton
-              icon={isExpanded ? "chevron-up" : "chevron-down"}
-              size={20}
-              onPress={() => toggleCardExpansion(item.id)}
-              style={styles.expandButton}
-            />
+            <View style={styles.rightActions}>
+              <IconButton
+                icon="delete-outline"
+                size={20}
+                onPress={() => handleDeleteTrade(item)}
+                style={styles.deleteButton}
+                iconColor={theme.colors.error}
+              />
+              <IconButton
+                icon={isExpanded ? "chevron-up" : "chevron-down"}
+                size={20}
+                onPress={() => toggleCardExpansion(item.id)}
+                style={styles.expandButton}
+              />
+            </View>
           )}
           onPress={() => toggleCardExpansion(item.id)}
           style={styles.tradeItem}
@@ -389,6 +426,7 @@ export const TradeScreen: React.FC = () => {
         onSubmit={handleTradeDialogSubmit}
         onCancel={handleTradeDialogCancel}
         onRadioChange={handleRadioChange}
+        allowDefaults={(!collectedTradeData.tradeType || !collectedTradeData.itemType)}
       />
     </SafeAreaView>
   );
@@ -452,6 +490,14 @@ const styles = StyleSheet.create({
   },
   expandButton: {
     marginRight: -10,
+    marginTop: -5,
+  },
+  rightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deleteButton: {
+    marginRight: -5,
     marginTop: -5,
   },
   expandedContent: {

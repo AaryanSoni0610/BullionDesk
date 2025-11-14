@@ -22,8 +22,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { formatPureGoldPrecise, customFormatPureSilver } from '../utils/formatting';
 import { theme } from '../theme';
-import { RaniRupaStockService } from '../services/raniRupaStockService';
 import { TransactionService } from '../services/transaction.service';
+import { RaniRupaStockService } from '../services/raniRupaStock.service';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 import CustomAlert from '../components/CustomAlert';
@@ -51,11 +51,10 @@ export const RaniRupaSellScreen: React.FC = () => {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
   const [showSaveDatePicker, setShowSaveDatePicker] = useState(false);
-  const [showDateWarning, setShowDateWarning] = useState(false);
   const [pendingSaveDate, setPendingSaveDate] = useState<Date | null>(null);
   const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);
 
-  const { navigateToSettings, showAlert, setCustomerModalVisible, setAllowCustomerCreation, customerModalVisible, currentCustomer, setIsCustomerSelectionForRaniRupa, setCurrentCustomer, handleCreateCustomer } = useAppContext();
+  const { navigateToSettings, showAlert, setCustomerModalVisible, customerModalVisible, currentCustomer, setIsCustomerSelectionForRaniRupa, setCurrentCustomer } = useAppContext();
 
   // Format date for display in DD/MM/YYYY format
   const formatDateDisplay = (date: Date): string => {

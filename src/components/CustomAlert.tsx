@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, View, StyleSheet, TouchableWithoutFeedback, ScrollView } from 'react-native';
-import { Surface, Text, Button, TextInput } from 'react-native-paper';
+import { Surface, Text, Button } from 'react-native-paper';
 import { theme } from '../theme';
 
 interface AlertButton {

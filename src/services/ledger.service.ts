@@ -347,7 +347,7 @@ export class LedgerService {
             entry.metalOnly ? 1 : 0,
             entry.stock_id || null,
             entry.subtotal,
-            entry.createdAt || timestamp,
+            timestamp,
             entry.lastUpdatedAt || timestamp
           ]
         );
@@ -371,6 +371,21 @@ export class LedgerService {
       return true;
     } catch (error) {
       console.error('Error deleting ledger entry:', error);
+      return false;
+    }
+  }
+
+  // Delete ledger entries by transaction ID
+  static async deleteLedgerEntryByTransactionId(transactionId: string): Promise<boolean> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      // Delete all ledger entries for this transaction
+      await db.runAsync('DELETE FROM ledger_entries WHERE transactionId = ?', [transactionId]);
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting ledger entries by transaction ID:', error);
       return false;
     }
   }

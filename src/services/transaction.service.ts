@@ -609,7 +609,82 @@ export class TransactionService {
     try {
       const db = DatabaseService.getDatabase();
       
-      // Foreign key cascade will handle deleting entries
+      // Get the transaction to reverse its effects
+      const transaction = await this.getTransactionById(transactionId);
+      if (!transaction) {
+        console.error('Transaction not found for deletion');
+        return false;
+      }
+
+      // Get the customer
+      const customer = await CustomerService.getCustomerById(transaction.customerId);
+      if (!customer) {
+        console.error('Customer not found for transaction deletion');
+        return false;
+      }
+
+      // Calculate the balance effect to reverse
+      const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+      let balanceEffect = 0;
+      if (!isMetalOnly) {
+        const netAmount = transaction.total;
+        const receivedAmount = transaction.amountPaid;
+        const discountExtraAmount = transaction.discountExtraAmount;
+        balanceEffect = netAmount >= 0 
+          ? receivedAmount - netAmount - discountExtraAmount
+          : Math.abs(netAmount) - receivedAmount - discountExtraAmount;
+        balanceEffect *= -1; // Reverse the effect
+      }
+
+      // Reverse metal balances for metal-only entries
+      if (isMetalOnly) {
+        for (const entry of transaction.entries) {
+          if (entry.metalOnly && entry.type !== 'money') {
+            const itemType = entry.itemType;
+            let metalAmount = 0;
+
+            if (entry.itemType === 'rani') {
+              metalAmount = entry.pureWeight || 0;
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount; // Reverse
+            } else if (entry.itemType === 'rupu') {
+              metalAmount = entry.pureWeight || 0;
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount; // Reverse
+            } else {
+              metalAmount = entry.weight || 0;
+              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount; // Reverse
+            }
+
+            await CustomerService.updateCustomerMetalBalance(customer.id, itemType, -metalAmount);
+          }
+        }
+      }
+
+      // Reverse stock
+      for (const entry of transaction.entries) {
+        if (entry.stock_id) {
+          if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+            await RaniRupaStockService.removeStock(entry.stock_id);
+          } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+            const touch = entry.touch || 100;
+            await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
+          }
+        }
+      }
+
+      // Reverse customer balance
+      if (!isMetalOnly) {
+        const updatedCustomer: Customer = {
+          ...customer,
+          balance: customer.balance - balanceEffect,
+          lastTransaction: new Date().toISOString(),
+        };
+        await CustomerService.saveCustomer(updatedCustomer);
+      }
+
+      // Delete ledger entries
+      await LedgerService.deleteLedgerEntryByTransactionId(transactionId);
+
+      // Delete the transaction (cascade will delete entries)
       await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);
       
       return true;

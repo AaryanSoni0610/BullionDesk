@@ -71,6 +71,25 @@ export class TradeService {
     }
   }
 
+  // Delete a trade by ID
+  static async deleteTrade(tradeId: string): Promise<boolean> {
+    try {
+      const trades = await this.getAllTrades();
+      const filteredTrades = trades.filter(trade => trade.id !== tradeId);
+      
+      if (filteredTrades.length === trades.length) {
+        // Trade not found
+        return false;
+      }
+      
+      await AsyncStorage.setItem(STORAGE_KEYS.TRADES, JSON.stringify(filteredTrades));
+      return true;
+    } catch (error) {
+      console.error('Error deleting trade:', error);
+      return false;
+    }
+  }
+
   // Clean up trades older than 7 days
   static async cleanupOldTrades(): Promise<void> {
     try {

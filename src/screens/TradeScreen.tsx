@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { Trade } from '../types';
 import { theme } from '../theme';
-import { TradeService } from '../services/tradeService';
+import { TradeService } from '../services/trade.service';
 import { formatFullDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';

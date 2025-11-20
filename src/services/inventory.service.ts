@@ -1,18 +1,6 @@
 import { DatabaseService } from './database.sqlite';
-import { CustomerService } from './customer.service';
 
 export class InventoryService {
-  // Round inventory values based on item type
-  static roundInventoryValue(value: number, itemType: string): number {
-    if (itemType === 'money') {
-      return Math.round(value); // Whole rupees
-    } else if (itemType.includes('gold') || itemType === 'rani') {
-      return Math.round(value * 1000) / 1000; // 3 decimal places for gold
-    } else if (itemType.includes('silver') || itemType === 'rupu') {
-      return Math.round(value * 10) / 10; // 1 decimal place for silver
-    }
-    return Math.round(value * 1000) / 1000; // Default to 3 decimal places
-  }
 
   // Get base inventory
   static async getBaseInventory(): Promise<{
@@ -71,7 +59,7 @@ export class InventoryService {
     money: number;
   }> {
     try {
-      const customers = await CustomerService.getAllCustomers();
+      const db = DatabaseService.getDatabase();
       
       const effects = {
         gold999: 0,
@@ -82,19 +70,46 @@ export class InventoryService {
         money: 0
       };
 
-      customers.forEach(customer => {
-        // Money balance: positive = customer has credit = merchant gave money (outflow)
-        // negative = customer owes = merchant received money (inflow)
-        effects.money -= customer.balance;
+      // Calculate effects from ledger_entry_items table
+      // This provides accurate inventory impact from all entries including partial payments
+      const items = await DatabaseService.getAllAsyncBatch<{
+        type: string;
+        itemType: string;
+        weight: number | null;
+        pureWeight: number | null;
+        subtotal: number;
+        metalOnly: number;
+      }>(`
+        SELECT lei.type, lei.itemType, lei.weight, lei.pureWeight, lei.subtotal, lei.metalOnly
+        FROM ledger_entry_items lei
+        INNER JOIN ledger_entries le ON lei.ledger_entry_id = le.id
+        WHERE le.deleted_on IS NULL
+      `);
 
-        // Metal balances: positive = merchant owes customer = merchant received metal (inflow)
-        // negative = customer owes merchant = merchant gave metal (outflow)
-        if (customer.metalBalances) {
-          effects.gold999 -= customer.metalBalances.gold999 || 0;
-          effects.gold995 -= customer.metalBalances.gold995 || 0;
-          effects.silver -= customer.metalBalances.silver || 0;
-          effects.rani -= customer.metalBalances.rani || 0;
-          effects.rupu -= customer.metalBalances.rupu || 0;
+      items.forEach(item => {
+        if (item.type === 'money') {
+          // Money entries: subtotal represents money flow
+          // Positive subtotal = merchant receives money (inflow)
+          // Negative subtotal = merchant gives money (outflow)
+          effects.money += item.subtotal;
+        } else if (item.metalOnly === 1) {
+          // Metal-only entries affect metal balances
+          const weight = (item.itemType === 'rani' || item.itemType === 'rupu') 
+            ? (item.pureWeight || 0) 
+            : (item.weight || 0);
+          
+          // Sell = merchant gives metal (outflow) = negative
+          // Purchase = merchant receives metal (inflow) = positive
+          const metalFlow = item.type === 'sell' ? -weight : weight;
+          
+          if (item.itemType === 'gold999') effects.gold999 += metalFlow;
+          else if (item.itemType === 'gold995') effects.gold995 += metalFlow;
+          else if (item.itemType === 'silver') effects.silver += metalFlow;
+          else if (item.itemType === 'rani') effects.rani += metalFlow;
+          else if (item.itemType === 'rupu') effects.rupu += metalFlow;
+        } else {
+          // Regular sell/purchase entries affect money only
+          effects.money += item.subtotal;
         }
       });
 

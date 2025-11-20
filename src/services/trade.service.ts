@@ -24,7 +24,7 @@ export class TradeService {
     try {
       const db = DatabaseService.getDatabase();
       
-      const trades = await db.getAllAsync<{
+      const trades = await DatabaseService.getAllAsyncBatch<{
         id: string;
         customerName: string;
         type: string;
@@ -56,7 +56,7 @@ export class TradeService {
     try {
       const db = DatabaseService.getDatabase();
       
-      const trades = await db.getAllAsync<any>(
+      const trades = await DatabaseService.getAllAsyncBatch<any>(
         'SELECT * FROM trades WHERE date >= ? AND date <= ? ORDER BY createdAt DESC',
         [startDate.toISOString(), endDate.toISOString()]
       );

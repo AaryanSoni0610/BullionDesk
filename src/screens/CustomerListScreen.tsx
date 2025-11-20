@@ -544,11 +544,11 @@ export const CustomerListScreen: React.FC = () => {
       const metalLedgerEntries: LedgerEntry[] = [];
 
       customerTransactions.forEach(transaction => {
-        // Only include transactions that have metal entries (not money-only)
-        const hasMetalEntries = transaction.entries.some(entry => entry.type !== 'money');
+        // Only include transactions that have entries (exclude money-only)
+        const hasEntries = transaction.entries && transaction.entries.length > 0;
 
-        if (hasMetalEntries) {
-          // Create a ledger-like entry for metal transactions
+        if (hasEntries) {
+          // Create a ledger-like entry for transactions with entries
           const metalEntry: LedgerEntry = {
             id: `metal_${transaction.id}`,
             transactionId: transaction.id,
@@ -853,7 +853,7 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     marginHorizontal: theme.spacing.xs,
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.md,
     marginBottom: theme.spacing.md,
     elevation: 0,
     backgroundColor: theme.colors.surfaceVariant,

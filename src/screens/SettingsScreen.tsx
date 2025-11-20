@@ -16,7 +16,7 @@ import { EncryptionService } from '../services/encryptionService';
 import { EncryptionKeyDialog } from '../components/EncryptionKeyDialog';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 import CustomAlert from '../components/CustomAlert';
-import { formatIndianNumber } from '../utils/formatting';
+import { formatIndianNumber, formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
 
 export const SettingsScreen: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
@@ -627,14 +627,14 @@ export const SettingsScreen: React.FC = () => {
             description={
               isLoadingInventory
                 ? "Loading..."
-                : `Gold: ${InventoryService.roundInventoryValue((baseInventory?.gold999 + baseInventory?.gold995 || 0), 'gold999')}g, Silver: ${InventoryService.roundInventoryValue(baseInventory?.silver || 0, 'silver')}g, Money: ₹${formatIndianNumber(InventoryService.roundInventoryValue(baseInventory?.money || 0, 'money'))}`
+                : `Gold: ${formatPureGoldPrecise((baseInventory?.gold999 + baseInventory?.gold995 || 0))}g, Silver: ${formatPureSilver(baseInventory?.silver || 0)}g, Money: ₹${formatIndianNumber(Math.round(baseInventory?.money || 0))}`
             }
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
             left={props => <List.Icon {...props} icon="package-variant-closed" />}
             onPress={() => {
               if (baseInventory) {
-                let message = `Gold 999: ${InventoryService.roundInventoryValue(baseInventory.gold999, 'gold999')}g\nGold 995: ${InventoryService.roundInventoryValue(baseInventory.gold995, 'gold995')}g\nSilver: ${InventoryService.roundInventoryValue(baseInventory.silver, 'silver')}g\nRani: ${InventoryService.roundInventoryValue(baseInventory.rani, 'rani')}g\nRupu: ${InventoryService.roundInventoryValue(baseInventory.rupu, 'rupu')}g\nMoney: ₹${formatIndianNumber(InventoryService.roundInventoryValue(baseInventory.money, 'money'))}`;
+                let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(baseInventory.rani)}g\nRupu: ${formatPureSilver(baseInventory.rupu)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
                 
                 showAlert(
                   'Base Inventory',

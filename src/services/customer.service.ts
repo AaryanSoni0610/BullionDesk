@@ -8,7 +8,7 @@ export class CustomerService {
       const db = DatabaseService.getDatabase();
       
       // Get all customers
-      const customers = await db.getAllAsync<{
+      const customers = await DatabaseService.getAllAsyncBatch<{
         id: string;
         name: string;
         lastTransaction: string | null;
@@ -60,7 +60,7 @@ export class CustomerService {
       
       // Use LIKE for case-insensitive search
       const searchPattern = `%${searchQuery}%`;
-      const customers = await db.getAllAsync<{
+      const customers = await DatabaseService.getAllAsyncBatch<{
         id: string;
         name: string;
         lastTransaction: string | null;
@@ -335,7 +335,7 @@ export class CustomerService {
       
       query += ' ORDER BY name ASC';
       
-      const customers = await db.getAllAsync<{
+      const customers = await DatabaseService.getAllAsyncBatch<{
         id: string;
         name: string;
         lastTransaction: string | null;

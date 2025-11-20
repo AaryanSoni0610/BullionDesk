@@ -18,7 +18,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime, customFormatPureSilver } from '../utils/formatting';
+import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime, customFormatPureSilver, formatPureSilver } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
@@ -542,18 +542,18 @@ export const LedgerScreen: React.FC = () => {
     silverInventory.total = silverInventory.silver + silverInventory.rupu;
 
     // Apply rounding to prevent floating point precision issues in display
-    goldInventory.gold999 = InventoryService.roundInventoryValue(goldInventory.gold999, 'gold999');
-    goldInventory.gold995 = InventoryService.roundInventoryValue(goldInventory.gold995, 'gold995');
-    goldInventory.rani = InventoryService.roundInventoryValue(goldInventory.rani, 'rani');
-    goldInventory.total = InventoryService.roundInventoryValue(goldInventory.total, 'gold999'); // Use gold999 precision for total
-    silverInventory.silver = InventoryService.roundInventoryValue(silverInventory.silver, 'silver');
-    silverInventory.rupu = InventoryService.roundInventoryValue(silverInventory.rupu, 'rupu');
-    silverInventory.total = InventoryService.roundInventoryValue(silverInventory.total, 'silver'); // Use silver precision for total
+    goldInventory.gold999 = formatPureGoldPrecise(goldInventory.gold999);
+    goldInventory.gold995 = formatPureGoldPrecise(goldInventory.gold995);
+    goldInventory.rani = formatPureGoldPrecise(goldInventory.rani);
+    goldInventory.total = formatPureGoldPrecise(goldInventory.total); // Use gold precision for total
+    silverInventory.silver = formatPureSilver(silverInventory.silver);
+    silverInventory.rupu = formatPureSilver(silverInventory.rupu);
+    silverInventory.total = formatPureSilver(silverInventory.total); // Use silver precision for total
 
     // Calculate actual money inventory from all ledger entries up to date: base money + sum(amountReceived) - sum(amountGiven)
     const totalMoneyReceived = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountReceived, 0);
     const totalMoneyGiven = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountGiven, 0);
-    const actualMoneyInventory = InventoryService.roundInventoryValue(baseInventory.money + totalMoneyReceived - totalMoneyGiven, 'money');
+    const actualMoneyInventory = Math.round(baseInventory.money + totalMoneyReceived - totalMoneyGiven);
 
     // Calculate day's cash flow from day's ledger entries only
     const dayMoneyReceived = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
@@ -766,11 +766,11 @@ export const LedgerScreen: React.FC = () => {
       });
 
       // Apply rounding to opening balances
-      goldOpeningBalances.gold999 = InventoryService.roundInventoryValue(goldOpeningBalances.gold999, 'gold999');
-      goldOpeningBalances.gold995 = InventoryService.roundInventoryValue(goldOpeningBalances.gold995, 'gold995');
-      goldOpeningBalances.rani = InventoryService.roundInventoryValue(goldOpeningBalances.rani, 'rani');
-      silverOpeningBalances.silver = InventoryService.roundInventoryValue(silverOpeningBalances.silver, 'silver');
-      silverOpeningBalances.rupu = InventoryService.roundInventoryValue(silverOpeningBalances.rupu, 'rupu');
+      goldOpeningBalances.gold999 = formatPureGoldPrecise(goldOpeningBalances.gold999);
+      goldOpeningBalances.gold995 = formatPureGoldPrecise(goldOpeningBalances.gold995);
+      goldOpeningBalances.rani = formatPureGoldPrecise(goldOpeningBalances.rani);
+      silverOpeningBalances.silver = formatPureSilver(silverOpeningBalances.silver);
+      silverOpeningBalances.rupu = formatPureSilver(silverOpeningBalances.rupu);
 
       // Generate HTML
       const htmlContent = `

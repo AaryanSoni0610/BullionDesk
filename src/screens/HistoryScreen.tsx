@@ -487,10 +487,8 @@ export const HistoryScreen: React.FC = () => {
       
       const hasRemainingBalance = transactionRemaining !== 0;
       
-      let isMoneyOnly = false;
-      if (transaction.entries.every(entry => entry.itemType === 'money')) {
-        isMoneyOnly = true;
-      }
+      // Check if this is a money-only transaction (no entries)
+      const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
 
       if (hasRemainingBalance) {
         if (!isMoneyOnly) {
@@ -498,7 +496,7 @@ export const HistoryScreen: React.FC = () => {
           transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
           transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         } else {
-          const isDebt = transaction.total < 0;
+          const isDebt = transaction.amountPaid < 0;
           transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
           transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         }

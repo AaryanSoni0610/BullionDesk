@@ -752,7 +752,7 @@ export class BackupService {
       if (isDifferent) {
         // Show warning and ask user to confirm
         const shouldProceed = await new Promise<boolean>((resolve) => {
-          Alert.alert(
+          this.showAlert(
             'Base Inventory Conflict',
             'The backup contains different base inventory values. This may cause accounting problems. Do you want to override your current base inventory with the backup values?',
             [

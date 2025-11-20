@@ -1,14 +1,13 @@
-import { LedgerEntry, Transaction, TransactionEntry } from '../types';
+import { LedgerEntry, Transaction } from '../types';
 import { DatabaseService } from './database.sqlite';
 
 export class LedgerService {
   // Get all ledger entries
   static async getAllLedgerEntries(): Promise<LedgerEntry[]> {
     try {
-      const db = DatabaseService.getDatabase();
 
       // Optimized query with JOIN and soft delete filtering
-      const rows = await db.getAllAsync<any>(
+      const rows = await DatabaseService.getAllAsyncBatch<any>(
         `SELECT
           le.id, le.transactionId, le.customerId, le.customerName, le.date,
           le.amountReceived, le.amountGiven, le.createdAt,
@@ -79,10 +78,9 @@ export class LedgerService {
   // Get ledger entries by date range
   static async getLedgerEntriesByDate(startDate: Date, endDate: Date): Promise<LedgerEntry[]> {
     try {
-      const db = DatabaseService.getDatabase();
 
       // Optimized query with JOIN and soft delete filtering
-      const rows = await db.getAllAsync<any>(
+      const rows = await DatabaseService.getAllAsyncBatch<any>(
         `SELECT
           le.id, le.transactionId, le.customerId, le.customerName, le.date,
           le.amountReceived, le.amountGiven, le.createdAt,
@@ -155,10 +153,9 @@ export class LedgerService {
   // Get ledger entries by date range (string-based for consistency)
   static async getLedgerEntriesByDateRange(startDate: string, endDate: string): Promise<LedgerEntry[]> {
     try {
-      const db = DatabaseService.getDatabase();
 
       // Optimized query with JOIN and soft delete filtering
-      const rows = await db.getAllAsync<any>(
+      const rows = await DatabaseService.getAllAsyncBatch<any>(
         `SELECT
           le.id, le.transactionId, le.customerId, le.customerName, le.date,
           le.amountReceived, le.amountGiven, le.createdAt,
@@ -231,10 +228,9 @@ export class LedgerService {
   // Get ledger entries by transaction ID
   static async getLedgerEntriesByTransactionId(transactionId: string): Promise<LedgerEntry[]> {
     try {
-      const db = DatabaseService.getDatabase();
 
       // Optimized query with JOIN and soft delete filtering
-      const rows = await db.getAllAsync<any>(
+      const rows = await DatabaseService.getAllAsyncBatch<any>(
         `SELECT
           le.id, le.transactionId, le.customerId, le.customerName, le.date,
           le.amountReceived, le.amountGiven, le.createdAt,
@@ -307,10 +303,9 @@ export class LedgerService {
   // Get ledger entries by customer ID
   static async getLedgerEntriesByCustomerId(customerId: string): Promise<LedgerEntry[]> {
     try {
-      const db = DatabaseService.getDatabase();
 
       // Optimized query with JOIN and soft delete filtering
-      const rows = await db.getAllAsync<any>(
+      const rows = await DatabaseService.getAllAsyncBatch<any>(
         `SELECT
           le.id, le.transactionId, le.customerId, le.customerName, le.date,
           le.amountReceived, le.amountGiven, le.createdAt,

@@ -20,6 +20,10 @@ interface AppContextType {
   editingTransactionId: string | null;
   setEditingTransactionId: (id: string | null) => void;
   lastGivenMoney: number;
+  pendingMoneyAmount: number;
+  setPendingMoneyAmount: (amount: number) => void;
+  pendingMoneyType: 'give' | 'receive';
+  setPendingMoneyType: (type: 'give' | 'receive') => void;
   transactionCreatedAt: string | null;
   transactionLastUpdatedAt: string | null;
   
@@ -98,6 +102,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [lastGivenMoney, setLastGivenMoney] = useState<number>(0);
+  const [pendingMoneyAmount, setPendingMoneyAmount] = useState<number>(0);
+  const [pendingMoneyType, setPendingMoneyType] = useState<'give' | 'receive'>('receive');
   const [transactionCreatedAt, setTransactionCreatedAt] = useState<string | null>(null);
   const [transactionLastUpdatedAt, setTransactionLastUpdatedAt] = useState<string | null>(null);
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
@@ -131,6 +137,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setEditingEntryId(null);
     setEditingTransactionId(null);
     setLastGivenMoney(0);
+    setPendingMoneyAmount(0);
+    setPendingMoneyType('receive');
     setTransactionCreatedAt(null);
     setTransactionLastUpdatedAt(null);
     onNavigateToTabs();
@@ -240,7 +248,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       return;
     }
 
-    if (!currentCustomer || currentEntries.length === 0) {
+    // Allow saving with empty entries (money-only transactions) or with entries
+    if (!currentCustomer) {
       return;
     }
 
@@ -326,6 +335,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     editingTransactionId,
     setEditingTransactionId,
     lastGivenMoney,
+    pendingMoneyAmount,
+    setPendingMoneyAmount,
+    pendingMoneyType,
+    setPendingMoneyType,
     transactionCreatedAt,
     transactionLastUpdatedAt,
     customerModalVisible,

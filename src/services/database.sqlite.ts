@@ -1,5 +1,4 @@
 import * as SQLite from 'expo-sqlite';
-import { Customer, Transaction, TransactionEntry, LedgerEntry } from '../types';
 
 // SQLite database instance
 let db: SQLite.SQLiteDatabase | null = null;
@@ -188,18 +187,6 @@ export class DatabaseService {
     return db;
   }
 
-  // Helper function to round inventory values to appropriate precision
-  static roundInventoryValue(value: number, itemType: string): number {
-    if (itemType === 'money') {
-      return Math.round(value); // Whole rupees
-    } else if (itemType.includes('gold') || itemType === 'rani') {
-      return Math.round(value * 1000) / 1000; // 3 decimal places for gold
-    } else if (itemType.includes('silver') || itemType === 'rupu') {
-      return Math.round(value * 10) / 10; // 1 decimal place for silver
-    }
-    return Math.round(value * 1000) / 1000; // Default to 3 decimal places
-  }
-
   // Export all data
   static async exportData(): Promise<{
     customers: any[];
@@ -210,13 +197,13 @@ export class DatabaseService {
     settings: any;
   } | null> {
     try {
-      const dbInstance = this.getDatabase();
+      const db = this.getDatabase();
       
       // Export customers with balances
-      const customers = await dbInstance.getAllAsync('SELECT * FROM customers');
+      const customers = await DatabaseService.getAllAsyncBatch('SELECT * FROM customers');
       const customersWithBalances = [];
       for (const customer of customers) {
-        const balance = await dbInstance.getFirstAsync(
+        const balance = await db.getFirstAsync(
           'SELECT * FROM customer_balances WHERE customer_id = ?',
           [(customer as any).id]
         );
@@ -224,10 +211,10 @@ export class DatabaseService {
       }
 
       // Export transactions with entries
-      const transactions = await dbInstance.getAllAsync('SELECT * FROM transactions');
+      const transactions = await DatabaseService.getAllAsyncBatch('SELECT * FROM transactions');
       const transactionsWithEntries = [];
       for (const transaction of transactions) {
-        const entries = await dbInstance.getAllAsync(
+        const entries = await DatabaseService.getAllAsyncBatch(
           'SELECT * FROM transaction_entries WHERE transaction_id = ?',
           [(transaction as any).id]
         );
@@ -235,10 +222,10 @@ export class DatabaseService {
       }
 
       // Export ledger with items
-      const ledger = await dbInstance.getAllAsync('SELECT * FROM ledger_entries');
+      const ledger = await DatabaseService.getAllAsyncBatch('SELECT * FROM ledger_entries');
       const ledgerWithItems = [];
       for (const entry of ledger) {
-        const items = await dbInstance.getAllAsync(
+        const items = await DatabaseService.getAllAsyncBatch(
           'SELECT * FROM ledger_entry_items WHERE ledger_entry_id = ?',
           [(entry as any).id]
         );
@@ -246,15 +233,15 @@ export class DatabaseService {
       }
 
       // Export base inventory
-      const baseInventory = await dbInstance.getFirstAsync(
+      const baseInventory = await db.getFirstAsync(
         'SELECT * FROM base_inventory WHERE id = 1'
       );
 
       // Export rani/rupa stock
-      const raniRupaStock = await dbInstance.getAllAsync('SELECT * FROM rani_rupa_stock');
+      const raniRupaStock = await DatabaseService.getAllAsyncBatch('SELECT * FROM rani_rupa_stock');
 
       // Export settings
-      const settingsRows = await dbInstance.getAllAsync('SELECT * FROM settings');
+      const settingsRows = await DatabaseService.getAllAsyncBatch('SELECT * FROM settings');
       const settings: any = {};
       for (const row of settingsRows) {
         settings[(row as any).key] = (row as any).value;
@@ -283,30 +270,30 @@ export class DatabaseService {
     raniRupaStock?: any[];
     settings?: any;
   }): Promise<boolean> {
-    const dbInstance = this.getDatabase();
+    const db = this.getDatabase();
     
     try {
-      await dbInstance.execAsync('BEGIN TRANSACTION');
+      await db.execAsync('BEGIN TRANSACTION');
 
       // Clear existing data
-      await dbInstance.runAsync('DELETE FROM ledger_entry_items');
-      await dbInstance.runAsync('DELETE FROM ledger_entries');
-      await dbInstance.runAsync('DELETE FROM transaction_entries');
-      await dbInstance.runAsync('DELETE FROM transactions');
-      await dbInstance.runAsync('DELETE FROM customer_balances');
-      await dbInstance.runAsync('DELETE FROM customers');
-      await dbInstance.runAsync('DELETE FROM rani_rupa_stock');
-      await dbInstance.runAsync('DELETE FROM settings');
+      await db.runAsync('DELETE FROM ledger_entry_items');
+      await db.runAsync('DELETE FROM ledger_entries');
+      await db.runAsync('DELETE FROM transaction_entries');
+      await db.runAsync('DELETE FROM transactions');
+      await db.runAsync('DELETE FROM customer_balances');
+      await db.runAsync('DELETE FROM customers');
+      await db.runAsync('DELETE FROM rani_rupa_stock');
+      await db.runAsync('DELETE FROM settings');
 
       // Import customers
       for (const customer of data.customers) {
-        await dbInstance.runAsync(
+        await db.runAsync(
           'INSERT INTO customers (id, name, lastTransaction, avatar) VALUES (?, ?, ?, ?)',
           [customer.id, customer.name, customer.lastTransaction || null, customer.avatar || null]
         );
 
         const balance = customer.balance || {};
-        await dbInstance.runAsync(
+        await db.runAsync(
           `INSERT INTO customer_balances (customer_id, balance, gold999, gold995, rani, silver, rupu) 
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
@@ -323,7 +310,7 @@ export class DatabaseService {
 
       // Import transactions
       for (const transaction of data.transactions) {
-        await dbInstance.runAsync(
+        await db.runAsync(
           `INSERT INTO transactions 
            (id, deviceId, customerId, customerName, date, discountExtraAmount, total, 
             amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, createdAt, lastUpdatedAt)
@@ -348,7 +335,7 @@ export class DatabaseService {
         // Import entries
         if (transaction.entries) {
           for (const entry of transaction.entries) {
-            await dbInstance.runAsync(
+            await db.runAsync(
               `INSERT INTO transaction_entries 
                (id, transaction_id, type, itemType, weight, price, touch, cut, extraPerKg, 
                 pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
@@ -380,7 +367,7 @@ export class DatabaseService {
       // Import ledger
       if (data.ledger) {
         for (const entry of data.ledger) {
-          await dbInstance.runAsync(
+          await db.runAsync(
             `INSERT INTO ledger_entries 
              (id, transactionId, customerId, customerName, date, amountReceived, amountGiven, createdAt)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -400,7 +387,7 @@ export class DatabaseService {
           if (entry.entries) {
             for (const item of entry.entries) {
               const itemId = item.id || `ledger_item_${Date.now()}_${Math.random()}`;
-              await dbInstance.runAsync(
+              await db.runAsync(
                 `INSERT INTO ledger_entry_items 
                  (id, ledger_entry_id, type, itemType, weight, price, touch, cut, extraPerKg, 
                   pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
@@ -432,7 +419,7 @@ export class DatabaseService {
 
       // Import base inventory
       if (data.baseInventory) {
-        await dbInstance.runAsync(
+        await db.runAsync(
           `UPDATE base_inventory 
            SET gold999 = ?, gold995 = ?, silver = ?, rani = ?, rupu = ?, money = ? 
            WHERE id = 1`,
@@ -450,7 +437,7 @@ export class DatabaseService {
       // Import rani/rupa stock
       if (data.raniRupaStock) {
         for (const stock of data.raniRupaStock) {
-          await dbInstance.runAsync(
+          await db.runAsync(
             'INSERT INTO rani_rupa_stock (stock_id, itemtype, weight, touch, date, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
             [stock.stock_id, stock.itemtype, stock.weight, stock.touch, stock.date, stock.createdAt]
           );
@@ -460,17 +447,17 @@ export class DatabaseService {
       // Import settings
       if (data.settings) {
         for (const [key, value] of Object.entries(data.settings)) {
-          await dbInstance.runAsync(
+          await db.runAsync(
             'INSERT INTO settings (key, value) VALUES (?, ?)',
             [key, value as string]
           );
         }
       }
 
-      await dbInstance.execAsync('COMMIT');
+      await db.execAsync('COMMIT');
       return true;
     } catch (error) {
-      await dbInstance.execAsync('ROLLBACK');
+      await db.execAsync('ROLLBACK');
       console.error('Error importing data:', error);
       return false;
     }
@@ -479,28 +466,53 @@ export class DatabaseService {
   // Clear all data (preserves base inventory and settings)
   static async clearAllData(): Promise<boolean> {
     try {
-      const dbInstance = this.getDatabase();
+      const db = this.getDatabase();
       
-      await dbInstance.execAsync('BEGIN TRANSACTION');
+      await db.execAsync('BEGIN TRANSACTION');
       
-      await dbInstance.runAsync('DELETE FROM ledger_entry_items');
-      await dbInstance.runAsync('DELETE FROM ledger_entries');
-      await dbInstance.runAsync('DELETE FROM transaction_entries');
-      await dbInstance.runAsync('DELETE FROM transactions');
-      await dbInstance.runAsync('DELETE FROM customer_balances');
-      await dbInstance.runAsync('DELETE FROM customers');
-      await dbInstance.runAsync('DELETE FROM rani_rupa_stock');
-      await dbInstance.runAsync('DELETE FROM trades');
+      await db.runAsync('DELETE FROM ledger_entry_items');
+      await db.runAsync('DELETE FROM ledger_entries');
+      await db.runAsync('DELETE FROM transaction_entries');
+      await db.runAsync('DELETE FROM transactions');
+      await db.runAsync('DELETE FROM customer_balances');
+      await db.runAsync('DELETE FROM customers');
+      await db.runAsync('DELETE FROM rani_rupa_stock');
+      await db.runAsync('DELETE FROM trades');
       
       // Clear device_id and last_transaction_id from settings
-      await dbInstance.runAsync('DELETE FROM settings WHERE key IN (?, ?)', ['device_id', 'last_transaction_id']);
+      await db.runAsync('DELETE FROM settings WHERE key IN (?, ?)', ['device_id', 'last_transaction_id']);
       
-      await dbInstance.execAsync('COMMIT');
+      await db.execAsync('COMMIT');
       
       return true;
     } catch (error) {
       console.error('Error clearing all data:', error);
       return false;
     }
+  }
+
+  // Batch version of getAllAsync to handle large datasets
+  static async getAllAsyncBatch<T = any>(
+    query: string,
+    params: any[] = [],
+    batchSize: number = 250
+  ): Promise<T[]> {
+    const db = this.getDatabase();
+    const results: T[] = [];
+    let offset = 0;
+
+    while (true) {
+      const batchQuery = `${query} LIMIT ${batchSize} OFFSET ${offset}`;
+      const batch = await db.getAllAsync(batchQuery, params) as T[];
+      
+      if (batch.length === 0) {
+        break;
+      }
+      
+      results.push(...batch);
+      offset += batchSize;
+    }
+
+    return results;
   }
 }

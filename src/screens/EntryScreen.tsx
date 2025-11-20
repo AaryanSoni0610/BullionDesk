@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../theme';
 import { formatMoney, formatPureGold, formatPureSilver, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry, ItemType } from '../types';
+import { useAppContext } from '../context/AppContext';
 
 interface EntryScreenProps {
   customer: Customer;
@@ -35,6 +36,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   onNavigateToSummary,
   onAddEntry,
 }) => {
+  const { setPendingMoneyAmount, setPendingMoneyType } = useAppContext();
   
   // Check what types of entries already exist (excluding the one being edited)
   const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
@@ -75,7 +77,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       // If sell/purchase entries exist, only allow sell/purchase
       return ['sell', 'purchase'];
     } else {
-      // No entries exist, allow sell/purchase/money
+      // No entries exist, allow all types including money
       return ['sell', 'purchase', 'money'];
     }
   };
@@ -169,14 +171,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const itemOptions = getItemOptions();
 
   const calculateSubtotal = (): number => {
-    // Handle money transactions
-    if (transactionType === 'money') {
-      const amountNum = parseFloat(amount) || 0;
-      // Give: merchant gives money (outward flow) = negative
-      // Receive: merchant receives money (inward flow) = positive
-      return moneyType === 'give' ? -amountNum : amountNum;
-    }
-
     // Metal-only transactions have no subtotal (no money involved)
     if (metalOnly) {
       return 0;
@@ -274,24 +268,26 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     setIsSubmitting(true);
     
     try {
-      let entry: TransactionEntry;
-
+      // For money transactions, set the pending money amount and navigate to settlement
       if (transactionType === 'money') {
-        // Create money entry
-        entry = {
-          id: editingEntry?.id || Date.now().toString(),
-          type: 'money',
-          moneyType,
-          amount: parseFloat(amount),
-          subtotal,
-          itemType: 'money', // Correct itemType for money entries
-          createdAt: editingEntry?.createdAt || new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString(),
-        };
-      } else {
-        // Create regular entry
-        entry = {
-          id: editingEntry?.id || Date.now().toString(),
+        const amountNum = parseFloat(amount) || 0;
+        // Store the amount with proper sign based on money type
+        // receive = positive (merchant receives money from customer)
+        // give = negative (merchant gives money to customer)
+        const signedAmount = moneyType === 'receive' ? amountNum : -amountNum;
+        setPendingMoneyAmount(signedAmount);
+        setPendingMoneyType(moneyType);
+        
+        // Navigate to settlement summary
+        if (onNavigateToSummary) {
+          onNavigateToSummary();
+        }
+        return;
+      }
+
+      // Create regular entry
+      const entry: TransactionEntry = {
+        id: editingEntry?.id || Date.now().toString(),
           type: transactionType as 'purchase' | 'sell',
           itemType,
           weight: weight.trim() ? parseFloat(weight) : undefined,
@@ -322,7 +318,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           createdAt: editingEntry?.createdAt || new Date().toISOString(),
           lastUpdatedAt: new Date().toISOString(),
         };
-      }
 
       onAddEntry(entry);
       

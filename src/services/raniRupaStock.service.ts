@@ -7,7 +7,7 @@ export class RaniRupaStockService {
     try {
       const db = DatabaseService.getDatabase();
       
-      const stock = await db.getAllAsync<{
+      const stock = await DatabaseService.getAllAsyncBatch<{
         stock_id: string;
         itemtype: string;
         weight: number;
@@ -162,7 +162,7 @@ export class RaniRupaStockService {
     try {
       const db = DatabaseService.getDatabase();
       
-      const stock = await db.getAllAsync<{
+      const stock = await DatabaseService.getAllAsyncBatch<{
         stock_id: string;
         itemtype: string;
         weight: number;

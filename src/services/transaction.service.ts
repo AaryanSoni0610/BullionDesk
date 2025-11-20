@@ -12,7 +12,7 @@ export class TransactionService {
     try {
       const db = DatabaseService.getDatabase();
       
-      const transactions = await db.getAllAsync<{
+      const transactions = await DatabaseService.getAllAsyncBatch<{
         id: string;
         deviceId: string | null;
         customerId: string;
@@ -32,7 +32,7 @@ export class TransactionService {
       
       for (const trans of transactions) {
         // Get entries for this transaction
-        const entries = await db.getAllAsync<any>(
+        const entries = await DatabaseService.getAllAsyncBatch<any>(
           'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
           [trans.id]
         );
@@ -86,7 +86,7 @@ export class TransactionService {
     try {
       const db = DatabaseService.getDatabase();
       
-      const transactions = await db.getAllAsync<any>(
+      const transactions = await DatabaseService.getAllAsyncBatch<any>(
         'SELECT * FROM transactions WHERE customerId = ? AND deleted_on IS NULL ORDER BY date DESC',
         [customerId]
       );
@@ -94,7 +94,7 @@ export class TransactionService {
       const result: Transaction[] = [];
       
       for (const trans of transactions) {
-        const entries = await db.getAllAsync<any>(
+        const entries = await DatabaseService.getAllAsyncBatch<any>(
           'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
           [trans.id]
         );
@@ -174,7 +174,7 @@ export class TransactionService {
 
       query += ' ORDER BY date DESC';
 
-      const transactions = await db.getAllAsync<any>(query, params);
+      const transactions = await DatabaseService.getAllAsyncBatch<any>(query, params);
 
       const result: Transaction[] = [];
 
@@ -191,7 +191,7 @@ export class TransactionService {
 
         entriesQuery += ' ORDER BY createdAt ASC';
 
-        const entries = await db.getAllAsync<any>(entriesQuery, entriesParams);
+        const entries = await DatabaseService.getAllAsyncBatch<any>(entriesQuery, entriesParams);
 
         const mappedEntries: TransactionEntry[] = entries.map(entry => ({
           id: entry.id,
@@ -249,7 +249,7 @@ export class TransactionService {
 
       if (!trans) return null;
 
-      const entries = await db.getAllAsync<any>(
+      const entries = await DatabaseService.getAllAsyncBatch<any>(
         'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
         [trans.id]
       );
@@ -319,7 +319,7 @@ export class TransactionService {
       const result: Transaction[] = [];
       
       for (const trans of transactions) {
-        const entries = await db.getAllAsync<any>(
+        const entries = await DatabaseService.getAllAsyncBatch<any>(
           'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
           [trans.id]
         );
@@ -391,9 +391,9 @@ export class TransactionService {
     const db = DatabaseService.getDatabase();
     
     try {
-      // Validate input
-      if (!customer || !entries || entries.length === 0) {
-        return { success: false, error: 'Invalid customer or entries data' };
+      // Validate input - allow empty entries for money-only transactions
+      if (!customer) {
+        return { success: false, error: 'Invalid customer data' };
       }
 
       // Use provided saveDate or current date
@@ -401,24 +401,30 @@ export class TransactionService {
       const now = new Date().toISOString();
       const isUpdate = !!existingTransactionId;
 
-      // Calculate totals
-      const { netAmount } = this.calculateTransactionTotals(entries);
+      // Check if this is a money-only transaction (no entries)
+      const isMoneyOnlyTransaction = entries.length === 0;
 
-      // Check if this is a money-only transaction
-      const isMoneyOnlyTransaction = entries.every(entry => entry.type === 'money');
+      // Calculate totals
+      const { netAmount } = isMoneyOnlyTransaction 
+        ? { netAmount: 0 } 
+        : this.calculateTransactionTotals(entries);
 
       // Final balance calculation
       let finalBalance: number;
       if (isMoneyOnlyTransaction) {
-        finalBalance = netAmount;
-        if (customer.name.toLowerCase() === 'adjust') {
-          finalBalance = 0;
-        }
+        // For money-only: received amount directly affects balance
+        // Positive received = merchant receives = customer debt reduced
+        finalBalance = -receivedAmount;
       } else {
         finalBalance = netAmount >= 0
           ? netAmount - receivedAmount - discountExtraAmount
           : receivedAmount - Math.abs(netAmount) - discountExtraAmount;
         finalBalance *= -1;
+      }
+
+      // Special case for 'adjust' customer - always zero balance
+      if (customer.name.toLowerCase() === 'adjust') {
+        finalBalance = 0;
       }
 
       let transactionId: string;
@@ -442,8 +448,12 @@ export class TransactionService {
           previousAmountPaid = existingTransaction.lastGivenMoney;
           
           // Calculate old balance effect
+          const isOldMoneyOnly = existingTransaction.entries.length === 0;
           const isOldMetalOnly = existingTransaction.entries.some(entry => entry.metalOnly === true);
-          if (!isOldMetalOnly) {
+          
+          if (isOldMoneyOnly) {
+            oldBalanceEffect = existingTransaction.amountPaid;
+          } else if (!isOldMetalOnly) {
             const oldNetAmount = existingTransaction.total;
             const oldReceivedAmount = existingTransaction.amountPaid;
             oldBalanceEffect = oldNetAmount >= 0 
@@ -638,13 +648,12 @@ export class TransactionService {
           );
         }
 
-        // Create ledger entry
+        // Create ledger entry for money-only or when there's a payment change
         const deltaAmount = receivedAmount - previousAmountPaid;
-        const isMoneyOnly = entries.some(entry => entry.type === 'money');
         
-        if (deltaAmount !== 0 || isMoneyOnly) {
+        if (deltaAmount !== 0 || isMoneyOnlyTransaction) {
           let ledgerTimestamp = transactionDate;
-          if (!isMoneyOnly) {
+          if (!isMoneyOnlyTransaction) {
             const entryTimestamps = entries
               .map(entry => entry.createdAt)
               .filter((timestamp): timestamp is string => timestamp !== undefined)
@@ -654,7 +663,7 @@ export class TransactionService {
             }
           }
           
-          const ledgerDelta = isMoneyOnly && deltaAmount === 0 ? netAmount : deltaAmount;
+          const ledgerDelta = isMoneyOnlyTransaction && deltaAmount === 0 ? receivedAmount : deltaAmount;
           
           // Get the full transaction object to pass to ledger service
           const fullTransaction = await this.getTransactionById(transactionId);
@@ -667,7 +676,10 @@ export class TransactionService {
         const isMetalOnly = entries.some(entry => entry.metalOnly === true);
         let newBalance = customer.balance;
         
-        if (!isMetalOnly) {
+        if (isMoneyOnlyTransaction) {
+          // For money-only transactions, update balance based on old and new received amounts
+          newBalance = customer.balance - oldBalanceEffect + finalBalance;
+        } else if (!isMetalOnly) {
           newBalance = customer.balance - oldBalanceEffect + finalBalance;
         }
 
@@ -746,10 +758,18 @@ export class TransactionService {
         return false;
       }
 
+
+      // Check if this is a money-only transaction
+      const isMoneyOnly = transaction.entries.length === 0;
+      
       // Calculate the balance effect to reverse
       const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
       let balanceEffect = 0;
-      if (!isMetalOnly) {
+      
+      if (isMoneyOnly) {
+        // For money-only transactions, reverse the amountPaid effect
+        balanceEffect = transaction.amountPaid;
+      } else if (!isMetalOnly) {
         const netAmount = transaction.total;
         const receivedAmount = transaction.amountPaid;
         const discountExtraAmount = transaction.discountExtraAmount;
@@ -798,6 +818,9 @@ export class TransactionService {
           lastTransaction: new Date().toISOString(),
         };
         await CustomerService.saveCustomer(updatedCustomer);
+      } else {
+        // Update last transaction timestamp for metal-only transactions
+        await db.runAsync('UPDATE customers SET lastTransaction = ? WHERE id = ?', [new Date().toISOString(), customer.id]);
       }
 
       // Delete ledger entries
@@ -805,6 +828,7 @@ export class TransactionService {
 
       // Soft delete the transaction by setting deleted_on to current date
       await db.runAsync('UPDATE transactions SET deleted_on = ? WHERE id = ?', [new Date().toISOString().split('T')[0], transactionId]);
+      await db.runAsync('UPDATE ledger_entries SET deleted_on = ? WHERE transactionId = ?', [new Date().toISOString().split('T')[0], transactionId]);
       
       return true;
     } catch (error) {
@@ -816,9 +840,8 @@ export class TransactionService {
   // Get deleted transactions (for recycle bin)
   static async getDeletedTransactions(): Promise<Transaction[]> {
     try {
-      const db = DatabaseService.getDatabase();
       
-      const transactions = await db.getAllAsync<{
+      const transactions = await DatabaseService.getAllAsyncBatch<{
         id: string;
         deviceId: string | null;
         customerId: string;
@@ -838,7 +861,7 @@ export class TransactionService {
       const result: Transaction[] = [];
       
       for (const trans of transactions) {
-        const entries = await db.getAllAsync<any>(
+        const entries = await DatabaseService.getAllAsyncBatch<any>(
           'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
           [trans.id]
         );
@@ -907,6 +930,7 @@ export class TransactionService {
 
       // Calculate and restore balances (same logic as when transaction was deleted, but reverse)
       let updatedCustomer = { ...customer };
+      console.log('Restoring transaction for customer:', updatedCustomer);
 
       const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
       let balanceEffect = 0;
@@ -917,14 +941,12 @@ export class TransactionService {
         balanceEffect = netAmount >= 0 
           ? receivedAmount - netAmount - discountExtraAmount
           : Math.abs(netAmount) - receivedAmount - discountExtraAmount;
-      }
-
-      // Restore customer balance
-      if (!isMetalOnly) {
+        
         updatedCustomer.balance += balanceEffect;
+        console.log('Restored money balance effect:', balanceEffect);
       }
-
       // Restore metal balances for metal-only entries
+      console.log('isMetalOnly:', isMetalOnly);
       if (isMetalOnly) {
         for (const entry of transaction.entries) {
           if (entry.metalOnly && entry.type !== 'money') {
@@ -935,9 +957,11 @@ export class TransactionService {
               ? (entry.pureWeight || 0) 
               : (entry.weight || 0);
             // Apply original effect
+            console.log('weight:', weight);
             const effect = entry.type === 'sell' ? -weight : weight;
             
             // Update metal balance
+            console.log(`Restoring metal balance for ${itemType}, effect: ${effect}`);
             await CustomerService.updateCustomerMetalBalance(customer.id, itemType, effect);
           }
         }
@@ -955,6 +979,17 @@ export class TransactionService {
         }
       }
 
+      // For metal-only transactions, fetch fresh customer to get updated metal balances
+      if (isMetalOnly) {
+        const freshCustomer = await CustomerService.getCustomerById(customer.id);
+        if (freshCustomer) {
+          updatedCustomer = { ...freshCustomer };
+        }
+      }
+
+      // Update last transaction timestamp
+      updatedCustomer.lastTransaction = new Date().toISOString();
+
       await CustomerService.saveCustomer(updatedCustomer);
 
       // Restore ledger entries (set deleted_on to NULL)
@@ -962,6 +997,15 @@ export class TransactionService {
 
       // Restore the transaction by setting deleted_on to NULL
       await db.runAsync('UPDATE transactions SET deleted_on = NULL, lastUpdatedAt = ? WHERE id = ?', [new Date().toISOString(), transactionId]);
+
+      // check the balance of the customer after restoration
+      const freshCustomer = await CustomerService.getCustomerById(customer.id);
+      console.log('money:', freshCustomer?.balance ?? 0);
+      console.log('gold 999:', freshCustomer?.metalBalances?.gold999 ?? 0);
+      console.log('gold 995:', freshCustomer?.metalBalances?.gold995 ?? 0);
+      console.log('rani:', freshCustomer?.metalBalances?.rani ?? 0);
+      console.log('silver:', freshCustomer?.metalBalances?.silver ?? 0);
+      console.log('rupu:', freshCustomer?.metalBalances?.rupu ?? 0);
       
       return true;
     } catch (error) {
@@ -991,7 +1035,6 @@ export class TransactionService {
 
   // Automatically delete transactions that have been in recycle bin for 3+ days
   static async cleanupOldDeletedTransactions(): Promise<number> {
-    const db = DatabaseService.getDatabase();
     
     try {
       // Calculate date 3 days ago
@@ -1000,7 +1043,7 @@ export class TransactionService {
       const cutoffDate = threeDaysAgo.toISOString().split('T')[0];
 
       // Find transactions that were deleted 3 or more days ago
-      const oldTransactions = await db.getAllAsync<{ id: string }>(
+      const oldTransactions = await DatabaseService.getAllAsyncBatch<{ id: string }>(
         'SELECT id FROM transactions WHERE deleted_on IS NOT NULL AND deleted_on <= ?',
         [cutoffDate]
       );

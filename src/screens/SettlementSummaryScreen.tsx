@@ -19,6 +19,7 @@ import { theme } from '../theme';
 import { formatWeight, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry } from '../types';
 import CustomAlert from '../components/CustomAlert';
+import { useAppContext } from '../context/AppContext';
 
 interface SettlementSummaryScreenProps {
   customer: Customer;
@@ -46,7 +47,24 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   lastGivenMoney = 0,
   transactionCreatedAt,
 }) => {
-  const [receivedAmount, setReceivedAmount] = useState(lastGivenMoney > 0 ? lastGivenMoney.toString() : '');
+  const { pendingMoneyAmount, setPendingMoneyAmount, pendingMoneyType } = useAppContext();
+  
+  // Initialize receivedAmount with pending money or lastGivenMoney
+  const [receivedAmount, setReceivedAmount] = useState(() => {
+    if (pendingMoneyAmount !== 0) {
+      return pendingMoneyAmount.toString();
+    }
+    return lastGivenMoney > 0 ? lastGivenMoney.toString() : '';
+  });
+  
+  // Clear pending money amount when component mounts
+  React.useEffect(() => {
+    if (pendingMoneyAmount !== 0) {
+      // Clear it after using it
+      setPendingMoneyAmount(0);
+    }
+  }, []);
+  
   const [paymentError, setPaymentError] = useState('');
   const [discountExtra, setDiscountExtra] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -297,15 +315,15 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       })()
     : false;
   
-  // Check if there are any money-only entries
-  const hasMoneyOnlyEntry = entries.some(entry => entry.type === 'money');
+  // Check if this is a money-only transaction (no entries)
+  const isMoneyOnlyTransaction = entries.length === 0;
   
   // Determine if entry modifications are locked
   // Allow editing metal-only transactions at any time
   const areEntriesLocked = isEditing && isOldTransaction && !isMetalOnly;
   
-  // Check if FAB should be shown: hide if entries are locked OR if there's a money-only entry
-  const shouldShowFAB = !areEntriesLocked && !hasMoneyOnlyEntry;
+  // Always show FAB unless entries are locked (removed money-only check)
+  const shouldShowFAB = !areEntriesLocked;
   
   // Apply discount/extra to net amount
   const adjustedNetAmount = netAmount > 0 
@@ -348,14 +366,14 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   // Calculate final balance based on money flow direction (using adjusted amount)
   let finalBalance: number;
   
-  // Check if this is a money-only transaction
-  const isMoneyOnlyTransaction = entries.every(entry => entry.type === 'money');
-  
   if (isMoneyOnlyTransaction) {
-    // For money-only transactions:
-    // Positive adjustedNetAmount (receive) = merchant receives money = reduces customer debt = negative balance change
-    // Negative adjustedNetAmount (give) = merchant gives money = increases customer debt = positive balance change
-    finalBalance = -adjustedNetAmount;
+    // For money-only transactions (no entries):
+    // Positive received = customer pays merchant = reduces debt
+    // Negative received = merchant pays customer = increases debt
+    // Since we're recording what merchant receives/gives:
+    // received > 0: merchant receives (customer debt reduced) = negative balance change
+    // received < 0: merchant gives (customer debt increased) = positive balance change
+    finalBalance = -received;
   } else {
     // For sell/purchase transactions:
     if (adjustedNetAmount > 0) {
@@ -487,7 +505,20 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
         {/* Entry Cards */}
         <View style={styles.entriesSection}>
-          {entries.map((entry, index) => renderEntryCard(entry, index))}
+          {isMoneyOnlyTransaction ? (
+            <Card style={styles.entryCard} mode="outlined">
+              <Card.Content style={styles.entryCardContent}>
+                <Text variant="titleMedium" style={styles.moneyOnlyText}>
+                  💰 Money-Only Entry
+                </Text>
+                <Text variant="bodySmall" style={styles.moneyOnlyHint}>
+                  Enter the amount given or received below
+                </Text>
+              </Card.Content>
+            </Card>
+          ) : (
+            entries.map((entry, index) => renderEntryCard(entry, index))
+          )}
         </View>
 
         {/* Horizontal Line */}
@@ -967,6 +998,15 @@ const styles = StyleSheet.create({
   dateLabel: {
     fontFamily: 'Roboto_500Medium',
     flex: 1,
+  },
+  moneyOnlyText: {
+    textAlign: 'center',
+    fontFamily: 'Roboto_500Medium',
+    marginBottom: theme.spacing.xs,
+  },
+  moneyOnlyHint: {
+    textAlign: 'center',
+    color: theme.colors.onSurfaceVariant,
   },
   dateButton: {
     marginLeft: theme.spacing.sm,

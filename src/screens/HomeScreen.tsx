@@ -154,7 +154,12 @@ export const HomeScreen: React.FC = () => {
       parts.push(`Purchase: ${purchaseItems.slice(0, 2).join(', ')}${purchaseItems.length > 2 ? ` +${purchaseItems.length - 2} more` : ''}`);
     }
     
-    return parts.join('\n') || 'Money transaction';
+    // Check if this is a money-only transaction (no entries)
+    if (!transaction.entries || transaction.entries.length === 0) {
+      return '💰 Money-Only Entry';
+    }
+    
+    return parts.join('\n') || 'Transaction';
   };
 
   const getItemDisplayName = (entry: any): string => {
@@ -172,16 +177,14 @@ export const HomeScreen: React.FC = () => {
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const primaryItems = getPrimaryItems(transaction);
-    const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+    const isMetalOnly = transaction.entries && transaction.entries.some(entry => entry.metalOnly === true);
     
     // Calculate transaction-specific remaining balance
     let transactionBalanceLabel = 'Settled';
     let transactionBalanceColor = theme.colors.primary; // Blue for settled
     
-    let isMoneyOnly = false;
-    if (transaction.entries.every(entry => entry.itemType === 'money')) {
-      isMoneyOnly = true;
-    }
+    // Check if this is a money-only transaction (no entries)
+    const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
 
     if (isMetalOnly) {
       // For metal-only transactions, show the metal items

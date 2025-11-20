@@ -121,8 +121,8 @@ export class CustomerService {
       if (existing) {
         // Update existing customer
         await db.runAsync(
-          'UPDATE customers SET name = ?, lastTransaction = ?, avatar = ? WHERE id = ?',
-          [trimmedName, customer.lastTransaction || null, customer.avatar || null, customer.id]
+          'UPDATE customers SET lastTransaction = ? WHERE id = ?',
+          [customer.lastTransaction || null, customer.id]
         );
 
         // Update balances
@@ -167,6 +167,49 @@ export class CustomerService {
     } catch (error) {
       console.error('Error saving customer:', error);
       return false;
+    }
+  }
+
+  // Get customer by name
+  static async getCustomerByName(name: string): Promise<Customer | null> {
+    try {
+      const db = DatabaseService.getDatabase();
+
+      const customer = await db.getFirstAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>('SELECT id, name, lastTransaction, avatar FROM customers WHERE name = ?', [name]);
+
+      if (!customer) return null;
+
+      const balanceRow = await db.getFirstAsync<{
+        balance: number;
+        gold999: number | null;
+        gold995: number | null;
+        rani: number | null;
+        silver: number | null;
+        rupu: number | null;
+      }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+
+      return {
+        id: customer.id,
+        name: customer.name.trim(),
+        lastTransaction: customer.lastTransaction || undefined,
+        avatar: customer.avatar || undefined,
+        balance: balanceRow?.balance || 0,
+        metalBalances: {
+          gold999: balanceRow?.gold999 || 0,
+          gold995: balanceRow?.gold995 || 0,
+          rani: balanceRow?.rani || 0,
+          silver: balanceRow?.silver || 0,
+          rupu: balanceRow?.rupu || 0,
+        }
+      };
+    } catch (error) {
+      console.error('Error getting customer by name:', error);
+      return null;
     }
   }
 
@@ -273,6 +316,198 @@ export class CustomerService {
     } catch (error) {
       console.error('Error deleting customer:', error);
       return false;
+    }
+  }
+
+  // Get all customers excluding specific names (database-level filtering)
+  static async getAllCustomersExcluding(excludeNames: string[] = []): Promise<Customer[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      let query = 'SELECT id, name, lastTransaction, avatar FROM customers';
+      let params: any[] = [];
+      
+      if (excludeNames.length > 0) {
+        const placeholders = excludeNames.map(() => 'LOWER(TRIM(name)) != ?').join(' AND ');
+        query += ` WHERE ${placeholders}`;
+        params = excludeNames.map(name => name.toLowerCase().trim());
+      }
+      
+      query += ' ORDER BY name ASC';
+      
+      const customers = await db.getAllAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>(query, params);
+
+      const customersWithBalances: Customer[] = [];
+      
+      for (const customer of customers) {
+        const balanceRow = await db.getFirstAsync<{
+          balance: number;
+          gold999: number | null;
+          gold995: number | null;
+          rani: number | null;
+          silver: number | null;
+          rupu: number | null;
+        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+
+        const customerObj: Customer = {
+          id: customer.id,
+          name: customer.name.trim(),
+          lastTransaction: customer.lastTransaction || undefined,
+          avatar: customer.avatar || undefined,
+          balance: balanceRow?.balance || 0,
+          metalBalances: {
+            gold999: balanceRow?.gold999 || 0,
+            gold995: balanceRow?.gold995 || 0,
+            rani: balanceRow?.rani || 0,
+            silver: balanceRow?.silver || 0,
+            rupu: balanceRow?.rupu || 0,
+          }
+        };
+
+        customersWithBalances.push(customerObj);
+      }
+
+      return customersWithBalances;
+    } catch (error) {
+      console.error('Error getting customers excluding names:', error);
+      return [];
+    }
+  }
+
+  // Search customers by name with limit and exclusions (database-level filtering)
+  static async searchCustomers(
+    searchQuery: string,
+    excludeNames: string[] = [],
+    limit: number = 50
+  ): Promise<Customer[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      // Trim the search query to handle trailing spaces
+      const trimmedQuery = searchQuery.trim();
+      
+      let query = 'SELECT id, name, lastTransaction, avatar FROM customers WHERE LOWER(name) LIKE ?';
+      let params: any[] = [`%${trimmedQuery.toLowerCase()}%`];
+      
+      if (excludeNames.length > 0) {
+        const placeholders = excludeNames.map(() => 'LOWER(TRIM(name)) != ?').join(' AND ');
+        query += ` AND ${placeholders}`;
+        params.push(...excludeNames.map(name => name.toLowerCase().trim()));
+      }
+      
+      query += ' ORDER BY name ASC LIMIT ?';
+      params.push(limit);
+      
+      const customers = await db.getAllAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>(query, params);
+
+      const customersWithBalances: Customer[] = [];
+      
+      for (const customer of customers) {
+        const balanceRow = await db.getFirstAsync<{
+          balance: number;
+          gold999: number | null;
+          gold995: number | null;
+          rani: number | null;
+          silver: number | null;
+          rupu: number | null;
+        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+
+        const customerObj: Customer = {
+          id: customer.id,
+          name: customer.name.trim(),
+          lastTransaction: customer.lastTransaction || undefined,
+          avatar: customer.avatar || undefined,
+          balance: balanceRow?.balance || 0,
+          metalBalances: {
+            gold999: balanceRow?.gold999 || 0,
+            gold995: balanceRow?.gold995 || 0,
+            rani: balanceRow?.rani || 0,
+            silver: balanceRow?.silver || 0,
+            rupu: balanceRow?.rupu || 0,
+          }
+        };
+
+        customersWithBalances.push(customerObj);
+      }
+
+      return customersWithBalances;
+    } catch (error) {
+      console.error('Error searching customers:', error);
+      return [];
+    }
+  }
+
+  // Get recent customers by last transaction date (database-level filtering)
+  static async getRecentCustomers(
+    limit: number = 5,
+    excludeNames: string[] = []
+  ): Promise<Customer[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      let query = 'SELECT id, name, lastTransaction, avatar FROM customers WHERE lastTransaction IS NOT NULL';
+      let params: any[] = [];
+      
+      if (excludeNames.length > 0) {
+        const placeholders = excludeNames.map(() => 'LOWER(TRIM(name)) != ?').join(' AND ');
+        query += ` AND ${placeholders}`;
+        params = excludeNames.map(name => name.toLowerCase().trim());
+      }
+      
+      query += ' ORDER BY lastTransaction DESC LIMIT ?';
+      params.push(limit);
+      
+      const customers = await db.getAllAsync<{
+        id: string;
+        name: string;
+        lastTransaction: string | null;
+        avatar: string | null;
+      }>(query, params);
+
+      const customersWithBalances: Customer[] = [];
+      
+      for (const customer of customers) {
+        const balanceRow = await db.getFirstAsync<{
+          balance: number;
+          gold999: number | null;
+          gold995: number | null;
+          rani: number | null;
+          silver: number | null;
+          rupu: number | null;
+        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+
+        const customerObj: Customer = {
+          id: customer.id,
+          name: customer.name.trim(),
+          lastTransaction: customer.lastTransaction || undefined,
+          avatar: customer.avatar || undefined,
+          balance: balanceRow?.balance || 0,
+          metalBalances: {
+            gold999: balanceRow?.gold999 || 0,
+            gold995: balanceRow?.gold995 || 0,
+            rani: balanceRow?.rani || 0,
+            silver: balanceRow?.silver || 0,
+            rupu: balanceRow?.rupu || 0,
+          }
+        };
+
+        customersWithBalances.push(customerObj);
+      }
+
+      return customersWithBalances;
+    } catch (error) {
+      console.error('Error getting recent customers:', error);
+      return [];
     }
   }
 }

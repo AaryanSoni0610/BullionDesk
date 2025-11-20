@@ -39,7 +39,7 @@ export const SettingsScreen: React.FC = () => {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
   const [showTermsOfService, setShowTermsOfService] = React.useState(false);
   const [showAbout, setShowAbout] = React.useState(false);
-  const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell } = useAppContext();
+  const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell, navigateToRecycleBin } = useAppContext();
 
   // Check notification and backup status on mount
   React.useEffect(() => {
@@ -623,7 +623,7 @@ export const SettingsScreen: React.FC = () => {
           <Divider />
 
           <List.Item
-            title="Metal Inventory"
+            title="Base Inventory"
             description={
               isLoadingInventory
                 ? "Loading..."
@@ -673,6 +673,17 @@ export const SettingsScreen: React.FC = () => {
           <List.Subheader style={styles.sectionHeader}>Data Management</List.Subheader>
 
           <List.Item
+            title="Recycle Bin"
+            description="View and restore deleted transactions"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="recycle" />}
+            onPress={navigateToRecycleBin}
+          />
+
+          <Divider />
+
+          <List.Item
             title="Export Data"
             description="Export to external storage location"
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
@@ -699,7 +710,7 @@ export const SettingsScreen: React.FC = () => {
             description={isClearing ? "Clearing data..." : "Delete all data, reset inventory to base"}
             titleStyle={{ fontFamily: 'Roboto_400Regular' }}
             descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
-            left={props => <List.Icon {...props} icon="delete-outline" color={theme.colors.error} />}
+            left={props => <List.Icon {...props} icon="delete-forever-outline" color={theme.colors.error} />}
             disabled={isClearing}
             onPress={handleClearAllData}
           />
@@ -787,7 +798,7 @@ export const SettingsScreen: React.FC = () => {
         title="Privacy Policy"
         message={`Privacy Policy for BullionDesk
 
-Last Updated: October 9, 2025
+Last Updated: November 20, 2025
 
 1. Information We Collect
 BullionDesk collects and stores the following information locally on your device:
@@ -867,7 +878,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v3.2.6
+        message={`BullionDesk v4.2.6
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

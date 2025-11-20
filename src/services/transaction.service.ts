@@ -4,6 +4,7 @@ import { CustomerService } from './customer.service';
 import { LedgerService } from './ledger.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
 import * as SecureStore from 'expo-secure-store';
+import * as Device from 'expo-device';
 
 export class TransactionService {
   // Get all transactions
@@ -25,7 +26,7 @@ export class TransactionService {
         settlementType: string;
         createdAt: string;
         lastUpdatedAt: string;
-      }>('SELECT * FROM transactions ORDER BY date DESC');
+      }>('SELECT * FROM transactions WHERE deleted_on IS NULL ORDER BY date DESC');
 
       const result: Transaction[] = [];
       
@@ -86,7 +87,7 @@ export class TransactionService {
       const db = DatabaseService.getDatabase();
       
       const transactions = await db.getAllAsync<any>(
-        'SELECT * FROM transactions WHERE customerId = ? ORDER BY date DESC',
+        'SELECT * FROM transactions WHERE customerId = ? AND deleted_on IS NULL ORDER BY date DESC',
         [customerId]
       );
 
@@ -143,23 +144,54 @@ export class TransactionService {
   }
 
   // Get transactions by date range (database-level filtering)
-  static async getTransactionsByDateRange(startDate: string, endDate: string): Promise<Transaction[]> {
+  static async getTransactionsByDateRange(
+    startDate: string, 
+    endDate: string, 
+    itemTypes?: string[],
+    excludeCustomerName?: string
+  ): Promise<Transaction[]> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      // Query transactions where date is between startDate and endDate (inclusive)
-      const transactions = await db.getAllAsync<any>(
-        'SELECT * FROM transactions WHERE date >= ? AND date <= ? ORDER BY date DESC',
-        [startDate, endDate]
-      );
+
+      let query = 'SELECT * FROM transactions WHERE date >= ? AND date <= ? AND deleted_on IS NULL';
+      let params: any[] = [startDate, endDate];
+
+      // Exclude specific customer
+      if (excludeCustomerName) {
+        query += ' AND LOWER(customerName) != ?';
+        params.push(excludeCustomerName.toLowerCase());
+      }
+
+      // If itemTypes are specified, filter transactions that have entries with those item types
+      if (itemTypes && itemTypes.length > 0) {
+        const placeholders = itemTypes.map(() => '?').join(',');
+        query += ` AND id IN (
+          SELECT DISTINCT transaction_id FROM transaction_entries
+          WHERE itemType IN (${placeholders})
+        )`;
+        params.push(...itemTypes);
+      }
+
+      query += ' ORDER BY date DESC';
+
+      const transactions = await db.getAllAsync<any>(query, params);
 
       const result: Transaction[] = [];
-      
+
       for (const trans of transactions) {
-        const entries = await db.getAllAsync<any>(
-          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
-          [trans.id]
-        );
+        let entriesQuery = 'SELECT * FROM transaction_entries WHERE transaction_id = ?';
+        let entriesParams: any[] = [trans.id];
+
+        // If itemTypes are specified, also filter the entries
+        if (itemTypes && itemTypes.length > 0) {
+          const placeholders = itemTypes.map(() => '?').join(',');
+          entriesQuery += ` AND itemType IN (${placeholders})`;
+          entriesParams.push(...itemTypes);
+        }
+
+        entriesQuery += ' ORDER BY createdAt ASC';
+
+        const entries = await db.getAllAsync<any>(entriesQuery, entriesParams);
 
         const mappedEntries: TransactionEntry[] = entries.map(entry => ({
           id: entry.id,
@@ -263,6 +295,79 @@ export class TransactionService {
     }
   }
 
+  // Get recent transactions with limit and exclusions (database-level filtering)
+  static async getRecentTransactions(
+    limit: number = 20,
+    excludeCustomerName?: string
+  ): Promise<Transaction[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      let query = 'SELECT * FROM transactions WHERE deleted_on IS NULL';
+      let params: any[] = [];
+      
+      if (excludeCustomerName) {
+        query += ' AND LOWER(customerName) != ?';
+        params.push(excludeCustomerName.toLowerCase());
+      }
+      
+      query += ' ORDER BY date DESC LIMIT ?';
+      params.push(limit);
+
+      const transactions = await db.getAllAsync<any>(query, params);
+
+      const result: Transaction[] = [];
+      
+      for (const trans of transactions) {
+        const entries = await db.getAllAsync<any>(
+          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
+          [trans.id]
+        );
+
+        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
+          id: entry.id,
+          type: entry.type,
+          itemType: entry.itemType,
+          weight: entry.weight,
+          price: entry.price,
+          touch: entry.touch,
+          cut: entry.cut,
+          extraPerKg: entry.extraPerKg,
+          pureWeight: entry.pureWeight,
+          moneyType: entry.moneyType,
+          amount: entry.amount,
+          metalOnly: entry.metalOnly === 1,
+          stock_id: entry.stock_id,
+          subtotal: entry.subtotal,
+          createdAt: entry.createdAt,
+          lastUpdatedAt: entry.lastUpdatedAt,
+        }));
+
+        result.push({
+          id: trans.id,
+          deviceId: trans.deviceId || undefined,
+          customerId: trans.customerId,
+          customerName: trans.customerName,
+          date: trans.date,
+          entries: mappedEntries,
+          discountExtraAmount: trans.discountExtraAmount,
+          total: trans.total,
+          amountPaid: trans.amountPaid,
+          lastGivenMoney: trans.lastGivenMoney,
+          lastToLastGivenMoney: trans.lastToLastGivenMoney,
+          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+          createdAt: trans.createdAt,
+          lastUpdatedAt: trans.lastUpdatedAt,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error getting recent transactions:', error);
+      return [];
+    }
+  }
+
   // Calculate transaction totals
   private static calculateTransactionTotals(entries: TransactionEntry[]) {
     let netAmount = 0;
@@ -351,21 +456,17 @@ export class TransactionService {
             for (const oldEntry of existingTransaction.entries) {
               if (oldEntry.metalOnly && oldEntry.type !== 'money') {
                 const itemType = oldEntry.itemType;
-                let metalAmount = 0;
+                
+                // Get the weight to use
+                const weight = (oldEntry.itemType === 'rani' || oldEntry.itemType === 'rupu') 
+                  ? (oldEntry.pureWeight || 0) 
+                  : (oldEntry.weight || 0);
 
-                if (oldEntry.itemType === 'rani') {
-                  metalAmount = oldEntry.pureWeight || 0;
-                  metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
-                } else if (oldEntry.itemType === 'rupu') {
-                  metalAmount = oldEntry.pureWeight || 0;
-                  metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
-                } else {
-                  metalAmount = oldEntry.weight || 0;
-                  metalAmount = oldEntry.type === 'sell' ? -metalAmount : metalAmount;
-                }
-
-                // Reverse the metal balance
-                await CustomerService.updateCustomerMetalBalance(customer.id, itemType, -metalAmount);
+                // Calculate original effect then reverse it
+                const originalEffect = oldEntry.type === 'sell' ? weight : -weight;
+                
+                // Reverse the metal balance (apply the original effect to undo)
+                await CustomerService.updateCustomerMetalBalance(customer.id, itemType, originalEffect);
               }
             }
           }
@@ -409,11 +510,29 @@ export class TransactionService {
           // CREATE new transaction
           transactionId = `txn_${Date.now()}`;
           
-          // Get device ID
-          let deviceId = await SecureStore.getItemAsync('device_id');
-          if (!deviceId) {
-            deviceId = `device_${Date.now()}`;
-            await SecureStore.setItemAsync('device_id', deviceId);
+          // Get device ID with error handling
+          let deviceId: string;
+          try {
+            const storedDeviceId = await SecureStore.getItemAsync('device_id');
+            if (storedDeviceId) {
+              deviceId = storedDeviceId;
+            } else {
+              deviceId = `${Device.modelName}_${Device.osName}_${Date.now()}`;
+              await SecureStore.setItemAsync('device_id', deviceId);
+            }
+          } catch (error) {
+            try {
+              await SecureStore.deleteItemAsync('device_id');
+            } catch (deleteError) {
+              // Ignore delete errors
+            }
+            deviceId = `${Device.modelName}_${Device.osName}_${Date.now()}`;
+            try {
+              await SecureStore.setItemAsync('device_id', deviceId);
+            } catch (setError) {
+              console.error('Failed to set device_id, using temporary ID:', setError);
+              deviceId = `${Device.modelName}_${Device.osName}_${Date.now()}`;
+            }
           }
 
           // Insert transaction
@@ -557,27 +676,31 @@ export class TransactionService {
           for (const entry of entries) {
             if (entry.metalOnly && entry.type !== 'money') {
               const itemType = entry.itemType;
-              let metalAmount = 0;
 
-              if (entry.itemType === 'rani') {
-                metalAmount = entry.pureWeight || 0;
-                metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
-              } else if (entry.itemType === 'rupu') {
-                metalAmount = entry.pureWeight || 0;
-                metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
-              } else {
-                metalAmount = entry.weight || 0;
-                metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
-              }
+              // Get the weight to use
+              const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
+                ? (entry.pureWeight || 0) 
+                : (entry.weight || 0);
 
+              // Sign convention: 
+              // - Purchase (customer gives metal) = reduces their debt = negative (they owe less)
+              // - Sell (merchant gives metal) = increases their debt = positive (they owe more)
+              const metalAmount = entry.type === 'sell' ? -weight : weight;
               await CustomerService.updateCustomerMetalBalance(customer.id, itemType, metalAmount);
             }
           }
         }
 
-        // Update customer
+        // Fetch fresh customer data to get updated metal balances
+        const freshCustomer = await CustomerService.getCustomerById(customer.id);
+        if (!freshCustomer) {
+          await db.execAsync('ROLLBACK');
+          return { success: false, error: 'Failed to fetch updated customer data' };
+        }
+
+        // Update customer with new money balance and timestamp
         const updatedCustomer: Customer = {
-          ...customer,
+          ...freshCustomer,
           balance: newBalance,
           lastTransaction: now,
         };
@@ -633,7 +756,6 @@ export class TransactionService {
         balanceEffect = netAmount >= 0 
           ? receivedAmount - netAmount - discountExtraAmount
           : Math.abs(netAmount) - receivedAmount - discountExtraAmount;
-        balanceEffect *= -1; // Reverse the effect
       }
 
       // Reverse metal balances for metal-only entries
@@ -641,20 +763,17 @@ export class TransactionService {
         for (const entry of transaction.entries) {
           if (entry.metalOnly && entry.type !== 'money') {
             const itemType = entry.itemType;
-            let metalAmount = 0;
+            
+            // Get the weight to use
+            const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
+              ? (entry.pureWeight || 0) 
+              : (entry.weight || 0);
 
-            if (entry.itemType === 'rani') {
-              metalAmount = entry.pureWeight || 0;
-              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount; // Reverse
-            } else if (entry.itemType === 'rupu') {
-              metalAmount = entry.pureWeight || 0;
-              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount; // Reverse
-            } else {
-              metalAmount = entry.weight || 0;
-              metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount; // Reverse
-            }
-
-            await CustomerService.updateCustomerMetalBalance(customer.id, itemType, -metalAmount);
+            // Calculate original effect then reverse it
+            const originalEffect = entry.type === 'sell' ? weight : -weight;
+            
+            // Reverse the metal balance
+            await CustomerService.updateCustomerMetalBalance(customer.id, itemType, originalEffect);
           }
         }
       }
@@ -684,8 +803,8 @@ export class TransactionService {
       // Delete ledger entries
       await LedgerService.deleteLedgerEntryByTransactionId(transactionId);
 
-      // Delete the transaction (cascade will delete entries)
-      await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);
+      // Soft delete the transaction by setting deleted_on to current date
+      await db.runAsync('UPDATE transactions SET deleted_on = ? WHERE id = ?', [new Date().toISOString().split('T')[0], transactionId]);
       
       return true;
     } catch (error) {
@@ -693,4 +812,213 @@ export class TransactionService {
       return false;
     }
   }
+
+  // Get deleted transactions (for recycle bin)
+  static async getDeletedTransactions(): Promise<Transaction[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      const transactions = await db.getAllAsync<{
+        id: string;
+        deviceId: string | null;
+        customerId: string;
+        customerName: string;
+        date: string;
+        discountExtraAmount: number;
+        total: number;
+        amountPaid: number;
+        lastGivenMoney: number;
+        lastToLastGivenMoney: number;
+        settlementType: string;
+        deleted_on: string;
+        createdAt: string;
+        lastUpdatedAt: string;
+      }>('SELECT * FROM transactions WHERE deleted_on IS NOT NULL ORDER BY deleted_on DESC');
+
+      const result: Transaction[] = [];
+      
+      for (const trans of transactions) {
+        const entries = await db.getAllAsync<any>(
+          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
+          [trans.id]
+        );
+
+        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
+          id: entry.id,
+          type: entry.type,
+          itemType: entry.itemType,
+          weight: entry.weight,
+          price: entry.price,
+          touch: entry.touch,
+          cut: entry.cut,
+          extraPerKg: entry.extraPerKg,
+          pureWeight: entry.pureWeight,
+          moneyType: entry.moneyType,
+          amount: entry.amount,
+          metalOnly: entry.metalOnly === 1,
+          stock_id: entry.stock_id,
+          subtotal: entry.subtotal,
+          createdAt: entry.createdAt,
+          lastUpdatedAt: entry.lastUpdatedAt,
+        }));
+
+        result.push({
+          id: trans.id,
+          deviceId: trans.deviceId || undefined,
+          customerId: trans.customerId,
+          customerName: trans.customerName,
+          date: trans.date,
+          entries: mappedEntries,
+          discountExtraAmount: trans.discountExtraAmount,
+          total: trans.total,
+          amountPaid: trans.amountPaid,
+          lastGivenMoney: trans.lastGivenMoney,
+          lastToLastGivenMoney: trans.lastToLastGivenMoney,
+          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+          deleted_on: trans.deleted_on,
+          createdAt: trans.createdAt,
+          lastUpdatedAt: trans.lastUpdatedAt,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error getting deleted transactions:', error);
+      return [];
+    }
+  }
+
+  // Restore a deleted transaction
+  static async restoreTransaction(transactionId: string): Promise<boolean> {
+    const db = DatabaseService.getDatabase();
+    
+    try {
+      // Get the deleted transaction
+      const transaction = await this.getTransactionById(transactionId);
+      if (!transaction) {
+        return false;
+      }
+
+      // Restore customer balances
+      const customer = await CustomerService.getCustomerById(transaction.customerId);
+      if (!customer) {
+        return false;
+      }
+
+      // Calculate and restore balances (same logic as when transaction was deleted, but reverse)
+      let updatedCustomer = { ...customer };
+
+      const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+      let balanceEffect = 0;
+      if (!isMetalOnly) {
+        const netAmount = transaction.total;
+        const receivedAmount = transaction.amountPaid;
+        const discountExtraAmount = transaction.discountExtraAmount;
+        balanceEffect = netAmount >= 0 
+          ? receivedAmount - netAmount - discountExtraAmount
+          : Math.abs(netAmount) - receivedAmount - discountExtraAmount;
+      }
+
+      // Restore customer balance
+      if (!isMetalOnly) {
+        updatedCustomer.balance += balanceEffect;
+      }
+
+      // Restore metal balances for metal-only entries
+      if (isMetalOnly) {
+        for (const entry of transaction.entries) {
+          if (entry.metalOnly && entry.type !== 'money') {
+            const itemType = entry.itemType;
+            
+            // Get the weight to use
+            const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
+              ? (entry.pureWeight || 0) 
+              : (entry.weight || 0);
+            // Apply original effect
+            const effect = entry.type === 'sell' ? -weight : weight;
+            
+            // Update metal balance
+            await CustomerService.updateCustomerMetalBalance(customer.id, itemType, effect);
+          }
+        }
+      }
+
+      // Restore stock
+      for (const entry of transaction.entries) {
+        if (entry.stock_id) {
+          if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+            const touch = entry.touch || 100;
+            await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
+          } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+            await RaniRupaStockService.removeStock(entry.stock_id);
+          }
+        }
+      }
+
+      await CustomerService.saveCustomer(updatedCustomer);
+
+      // Restore ledger entries (set deleted_on to NULL)
+      await db.runAsync('UPDATE ledger_entries SET deleted_on = NULL WHERE transactionId = ?', [transactionId]);
+
+      // Restore the transaction by setting deleted_on to NULL
+      await db.runAsync('UPDATE transactions SET deleted_on = NULL, lastUpdatedAt = ? WHERE id = ?', [new Date().toISOString(), transactionId]);
+      
+      return true;
+    } catch (error) {
+      console.error('Error restoring transaction:', error);
+      return false;
+    }
+  }
+
+  // Permanently delete a transaction
+  static async deleteTransactionPermanently(transactionId: string): Promise<boolean> {
+    const db = DatabaseService.getDatabase();
+    
+    try {
+      // Delete ledger entries permanently
+      await db.runAsync('DELETE FROM ledger_entries WHERE transactionId = ?', [transactionId]);
+      await db.runAsync('DELETE FROM ledger_entry_items WHERE ledger_entry_id IN (SELECT id FROM ledger_entries WHERE transactionId = ?)', [transactionId]);
+
+      // Delete the transaction permanently (cascade will delete entries)
+      await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);
+      
+      return true;
+    } catch (error) {
+      console.error('Error permanently deleting transaction:', error);
+      return false;
+    }
+  }
+
+  // Automatically delete transactions that have been in recycle bin for 3+ days
+  static async cleanupOldDeletedTransactions(): Promise<number> {
+    const db = DatabaseService.getDatabase();
+    
+    try {
+      // Calculate date 3 days ago
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const cutoffDate = threeDaysAgo.toISOString().split('T')[0];
+
+      // Find transactions that were deleted 3 or more days ago
+      const oldTransactions = await db.getAllAsync<{ id: string }>(
+        'SELECT id FROM transactions WHERE deleted_on IS NOT NULL AND deleted_on <= ?',
+        [cutoffDate]
+      );
+
+      // Delete each transaction permanently
+      let deletedCount = 0;
+      for (const transaction of oldTransactions) {
+        const success = await this.deleteTransactionPermanently(transaction.id);
+        if (success) {
+          deletedCount++;
+        }
+      }
+
+      return deletedCount;
+    } catch (error) {
+      console.error('Error cleaning up old deleted transactions:', error);
+      return 0;
+    }
+  }
 }
+

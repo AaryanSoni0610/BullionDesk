@@ -444,9 +444,12 @@ export const HistoryScreen: React.FC = () => {
   };
 
   // Enhanced Transaction Card Component
-  const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
+  const TransactionCard: React.FC<{ transaction: Transaction; isShareable?: boolean }> = ({ transaction, isShareable = false }) => {
     const shareableCardRef = useRef<View>(null);
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+    
+    const cardStyle = isShareable ? styles.shareableCard : styles.transactionCard;
+    const contentStyle = isShareable ? styles.shareableCardContent : undefined;
     
     // Calculate transaction-specific remaining balance
     let transactionBalanceLabel = 'Settled';
@@ -507,44 +510,48 @@ export const HistoryScreen: React.FC = () => {
     return (
       <>
         {/* Visible Card with Action Buttons */}
-        <Card style={styles.transactionCard} mode="outlined">
-          <Card.Content>
+        <Card style={cardStyle}>
+          <Card.Content style={contentStyle}>
             
-            {/* Action Buttons Row */}
-            <View style={styles.editButtonRow}>
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => handleDeleteTransaction(transaction)}
-              >
-                <Icon name="delete" size={16} color={theme.colors.error} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.shareButton]}
-                onPress={() => handleShareTransaction(transaction, shareableCardRef)}
-              >
-                <Icon name="share-variant" size={16} color={theme.colors.success} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
-                onPress={() => {
-                  if (isSettledAndOld(transaction)) {
-                    setAlertTitle('Cannot Edit Transaction');
-                    setAlertMessage('This transaction has been settled and is too old to edit.');
-                    setAlertButtons([{ text: 'OK' }]);
-                    setAlertVisible(true);
-                  } else {
-                    loadTransactionForEdit(transaction.id);
-                  }
-                }}
-                disabled={isSettledAndOld(transaction)}
-              >
-                <Icon 
-                  name="pencil" 
-                  size={16} 
-                  color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
-                />
-              </TouchableOpacity>
-            </View>
+            {!isShareable && (
+              <>
+                {/* Action Buttons Row */}
+                <View style={styles.editButtonRow}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.deleteButton]}
+                    onPress={() => handleDeleteTransaction(transaction)}
+                  >
+                    <Icon name="delete" size={16} color={theme.colors.error} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.shareButton]}
+                    onPress={() => handleShareTransaction(transaction, shareableCardRef)}
+                  >
+                    <Icon name="share-variant" size={16} color={theme.colors.success} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
+                    onPress={() => {
+                      if (isSettledAndOld(transaction)) {
+                        setAlertTitle('Cannot Edit Transaction');
+                        setAlertMessage('This transaction has been settled and is too old to edit.');
+                        setAlertButtons([{ text: 'OK' }]);
+                        setAlertVisible(true);
+                      } else {
+                        loadTransactionForEdit(transaction.id);
+                      }
+                    }}
+                    disabled={isSettledAndOld(transaction)}
+                  >
+                    <Icon 
+                      name="pencil" 
+                      size={16} 
+                      color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
 
             {/* Header Row */}
             <View style={styles.cardHeader}>
@@ -743,7 +750,7 @@ export const HistoryScreen: React.FC = () => {
         {/* Hidden Shareable Card (without action buttons) for screenshot */}
         <View style={styles.hiddenCard} collapsable={false}>
           <View ref={shareableCardRef} collapsable={false} style={styles.shareableCardWrapper}>
-            <Card style={styles.shareableCard} mode="outlined">
+            <Card style={styles.shareableCard}>
               <Card.Content style={styles.shareableCardContent}>
                 {/* Header Row */}
                 <View style={styles.cardHeader}>
@@ -1088,7 +1095,7 @@ export const HistoryScreen: React.FC = () => {
               filteredTransactions.length > 0 ? (
                 <Text variant="bodyMedium" style={styles.resultCount}>
                   {isSearching ? 'Searching...' : `Showing ${filteredTransactions.length} transaction${filteredTransactions.length === 1 ? '' : 's'}`}
-                  {searchQuery.trim() && ` for "${searchQuery}"`}
+                  {searchQuery.trim() && ` for "${searchQuery.trim()}"`}
                 </Text>
               ) : null
             }
@@ -1160,18 +1167,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   searchBar: {
-    marginHorizontal: theme.spacing.md,
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.xs,
+    marginHorizontal: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
     elevation: 0,
     backgroundColor: theme.colors.surfaceVariant,
   },
   filterContainer: {
     marginVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
   },
   filterContent: {
-    paddingRight: theme.spacing.md,
+    paddingRight: theme.spacing.sm,
   },
   filterChip: {
     marginRight: theme.spacing.sm,
@@ -1208,10 +1215,10 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xxl,
   },
   transactionCard: {
-    marginHorizontal: theme.spacing.md,
+    marginHorizontal: theme.spacing.sm,
     marginBottom: theme.spacing.md,
     borderRadius: 12,
-    elevation: theme.elevation.level1,
+    backgroundColor: '#FAFAFA',
   },
   transactionHeader: {
     flexDirection: 'row',
@@ -1429,20 +1436,13 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   shareableCardWrapper: {
-    backgroundColor: '#FAFAFA', // Match app background
+    backgroundColor: '#FAFAFA',
     padding: 16,
     width: 400, // Fixed width for consistent sharing
   },
   shareableCard: {
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: theme.colors.outline,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    elevation: theme.elevation.level1,
   },
   shareableCardContent: {
     padding: 16,

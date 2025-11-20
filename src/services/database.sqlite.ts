@@ -49,6 +49,7 @@ export class DatabaseService {
           lastGivenMoney REAL NOT NULL DEFAULT 0,
           lastToLastGivenMoney REAL NOT NULL DEFAULT 0,
           settlementType TEXT NOT NULL CHECK(settlementType IN ('full', 'partial', 'none')),
+          deleted_on DATE,
           createdAt DATETIME NOT NULL,
           lastUpdatedAt DATETIME NOT NULL,
           FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE
@@ -97,6 +98,7 @@ export class DatabaseService {
           date DATETIME NOT NULL,
           amountReceived REAL,
           amountGiven REAL,
+          deleted_on DATE,
           createdAt DATETIME NOT NULL,
           FOREIGN KEY (transactionId) REFERENCES transactions(id) ON DELETE CASCADE,
           FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE
@@ -154,11 +156,13 @@ export class DatabaseService {
         -- Indexes for better query performance
         CREATE INDEX IF NOT EXISTS idx_transactions_customerId ON transactions(customerId);
         CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+        CREATE INDEX IF NOT EXISTS idx_transactions_deleted_on ON transactions(deleted_on);
         CREATE INDEX IF NOT EXISTS idx_transaction_entries_transaction_id ON transaction_entries(transaction_id);
         CREATE INDEX IF NOT EXISTS idx_transaction_entries_stock_id ON transaction_entries(stock_id);
         CREATE INDEX IF NOT EXISTS idx_ledger_entries_transactionId ON ledger_entries(transactionId);
         CREATE INDEX IF NOT EXISTS idx_ledger_entries_customerId ON ledger_entries(customerId);
         CREATE INDEX IF NOT EXISTS idx_ledger_entries_date ON ledger_entries(date);
+        CREATE INDEX IF NOT EXISTS idx_ledger_entries_deleted_on ON ledger_entries(deleted_on);
         CREATE INDEX IF NOT EXISTS idx_ledger_entry_items_ledger_entry_id ON ledger_entry_items(ledger_entry_id);
         CREATE INDEX IF NOT EXISTS idx_rani_rupa_stock_itemtype ON rani_rupa_stock(itemtype);
         CREATE INDEX IF NOT EXISTS idx_trades_date ON trades(date);
@@ -170,7 +174,6 @@ export class DatabaseService {
         'INSERT OR IGNORE INTO base_inventory (id, gold999, gold995, silver, rani, rupu, money) VALUES (1, 0, 0, 0, 0, 0, 0)'
       );
 
-      console.log('Database initialized successfully');
     } catch (error) {
       console.error('Error initializing database:', error);
       throw error;

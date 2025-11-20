@@ -727,7 +727,7 @@ export const CustomerListScreen: React.FC = () => {
             </View>
 
             {/* Transaction Table */}
-            <ScrollView style={styles.transactionTable}>
+            <ScrollView style={styles.transactionTable} nestedScrollEnabled={true}>
               {ledgerData.length > 0 ? (
                 ledgerData.map((entry, index) => (
                   <View key={`${entry.id}-${index}`}>
@@ -788,6 +788,7 @@ export const CustomerListScreen: React.FC = () => {
             keyExtractor={item => item.id}
             style={styles.customerList}
             showsVerticalScrollIndicator={false}
+            nestedScrollEnabled={true}
             ItemSeparatorComponent={() => <Divider />}
             ListEmptyComponent={
               searchQuery.trim() !== '' ? (

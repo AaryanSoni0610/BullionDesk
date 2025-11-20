@@ -221,7 +221,6 @@ export class TradeService {
         stopOnTerminate: false, // Continue running after app terminates
         startOnBoot: true, // Start when device boots
       });
-      console.log('Trade cleanup background task registered');
     } catch (error) {
       console.error('Error registering trade cleanup background task:', error);
     }
@@ -233,7 +232,6 @@ export class TradeService {
   static async unregisterBackgroundTask(): Promise<void> {
     try {
       await BackgroundFetch.unregisterTaskAsync(TRADE_CLEANUP_TASK);
-      console.log('Trade cleanup background task unregistered');
     } catch (error) {
       console.error('Error unregistering trade cleanup background task:', error);
     }

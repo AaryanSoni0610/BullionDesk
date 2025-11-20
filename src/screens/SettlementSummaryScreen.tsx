@@ -127,17 +127,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     setPendingSaveDate(null);
     setShowDateWarningAlert(false);
   };
-
-  // Enhanced payment validation
-  const validatePaymentAmount = (value: string, maxAmount: number): string => {
-    if (!value.trim()) return ''; // Allow empty for partial payments
-    const num = parseFloat(value);
-    if (isNaN(num)) return 'Please enter a valid amount';
-    if (num < 0) return 'Amount cannot be negative';
-    if (num > maxAmount * 1.1) return `Amount seems too high. Maximum expected: ₹${formatIndianNumber(maxAmount)}`;
-    if (num > 10000000) return 'Amount cannot exceed ₹1,00,00,000';
-    return '';
-  };
   
   // Input filtering function for discount/extra
   const filterDiscountExtraInput = (value: string): string => {
@@ -173,29 +162,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     
     return filtered;
   };
-  
-  // Debounced validation
-  const debouncedValidatePayment = useCallback(
-    debounce((value: string, maxAmount: number) => {
-      const error = validatePaymentAmount(value, maxAmount);
-      setPaymentError(error);
-    }, 300),
-    []
-  );
-  
 
-  
-  function debounce<T extends (...args: any[]) => any>(
-    func: T,
-    wait: number
-  ): (...args: Parameters<T>) => void {
-    let timeout: NodeJS.Timeout;
-    return (...args: Parameters<T>) => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func(...args), wait);
-    };
-  }
-  
   const getItemDisplayName = (entry: TransactionEntry): string => {
     if (entry.type === 'money') {
       return 'Money';
@@ -347,12 +314,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
   // Enhanced save transaction with validation
   const handleSaveTransaction = async () => {
-    const paymentValidationError = validatePaymentAmount(receivedAmount, Math.abs(adjustedNetAmount));
-    
-    if (paymentValidationError) {
-      setPaymentError(paymentValidationError);
-      return;
-    }
     
     setIsSaving(true);
     try {
@@ -644,7 +605,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                     onChangeText={(text) => {
                       setReceivedAmount(text);
                       setHasPaymentInteracted(true);
-                      debouncedValidatePayment(text, Math.abs(adjustedNetAmount));
                     }}
                     mode="outlined"
                     keyboardType="numeric"

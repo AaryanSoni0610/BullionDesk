@@ -1,8 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DatabaseService } from './database.sqlite';
 import { CustomerService } from './customer.service';
-import { TransactionService } from './transaction.service';
-import { LedgerService } from './ledger.service';
 import { InventoryService } from './inventory.service';
 import { SettingsService } from './settings.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
@@ -46,7 +44,6 @@ export class MigrationService {
     if (this.progressCallback) {
       this.progressCallback({ stage, progress, total, message });
     }
-    console.log(`[MIGRATION] ${stage}: ${message} (${progress}/${total})`);
   }
 
   /**
@@ -450,7 +447,6 @@ export class MigrationService {
     try {
       const keysToRemove = Object.values(OLD_STORAGE_KEYS);
       await AsyncStorage.multiRemove(keysToRemove);
-      console.log('[MIGRATION] Cleared old AsyncStorage data');
       return true;
     } catch (error) {
       console.error('Error clearing old AsyncStorage:', error);

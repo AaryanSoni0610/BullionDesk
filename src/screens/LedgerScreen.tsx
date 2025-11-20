@@ -217,19 +217,64 @@ export const LedgerScreen: React.FC = () => {
       }
 
       // Use database-level filtering for better performance
-      const [filteredTrans, customers, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate, raniStockData, rupuStockData] = await Promise.all([
+      // Pre-filter transactions by itemType based on selected inventory
+      let goldTransactions: Transaction[] = [];
+      let silverTransactions: Transaction[] = [];
+      
+      const basePromises: Promise<any>[] = [
         TransactionService.getTransactionsByDateRange(startDate, endDate),
         CustomerService.getAllCustomers(),
         LedgerService.getLedgerEntriesByDateRange(startDate, endDate),
         TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All transactions up to end date
         LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All ledger entries up to end date
-        RaniRupaStockService.getStockByType('rani'),
-        RaniRupaStockService.getStockByType('rupu')
-      ]);
+      ];
+      
+      // Add itemType-filtered queries for gold and silver subledgers
+      if (selectedInventory === 'gold') {
+        basePromises.push(
+          TransactionService.getTransactionsByDateRange(startDate, endDate, ['gold999', 'gold995', 'rani']),
+          RaniRupaStockService.getStockByType('rani')
+        );
+      } else if (selectedInventory === 'silver') {
+        basePromises.push(
+          TransactionService.getTransactionsByDateRange(startDate, endDate, ['silver', 'rupu']),
+          RaniRupaStockService.getStockByType('rupu')
+        );
+      } else {
+        // For 'all' and 'money', load both stock types
+        basePromises.push(
+          RaniRupaStockService.getStockByType('rani'),
+          RaniRupaStockService.getStockByType('rupu')
+        );
+      }
+      
+      const results = await Promise.all(basePromises);
+      
+      const filteredTrans = results[0];
+      const customers = results[1];
+      const filteredLedger = results[2];
+      const transactionsUpToDate = results[3];
+      const ledgerEntriesUpToDate = results[4];
+      
+      // Extract itemType-filtered transactions and stock data based on selected inventory
+      let raniStockData: any[] = [];
+      let rupuStockData: any[] = [];
+      let itemFilteredTransactions: Transaction[] = [];
+      
+      if (selectedInventory === 'gold') {
+        itemFilteredTransactions = results[5];
+        raniStockData = results[6];
+      } else if (selectedInventory === 'silver') {
+        itemFilteredTransactions = results[5];
+        rupuStockData = results[6];
+      } else {
+        raniStockData = results[5];
+        rupuStockData = results[6];
+      }
 
       const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
       setInventoryData(data);
-      setFilteredTransactions(filteredTrans);
+      setFilteredTransactions(itemFilteredTransactions.length > 0 ? itemFilteredTransactions : filteredTrans);
       setFilteredLedgerEntries(filteredLedger);
       setCustomers(customers);
       setRaniStock(raniStockData);
@@ -264,19 +309,23 @@ export const LedgerScreen: React.FC = () => {
       const moneyValue = values.money || 0;
 
       // Create or get "Adjust" customer
-      let adjustCustomer = customers.find(c => c.name === 'Adjust');
+      let adjustCustomer = await CustomerService.getCustomerByName('Adjust');
       if (!adjustCustomer) {
         adjustCustomer = {
           id: `adjust_${Date.now()}`,
           name: 'Adjust',
           balance: 0,
-          metalBalances: {}
+          metalBalances: {
+            gold999: 0,
+            gold995: 0,
+            rani: 0,
+            silver: 0,
+            rupu: 0
+          }
         };
         await CustomerService.saveCustomer(adjustCustomer);
-        // Refresh customers list
-        const updatedCustomers = await CustomerService.getAllCustomers();
-        setCustomers(updatedCustomers);
-        adjustCustomer = updatedCustomers.find((c: any) => c.name === 'Adjust')!;
+        // Add to customers list without reloading all
+        setCustomers(prevCustomers => [...prevCustomers, adjustCustomer!]);
       }
 
       // Handle metal adjustments (gold and silver) as one transaction
@@ -537,11 +586,13 @@ export const LedgerScreen: React.FC = () => {
       const endDateStr = endOfSelectedDay.toISOString();
 
       // Use database-level filtering for better performance
-      const [filteredTrans, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate, raniStockData, rupuStockData] = await Promise.all([
+      const [filteredTrans, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate, goldTransactions, silverTransactions, raniStockData, rupuStockData] = await Promise.all([
         TransactionService.getTransactionsByDateRange(startDateStr, endDateStr),
         LedgerService.getLedgerEntriesByDateRange(startDateStr, endDateStr),
         TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
         LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
+        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr, ['gold999', 'gold995', 'rani']),
+        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr, ['silver', 'rupu']),
         RaniRupaStockService.getStockByType('rani'),
         RaniRupaStockService.getStockByType('rupu')
       ]);
@@ -552,74 +603,66 @@ export const LedgerScreen: React.FC = () => {
       // Calculate inventory data
       const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
 
-      // Get entries for each subledger
+      // Get entries for each subledger using pre-filtered transactions
       const goldEntries: EntryData[] = [];
       const silverEntries: EntryData[] = [];
       const moneyEntries: EntryData[] = [];
 
-      // Gold entries
-      filteredTrans.forEach(transaction => {
-        const customer = customers.find(c => c.id === transaction.customerId);
-        const customerName = customer?.name || 'Unknown Customer';
+      // Gold entries - use pre-filtered gold transactions
+      goldTransactions.forEach(transaction => {
+        const customerName = transaction.customerName;
         transaction.entries.forEach(entry => {
           const extEntry = entry as ExtendedTransactionEntry;
-          if (extEntry.type === 'money') return;
-          if (extEntry.itemType.startsWith('gold') || extEntry.itemType === 'rani') {
-            if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
-              goldEntries.push({
+          if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
+            goldEntries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry: {
+                ...extEntry,
+                type: 'sell',
+                itemType: 'gold999',
+                weight: extEntry.actualGoldGiven,
+                subtotal: 0
+              },
+              date: transaction.date
+            });
+          }
+          goldEntries.push({
+            transactionId: transaction.id,
+            customerName,
+            entry,
+            date: transaction.date
+          });
+        });
+      });
+
+      // Silver entries - use pre-filtered silver transactions
+      silverTransactions.forEach(transaction => {
+        const customerName = transaction.customerName;
+        transaction.entries.forEach(entry => {
+          const extEntry = entry as ExtendedTransactionEntry;
+          if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
+            if (extEntry.silverWeight && extEntry.silverWeight > 0) {
+              silverEntries.push({
                 transactionId: transaction.id,
                 customerName,
                 entry: {
                   ...extEntry,
                   type: 'sell',
-                  itemType: 'gold999',
-                  weight: extEntry.actualGoldGiven,
+                  itemType: 'silver',
+                  weight: extEntry.silverWeight,
                   subtotal: 0
                 },
                 date: transaction.date
               });
             }
-            goldEntries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry,
-              date: transaction.date
-            });
           }
-        });
-      });
-
-      // Silver entries
-      filteredTrans.forEach(transaction => {
-        const customer = customers.find(c => c.id === transaction.customerId);
-        const customerName = customer?.name || 'Unknown Customer';
-        transaction.entries.forEach(entry => {
-          const extEntry = entry as ExtendedTransactionEntry;
-          if (extEntry.type === 'money') return;
-          if (extEntry.itemType.startsWith('silver') || extEntry.itemType === 'rupu') {
-            if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
-              if (extEntry.silverWeight && extEntry.silverWeight > 0) {
-                silverEntries.push({
-                  transactionId: transaction.id,
-                  customerName,
-                  entry: {
-                    ...extEntry,
-                    type: 'sell',
-                    itemType: 'silver',
-                    weight: extEntry.silverWeight,
-                    subtotal: 0
-                  },
-                  date: transaction.date
-                });
-              }
-            }
-            silverEntries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry,
-              date: transaction.date
-            });
-          }
+          silverEntries.push({
+            transactionId: transaction.id,
+            customerName,
+            entry,
+            date: transaction.date
+          });
         });
       });
 
@@ -1004,8 +1047,7 @@ export const LedgerScreen: React.FC = () => {
       
     } else {
       filteredTransactions.forEach(transaction => {
-        const customer = customers.find(c => c.id === transaction.customerId);
-        const customerName = customer?.name || 'Unknown Customer';
+        const customerName = transaction.customerName;
         transaction.entries.forEach(entry => {
           // Skip money entries in gold/silver subledgers
           if (entry.type === 'money') {
@@ -1204,22 +1246,22 @@ export const LedgerScreen: React.FC = () => {
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={styles.cardIconContainer}>
+      <View style={styles.cardHeader}>
         <MaterialCommunityIcons 
           name={icon as any} 
-          size={24} 
+          size={24}
           color={iconColor} 
         />
-      </View>
-      <View style={styles.cardContent}>
-        <Text variant="titleMedium" style={[styles.inventoryCardTitle, { color: iconColor }]}>
+        <Text variant="titleSmall" style={[styles.inventoryCardTitle, { color: iconColor }]}>
           {title}
         </Text>
+      </View>
+      <View style={styles.cardContent}>
         <Text variant="headlineSmall" style={[styles.cardValue, { color: iconColor }]}>
           {value}
         </Text>
         {unit && (
-          <Text variant="bodyMedium" style={[styles.cardUnit, { color: iconColor }]}>
+          <Text variant="bodyMedium" style={[{ color: iconColor }]}>
             {unit}
           </Text>
         )}
@@ -1863,7 +1905,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   inventoryCard: {
-    height: 100,
+    height: 90,
     borderRadius: 12,
     padding: theme.spacing.md,
     marginBottom: 8,
@@ -1879,28 +1921,24 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     minWidth: 140,
   },
-  cardIconContainer: {
-    position: 'absolute',
-    top: theme.spacing.sm,
-    left: theme.spacing.sm,
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   cardContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: theme.spacing.sm,
   },
   inventoryCardTitle: {
     fontFamily: 'Roboto_700Bold',
-    marginBottom: theme.spacing.xs,
+    marginLeft: theme.spacing.xs,
+    fontSize: 18,
   },
   cardValue: {
     fontFamily: 'Roboto_700Bold',
     textAlign: 'center',
-  },
-  cardUnit: {
-    marginTop: theme.spacing.xs / 2,
-    opacity: 0.8,
+    marginBottom: -14,
   },
   fab: {
     position: 'absolute',

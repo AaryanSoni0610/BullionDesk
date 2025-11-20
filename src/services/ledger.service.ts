@@ -6,60 +6,70 @@ export class LedgerService {
   static async getAllLedgerEntries(): Promise<LedgerEntry[]> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      const entries = await db.getAllAsync<{
-        id: string;
-        transactionId: string;
-        customerId: string;
-        customerName: string;
-        date: string;
-        amountReceived: number | null;
-        amountGiven: number | null;
-        createdAt: string;
-      }>('SELECT * FROM ledger_entries ORDER BY date DESC');
 
-      const result: LedgerEntry[] = [];
-      
-      for (const entry of entries) {
-        // Get entry items
-        const items = await db.getAllAsync<any>(
-          'SELECT * FROM ledger_entry_items WHERE ledger_entry_id = ? ORDER BY createdAt ASC',
-          [entry.id]
-        );
+      // Optimized query with JOIN and soft delete filtering
+      const rows = await db.getAllAsync<any>(
+        `SELECT
+          le.id, le.transactionId, le.customerId, le.customerName, le.date,
+          le.amountReceived, le.amountGiven, le.createdAt,
+          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
+          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
+          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
+          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
+        FROM ledger_entries le
+        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
+        JOIN transactions t ON le.transactionId = t.id
+        WHERE le.deleted_on IS NULL
+          AND t.deleted_on IS NULL
+        ORDER BY le.date DESC, lei.createdAt ASC`
+      );
 
-        const mappedItems: TransactionEntry[] = items.map(item => ({
-          id: item.id,
-          type: item.type,
-          itemType: item.itemType,
-          weight: item.weight,
-          price: item.price,
-          touch: item.touch,
-          cut: item.cut,
-          extraPerKg: item.extraPerKg,
-          pureWeight: item.pureWeight,
-          moneyType: item.moneyType,
-          amount: item.amount,
-          metalOnly: item.metalOnly === 1,
-          stock_id: item.stock_id,
-          subtotal: item.subtotal,
-          createdAt: item.createdAt,
-          lastUpdatedAt: item.lastUpdatedAt,
-        }));
+      // Group results by ledger entry ID
+      const entryMap = new Map<string, LedgerEntry>();
 
-        result.push({
-          id: entry.id,
-          transactionId: entry.transactionId,
-          customerId: entry.customerId,
-          customerName: entry.customerName,
-          date: entry.date,
-          amountReceived: entry.amountReceived || 0,
-          amountGiven: entry.amountGiven || 0,
-          entries: mappedItems,
-          createdAt: entry.createdAt,
-        });
+      for (const row of rows) {
+        const entryId = row.id;
+
+        if (!entryMap.has(entryId)) {
+          // Create new ledger entry
+          entryMap.set(entryId, {
+            id: row.id,
+            transactionId: row.transactionId,
+            customerId: row.customerId,
+            customerName: row.customerName,
+            date: row.date,
+            amountReceived: row.amountReceived || 0,
+            amountGiven: row.amountGiven || 0,
+            entries: [],
+            createdAt: row.createdAt,
+          });
+        }
+
+        // Add item to the entry (if it exists)
+        if (row.item_id) {
+          const entry = entryMap.get(entryId)!;
+          entry.entries.push({
+            id: row.item_id,
+            type: row.type,
+            itemType: row.itemType,
+            weight: row.weight,
+            price: row.price,
+            touch: row.touch,
+            cut: row.cut,
+            extraPerKg: row.extraPerKg,
+            pureWeight: row.pureWeight,
+            moneyType: row.moneyType,
+            amount: row.amount,
+            metalOnly: row.metalOnly === 1,
+            stock_id: row.stock_id,
+            subtotal: row.subtotal,
+            createdAt: row.item_createdAt,
+            lastUpdatedAt: row.item_lastUpdatedAt,
+          });
+        }
       }
 
-      return result;
+      return Array.from(entryMap.values());
     } catch (error) {
       console.error('Error getting ledger entries:', error);
       return [];
@@ -70,53 +80,72 @@ export class LedgerService {
   static async getLedgerEntriesByDate(startDate: Date, endDate: Date): Promise<LedgerEntry[]> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      const entries = await db.getAllAsync<any>(
-        'SELECT * FROM ledger_entries WHERE date >= ? AND date <= ? ORDER BY date DESC',
-        [startDate.toISOString(), endDate.toISOString()]
+
+      // Optimized query with JOIN and soft delete filtering
+      const rows = await db.getAllAsync<any>(
+        `SELECT
+          le.id, le.transactionId, le.customerId, le.customerName, le.date,
+          le.amountReceived, le.amountGiven, le.createdAt,
+          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
+          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
+          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
+          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
+        FROM ledger_entries le
+        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
+        JOIN transactions t ON le.transactionId = t.id
+        WHERE le.date >= ? AND le.date <= ?
+          AND le.deleted_on IS NULL
+          AND t.deleted_on IS NULL
+        ORDER BY le.date DESC, lei.createdAt ASC`,
+        [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]]
       );
 
-      const result: LedgerEntry[] = [];
-      
-      for (const entry of entries) {
-        const items = await db.getAllAsync<any>(
-          'SELECT * FROM ledger_entry_items WHERE ledger_entry_id = ? ORDER BY createdAt ASC',
-          [entry.id]
-        );
+      // Group results by ledger entry ID
+      const entryMap = new Map<string, LedgerEntry>();
 
-        const mappedItems: TransactionEntry[] = items.map(item => ({
-          id: item.id,
-          type: item.type,
-          itemType: item.itemType,
-          weight: item.weight,
-          price: item.price,
-          touch: item.touch,
-          cut: item.cut,
-          extraPerKg: item.extraPerKg,
-          pureWeight: item.pureWeight,
-          moneyType: item.moneyType,
-          amount: item.amount,
-          metalOnly: item.metalOnly === 1,
-          stock_id: item.stock_id,
-          subtotal: item.subtotal,
-          createdAt: item.createdAt,
-          lastUpdatedAt: item.lastUpdatedAt,
-        }));
+      for (const row of rows) {
+        const entryId = row.id;
 
-        result.push({
-          id: entry.id,
-          transactionId: entry.transactionId,
-          customerId: entry.customerId,
-          customerName: entry.customerName,
-          date: entry.date,
-          amountReceived: entry.amountReceived || 0,
-          amountGiven: entry.amountGiven || 0,
-          entries: mappedItems,
-          createdAt: entry.createdAt,
-        });
+        if (!entryMap.has(entryId)) {
+          // Create new ledger entry
+          entryMap.set(entryId, {
+            id: row.id,
+            transactionId: row.transactionId,
+            customerId: row.customerId,
+            customerName: row.customerName,
+            date: row.date,
+            amountReceived: row.amountReceived || 0,
+            amountGiven: row.amountGiven || 0,
+            entries: [],
+            createdAt: row.createdAt,
+          });
+        }
+
+        // Add item to the entry (if it exists)
+        if (row.item_id) {
+          const entry = entryMap.get(entryId)!;
+          entry.entries.push({
+            id: row.item_id,
+            type: row.type,
+            itemType: row.itemType,
+            weight: row.weight,
+            price: row.price,
+            touch: row.touch,
+            cut: row.cut,
+            extraPerKg: row.extraPerKg,
+            pureWeight: row.pureWeight,
+            moneyType: row.moneyType,
+            amount: row.amount,
+            metalOnly: row.metalOnly === 1,
+            stock_id: row.stock_id,
+            subtotal: row.subtotal,
+            createdAt: row.item_createdAt,
+            lastUpdatedAt: row.item_lastUpdatedAt,
+          });
+        }
       }
 
-      return result;
+      return Array.from(entryMap.values());
     } catch (error) {
       console.error('Error getting ledger entries by date:', error);
       return [];
@@ -127,53 +156,72 @@ export class LedgerService {
   static async getLedgerEntriesByDateRange(startDate: string, endDate: string): Promise<LedgerEntry[]> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      const entries = await db.getAllAsync<any>(
-        'SELECT * FROM ledger_entries WHERE date >= ? AND date <= ? ORDER BY date DESC',
+
+      // Optimized query with JOIN and soft delete filtering
+      const rows = await db.getAllAsync<any>(
+        `SELECT
+          le.id, le.transactionId, le.customerId, le.customerName, le.date,
+          le.amountReceived, le.amountGiven, le.createdAt,
+          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
+          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
+          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
+          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
+        FROM ledger_entries le
+        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
+        JOIN transactions t ON le.transactionId = t.id
+        WHERE le.date >= ? AND le.date <= ?
+          AND le.deleted_on IS NULL
+          AND t.deleted_on IS NULL
+        ORDER BY le.date DESC, lei.createdAt ASC`,
         [startDate, endDate]
       );
 
-      const result: LedgerEntry[] = [];
-      
-      for (const entry of entries) {
-        const items = await db.getAllAsync<any>(
-          'SELECT * FROM ledger_entry_items WHERE ledger_entry_id = ? ORDER BY createdAt ASC',
-          [entry.id]
-        );
+      // Group results by ledger entry ID
+      const entryMap = new Map<string, LedgerEntry>();
 
-        const mappedItems: TransactionEntry[] = items.map(item => ({
-          id: item.id,
-          type: item.type,
-          itemType: item.itemType,
-          weight: item.weight,
-          price: item.price,
-          touch: item.touch,
-          cut: item.cut,
-          extraPerKg: item.extraPerKg,
-          pureWeight: item.pureWeight,
-          moneyType: item.moneyType,
-          amount: item.amount,
-          metalOnly: item.metalOnly === 1,
-          stock_id: item.stock_id,
-          subtotal: item.subtotal,
-          createdAt: item.createdAt,
-          lastUpdatedAt: item.lastUpdatedAt,
-        }));
+      for (const row of rows) {
+        const entryId = row.id;
 
-        result.push({
-          id: entry.id,
-          transactionId: entry.transactionId,
-          customerId: entry.customerId,
-          customerName: entry.customerName,
-          date: entry.date,
-          amountReceived: entry.amountReceived || 0,
-          amountGiven: entry.amountGiven || 0,
-          entries: mappedItems,
-          createdAt: entry.createdAt,
-        });
+        if (!entryMap.has(entryId)) {
+          // Create new ledger entry
+          entryMap.set(entryId, {
+            id: row.id,
+            transactionId: row.transactionId,
+            customerId: row.customerId,
+            customerName: row.customerName,
+            date: row.date,
+            amountReceived: row.amountReceived || 0,
+            amountGiven: row.amountGiven || 0,
+            entries: [],
+            createdAt: row.createdAt,
+          });
+        }
+
+        // Add item to the entry (if it exists)
+        if (row.item_id) {
+          const entry = entryMap.get(entryId)!;
+          entry.entries.push({
+            id: row.item_id,
+            type: row.type,
+            itemType: row.itemType,
+            weight: row.weight,
+            price: row.price,
+            touch: row.touch,
+            cut: row.cut,
+            extraPerKg: row.extraPerKg,
+            pureWeight: row.pureWeight,
+            moneyType: row.moneyType,
+            amount: row.amount,
+            metalOnly: row.metalOnly === 1,
+            stock_id: row.stock_id,
+            subtotal: row.subtotal,
+            createdAt: row.item_createdAt,
+            lastUpdatedAt: row.item_lastUpdatedAt,
+          });
+        }
       }
 
-      return result;
+      return Array.from(entryMap.values());
     } catch (error) {
       console.error('Error getting ledger entries by date range:', error);
       return [];
@@ -184,53 +232,72 @@ export class LedgerService {
   static async getLedgerEntriesByTransactionId(transactionId: string): Promise<LedgerEntry[]> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      const entries = await db.getAllAsync<any>(
-        'SELECT * FROM ledger_entries WHERE transactionId = ? ORDER BY date DESC',
+
+      // Optimized query with JOIN and soft delete filtering
+      const rows = await db.getAllAsync<any>(
+        `SELECT
+          le.id, le.transactionId, le.customerId, le.customerName, le.date,
+          le.amountReceived, le.amountGiven, le.createdAt,
+          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
+          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
+          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
+          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
+        FROM ledger_entries le
+        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
+        JOIN transactions t ON le.transactionId = t.id
+        WHERE le.transactionId = ?
+          AND le.deleted_on IS NULL
+          AND t.deleted_on IS NULL
+        ORDER BY le.date DESC, lei.createdAt ASC`,
         [transactionId]
       );
 
-      const result: LedgerEntry[] = [];
-      
-      for (const entry of entries) {
-        const items = await db.getAllAsync<any>(
-          'SELECT * FROM ledger_entry_items WHERE ledger_entry_id = ? ORDER BY createdAt ASC',
-          [entry.id]
-        );
+      // Group results by ledger entry ID
+      const entryMap = new Map<string, LedgerEntry>();
 
-        const mappedItems: TransactionEntry[] = items.map(item => ({
-          id: item.id,
-          type: item.type,
-          itemType: item.itemType,
-          weight: item.weight,
-          price: item.price,
-          touch: item.touch,
-          cut: item.cut,
-          extraPerKg: item.extraPerKg,
-          pureWeight: item.pureWeight,
-          moneyType: item.moneyType,
-          amount: item.amount,
-          metalOnly: item.metalOnly === 1,
-          stock_id: item.stock_id,
-          subtotal: item.subtotal,
-          createdAt: item.createdAt,
-          lastUpdatedAt: item.lastUpdatedAt,
-        }));
+      for (const row of rows) {
+        const entryId = row.id;
 
-        result.push({
-          id: entry.id,
-          transactionId: entry.transactionId,
-          customerId: entry.customerId,
-          customerName: entry.customerName,
-          date: entry.date,
-          amountReceived: entry.amountReceived || 0,
-          amountGiven: entry.amountGiven || 0,
-          entries: mappedItems,
-          createdAt: entry.createdAt,
-        });
+        if (!entryMap.has(entryId)) {
+          // Create new ledger entry
+          entryMap.set(entryId, {
+            id: row.id,
+            transactionId: row.transactionId,
+            customerId: row.customerId,
+            customerName: row.customerName,
+            date: row.date,
+            amountReceived: row.amountReceived || 0,
+            amountGiven: row.amountGiven || 0,
+            entries: [],
+            createdAt: row.createdAt,
+          });
+        }
+
+        // Add item to the entry (if it exists)
+        if (row.item_id) {
+          const entry = entryMap.get(entryId)!;
+          entry.entries.push({
+            id: row.item_id,
+            type: row.type,
+            itemType: row.itemType,
+            weight: row.weight,
+            price: row.price,
+            touch: row.touch,
+            cut: row.cut,
+            extraPerKg: row.extraPerKg,
+            pureWeight: row.pureWeight,
+            moneyType: row.moneyType,
+            amount: row.amount,
+            metalOnly: row.metalOnly === 1,
+            stock_id: row.stock_id,
+            subtotal: row.subtotal,
+            createdAt: row.item_createdAt,
+            lastUpdatedAt: row.item_lastUpdatedAt,
+          });
+        }
       }
 
-      return result;
+      return Array.from(entryMap.values());
     } catch (error) {
       console.error('Error getting ledger entries by transaction ID:', error);
       return [];
@@ -241,53 +308,72 @@ export class LedgerService {
   static async getLedgerEntriesByCustomerId(customerId: string): Promise<LedgerEntry[]> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      const entries = await db.getAllAsync<any>(
-        'SELECT * FROM ledger_entries WHERE customerId = ? ORDER BY date DESC',
+
+      // Optimized query with JOIN and soft delete filtering
+      const rows = await db.getAllAsync<any>(
+        `SELECT
+          le.id, le.transactionId, le.customerId, le.customerName, le.date,
+          le.amountReceived, le.amountGiven, le.createdAt,
+          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
+          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
+          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
+          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
+        FROM ledger_entries le
+        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
+        JOIN transactions t ON le.transactionId = t.id
+        WHERE le.customerId = ?
+          AND le.deleted_on IS NULL
+          AND t.deleted_on IS NULL
+        ORDER BY le.date DESC, lei.createdAt ASC`,
         [customerId]
       );
 
-      const result: LedgerEntry[] = [];
-      
-      for (const entry of entries) {
-        const items = await db.getAllAsync<any>(
-          'SELECT * FROM ledger_entry_items WHERE ledger_entry_id = ? ORDER BY createdAt ASC',
-          [entry.id]
-        );
+      // Group results by ledger entry ID
+      const entryMap = new Map<string, LedgerEntry>();
 
-        const mappedItems: TransactionEntry[] = items.map(item => ({
-          id: item.id,
-          type: item.type,
-          itemType: item.itemType,
-          weight: item.weight,
-          price: item.price,
-          touch: item.touch,
-          cut: item.cut,
-          extraPerKg: item.extraPerKg,
-          pureWeight: item.pureWeight,
-          moneyType: item.moneyType,
-          amount: item.amount,
-          metalOnly: item.metalOnly === 1,
-          stock_id: item.stock_id,
-          subtotal: item.subtotal,
-          createdAt: item.createdAt,
-          lastUpdatedAt: item.lastUpdatedAt,
-        }));
+      for (const row of rows) {
+        const entryId = row.id;
 
-        result.push({
-          id: entry.id,
-          transactionId: entry.transactionId,
-          customerId: entry.customerId,
-          customerName: entry.customerName,
-          date: entry.date,
-          amountReceived: entry.amountReceived || 0,
-          amountGiven: entry.amountGiven || 0,
-          entries: mappedItems,
-          createdAt: entry.createdAt,
-        });
+        if (!entryMap.has(entryId)) {
+          // Create new ledger entry
+          entryMap.set(entryId, {
+            id: row.id,
+            transactionId: row.transactionId,
+            customerId: row.customerId,
+            customerName: row.customerName,
+            date: row.date,
+            amountReceived: row.amountReceived || 0,
+            amountGiven: row.amountGiven || 0,
+            entries: [],
+            createdAt: row.createdAt,
+          });
+        }
+
+        // Add item to the entry (if it exists)
+        if (row.item_id) {
+          const entry = entryMap.get(entryId)!;
+          entry.entries.push({
+            id: row.item_id,
+            type: row.type,
+            itemType: row.itemType,
+            weight: row.weight,
+            price: row.price,
+            touch: row.touch,
+            cut: row.cut,
+            extraPerKg: row.extraPerKg,
+            pureWeight: row.pureWeight,
+            moneyType: row.moneyType,
+            amount: row.amount,
+            metalOnly: row.metalOnly === 1,
+            stock_id: row.stock_id,
+            subtotal: row.subtotal,
+            createdAt: row.item_createdAt,
+            lastUpdatedAt: row.item_lastUpdatedAt,
+          });
+        }
       }
 
-      return result;
+      return Array.from(entryMap.values());
     } catch (error) {
       console.error('Error getting ledger entries by customer ID:', error);
       return [];
@@ -360,32 +446,38 @@ export class LedgerService {
     }
   }
 
-  // Delete ledger entry
+  // Delete ledger entry (soft delete)
   static async deleteLedgerEntry(ledgerId: string): Promise<boolean> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      // Foreign key cascade will handle deleting items
-      await db.runAsync('DELETE FROM ledger_entries WHERE id = ?', [ledgerId]);
-      
+
+      // Soft delete the ledger entry
+      await db.runAsync('UPDATE ledger_entries SET deleted_on = ? WHERE id = ?', [
+        new Date().toISOString().split('T')[0],
+        ledgerId
+      ]);
+
       return true;
     } catch (error) {
-      console.error('Error deleting ledger entry:', error);
+      console.error('Error soft deleting ledger entry:', error);
       return false;
     }
   }
 
-  // Delete ledger entries by transaction ID
+  // Delete ledger entries by transaction ID (soft delete)
   static async deleteLedgerEntryByTransactionId(transactionId: string): Promise<boolean> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      // Delete all ledger entries for this transaction
-      await db.runAsync('DELETE FROM ledger_entries WHERE transactionId = ?', [transactionId]);
-      
+
+      // Soft delete all ledger entries for this transaction
+      await db.runAsync('UPDATE ledger_entries SET deleted_on = ? WHERE transactionId = ?', [
+        new Date().toISOString().split('T')[0],
+        transactionId
+      ]);
+
       return true;
     } catch (error) {
-      console.error('Error deleting ledger entries by transaction ID:', error);
+      console.error('Error soft deleting ledger entries by transaction ID:', error);
       return false;
     }
   }

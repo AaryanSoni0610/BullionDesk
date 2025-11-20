@@ -28,6 +28,7 @@ import { SettlementSummaryScreen } from './src/screens/SettlementSummaryScreen';
 import { CustomerListScreen } from './src/screens/CustomerListScreen';
 import { TradeScreen } from './src/screens/TradeScreen';
 import { RaniRupaSellScreen } from './src/screens/RaniRupaSellScreen';
+import { RecycleBinScreen } from './src/screens/RecycleBinScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
 import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
@@ -37,10 +38,10 @@ import { DatabaseService } from './src/services/database.sqlite';
 import { TradeService } from './src/services/trade.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell';
+type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin';
 
 // Custom Tab Bar Button with Rectangular Touch Area and Ripple Effect
-const CustomTabBarButton = ({ children, onPress, accessibilityState }: any) => {
+const CustomTabBarButton = ({ children, onPress }: any) => {
 
   return (
     <Pressable
@@ -119,6 +120,7 @@ interface AppContentProps {
   onNavigateToCustomers: () => void;
   onNavigateToTrade: () => void;
   onNavigateToRaniRupaSell: () => void;
+  onNavigateToRecycleBin: () => void;
 }
 
 const AppContent: React.FC<AppContentProps> = ({
@@ -207,6 +209,10 @@ const AppContent: React.FC<AppContentProps> = ({
 
           {appState === 'raniRupaSell' && (
             <RaniRupaSellScreen />
+          )}
+
+          {appState === 'recycleBin' && (
+            <RecycleBinScreen />
           )}
 
           {/* Customer Selection Modal */}
@@ -300,6 +306,7 @@ export default function App() {
   const handleNavigateToCustomers = () => setAppState('customers');
   const handleNavigateToTrade = () => setAppState('trade');
   const handleNavigateToRaniRupaSell = () => setAppState('raniRupaSell');
+  const handleNavigateToRecycleBin = () => setAppState('recycleBin');
 
   if (!fontsLoaded) {
     return null; // or a loading screen
@@ -314,6 +321,7 @@ export default function App() {
       onNavigateToCustomers={handleNavigateToCustomers}
       onNavigateToTrade={handleNavigateToTrade}
       onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
+      onNavigateToRecycleBin={handleNavigateToRecycleBin}
     >
       <AppContent 
         appState={appState}
@@ -324,6 +332,7 @@ export default function App() {
         onNavigateToCustomers={handleNavigateToCustomers}
         onNavigateToTrade={handleNavigateToTrade}
         onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
+        onNavigateToRecycleBin={handleNavigateToRecycleBin}
       />
     </AppProvider>
   );

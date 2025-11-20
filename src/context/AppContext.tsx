@@ -56,6 +56,7 @@ interface AppContextType {
   navigateToCustomers: () => void;
   navigateToTrade: () => void;
   navigateToRaniRupaSell: () => void;
+  navigateToRecycleBin: () => void;
   
   // Transaction Management
   handleSelectCustomer: (customer: Customer) => void;
@@ -78,6 +79,7 @@ interface AppProviderProps {
   onNavigateToCustomers: () => void;
   onNavigateToTrade: () => void;
   onNavigateToRaniRupaSell: () => void;
+  onNavigateToRecycleBin: () => void;
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ 
@@ -89,6 +91,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   onNavigateToCustomers,
   onNavigateToTrade,
   onNavigateToRaniRupaSell,
+  onNavigateToRecycleBin,
 }) => {
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
@@ -143,6 +146,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const navigateToRaniRupaSell = () => {
     onNavigateToRaniRupaSell();
+  };
+
+  const navigateToRecycleBin = () => {
+    onNavigateToRecycleBin();
   };
 
   const handleSelectCustomer = (customer: Customer) => {
@@ -347,6 +354,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     navigateToCustomers,
     navigateToTrade,
     navigateToRaniRupaSell,
+    navigateToRecycleBin,
     handleSelectCustomer,
     handleCreateCustomer,
     handleAddEntry,

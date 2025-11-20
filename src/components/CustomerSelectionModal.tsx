@@ -77,22 +77,21 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     };
   }
 
-  // Enhanced filter function
-  const filterCustomers = useCallback((query: string) => {
+  // Enhanced filter function with database search
+  const filterCustomers = useCallback(async (query: string) => {
     if (query.trim() === '') {
       setFilteredCustomers([]);
     } else {
-      const filtered = customers.filter(customer =>
-        customer.name.toLowerCase().includes(query.toLowerCase())
-      );
+      // Use database-level search instead of in-memory filtering
+      const filtered = await CustomerService.searchCustomers(query, ['adjust'], 50);
       setFilteredCustomers(filtered);
     }
-  }, [customers]);
+  }, []);
 
   // Debounced search function
   const debouncedSearch = useCallback(
-    debounce((query: string) => {
-      filterCustomers(query);
+    debounce(async (query: string) => {
+      await filterCustomers(query);
     }, 300),
     [filterCustomers]
   );
@@ -118,19 +117,13 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   useEffect(() => {
     const loadCustomers = async () => {
       try {
-        const allCustomers = await CustomerService.getAllCustomers();
-        const filteredCustomers = allCustomers.filter(c => c.name.toLowerCase() !== 'adjust'); // Filter out 'Adjust' customer
-        setCustomers(filteredCustomers);
+        // Load all customers excluding 'adjust' at database level
+        const allCustomers = await CustomerService.getAllCustomersExcluding(['adjust']);
+        setCustomers(allCustomers);
         
-        // Sort by last transaction date for recent customers
-        const sortedByTransaction = [...filteredCustomers].sort((a, b) => {
-          if (!a.lastTransaction && !b.lastTransaction) return 0;
-          if (!a.lastTransaction) return 1;
-          if (!b.lastTransaction) return -1;
-          return new Date(b.lastTransaction).getTime() - new Date(a.lastTransaction).getTime();
-        });
-        
-        setRecentCustomers(sortedByTransaction.slice(0, 5)); // Show 5 most recent
+        // Get recent customers with database-level filtering and sorting
+        const recentCust = await CustomerService.getRecentCustomers(5, ['adjust']);
+        setRecentCustomers(recentCust);
       } catch (error) {
         console.error('Error loading customers:', error);
         // Fallback to empty state
@@ -244,7 +237,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     // Check if both money and metal balances are zero
     const hasMoneyBalance = customer.balance !== 0;
     const hasMetalBalance = balanceItems.length > 0 || debtItems.length > 0;
-    
+
     if (!hasMoneyBalance && !hasMetalBalance) {
       return 'Settled';
     }
@@ -277,7 +270,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   };
 
   const showCreateButton = allowCreateCustomer && searchQuery.trim() !== '' && 
-    !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.toLowerCase()) &&
+    !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.trim().toLowerCase()) &&
     searchQuery.trim().toLowerCase() !== 'adjust';
 
   const showRecentCustomers = searchQuery.trim() === '' && recentCustomers.length > 0;

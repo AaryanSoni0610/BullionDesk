@@ -45,23 +45,8 @@ export const HomeScreen: React.FC = () => {
         setIsLoading(true);
       }
       
-      // Load both transactions and customers
-      const [allTransactions, allCustomers] = await Promise.all([
-        TransactionService.getAllTransactions(),
-        CustomerService.getAllCustomers()
-      ]);
-      
-      // Sort by date (most recent first) and take the first 20
-      const sortedTransactions = allTransactions
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .filter(t => t.customerName.toLowerCase() !== 'adjust') // Filter out 'Adjust' transactions
-        .slice(0, 20);
-      
-      // Create customer lookup map
-      const customerMap = new Map<string, Customer>();
-      allCustomers.forEach(customer => {
-        customerMap.set(customer.id, customer);
-      });
+      // Use optimized database query to get recent transactions excluding 'adjust'
+      const sortedTransactions = await TransactionService.getRecentTransactions(20, 'adjust');
       
       setRecentTransactions(sortedTransactions);
       setError(null);

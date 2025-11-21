@@ -161,8 +161,15 @@ export const RecycleBinScreen: React.FC = () => {
       // Load deleted transactions only
       const allTransactions = await TransactionService.getDeletedTransactions();
       
-      setTransactions(allTransactions);
-      setFilteredTransactions(allTransactions);
+      // Sort by deleted_on in descending order (most recently deleted first)
+      const sortedTransactions = allTransactions.sort((a, b) => {
+        const dateA = new Date(a.deleted_on || 0).getTime();
+        const dateB = new Date(b.deleted_on || 0).getTime();
+        return dateA - dateB; // Descending order
+      });
+      
+      setTransactions(sortedTransactions);
+      setFilteredTransactions(sortedTransactions);
     } catch (error) {
       console.error('Error loading deleted transactions:', error);
       setError('Failed to load deleted transactions');
@@ -185,16 +192,36 @@ export const RecycleBinScreen: React.FC = () => {
   }, [searchQuery, transactions]);
 
   const getAmountColor = (transaction: Transaction) => {
-    // Blue for Given (purchase), Green for Received (sell)
-    const isReceived = transaction.total > 0;
-    return isReceived ? theme.colors.sellColor : theme.colors.primary;
+    const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+    if (isMoneyOnly) {
+      // For money-only: positive amountPaid = received (green), negative = given (blue)
+      const isReceived = transaction.amountPaid > 0;
+      return isReceived ? theme.colors.sellColor : theme.colors.primary;
+    } else {
+      // Blue for Given (purchase), Green for Received (sell)
+      const isReceived = transaction.total > 0;
+      return isReceived ? theme.colors.sellColor : theme.colors.primary;
+    }
   };
 
   const renderTransactionCard = ({ item: transaction }: { item: Transaction }) => {
-    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
+    const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
     
     let transactionBalanceLabel = '';
     let transactionBalanceColor = theme.colors.onSurfaceVariant;
+
+    // Calculate deleted on info if needed
+    let deletedOnInfo = null;
+    if (transaction.deleted_on) {
+      const deletedDate = new Date(transaction.deleted_on);
+      const autoDeleteDate = new Date(deletedDate);
+      autoDeleteDate.setDate(autoDeleteDate.getDate() + 3);
+      const daysLeft = Math.ceil((autoDeleteDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      deletedOnInfo = {
+        text: daysLeft > 0 ? `Auto-delete in ${daysLeft} day${daysLeft > 1 ? 's' : ''}` : 'Pending deletion',
+        isWarning: daysLeft <= 1
+      };
+    }
 
     if (isMetalOnly) {
       // For metal-only transactions, show the metal items
@@ -221,41 +248,59 @@ export const RecycleBinScreen: React.FC = () => {
         }
       }
     } else {
-      if (transaction.settlementType === 'full') {
-        transactionBalanceLabel = 'Settled';
-      } else if (transaction.settlementType === 'partial') {
-        const balanceAmount = Math.abs(transaction.total - transaction.amountPaid);
-        transactionBalanceLabel = transaction.total > 0 
-          ? `Balance: ₹${formatIndianNumber(balanceAmount)}`
-          : `Debt: ₹${formatIndianNumber(balanceAmount)}`;
-        transactionBalanceColor = transaction.total > 0 ? theme.colors.success : theme.colors.debtColor;
+      // Check if this is a money-only transaction (no entries)
+      const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+      
+      if (isMoneyOnly) {
+        // For money-only transactions, use amountPaid directly
+        const isDebt = transaction.amountPaid < 0;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
+        transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       } else {
-        transactionBalanceLabel = transaction.total > 0 
-          ? `Balance: ₹${formatIndianNumber(Math.abs(transaction.total))}`
-          : `Debt: ₹${formatIndianNumber(Math.abs(transaction.total))}`;
-        transactionBalanceColor = transaction.total > 0 ? theme.colors.success : theme.colors.debtColor;
+        // For regular transactions with entries
+        if (transaction.settlementType === 'full') {
+          transactionBalanceLabel = 'Settled';
+        } else if (transaction.settlementType === 'partial') {
+          const balanceAmount = Math.abs(transaction.total - transaction.amountPaid);
+          transactionBalanceLabel = transaction.total > 0 
+            ? `Balance: ₹${formatIndianNumber(balanceAmount)}`
+            : `Debt: ₹${formatIndianNumber(balanceAmount)}`;
+          transactionBalanceColor = transaction.total > 0 ? theme.colors.success : theme.colors.debtColor;
+        } else {
+          transactionBalanceLabel = transaction.total > 0 
+            ? `Balance: ₹${formatIndianNumber(Math.abs(transaction.total))}`
+            : `Debt: ₹${formatIndianNumber(Math.abs(transaction.total))}`;
+          transactionBalanceColor = transaction.total > 0 ? theme.colors.success : theme.colors.debtColor;
+        }
       }
     }
 
     return (
       <Card style={styles.transactionCard}>
         <Card.Content style={styles.cardContent}>
-          {/* Action Buttons */}
+          {/* Action Buttons and Delete Info */}
           <View style={styles.editButtonRow}>
-            <IconButton
-              icon="restore"
-              size={20}
-              iconColor={theme.colors.onPrimaryContainer}
-              style={{ backgroundColor: theme.colors.primaryContainer, margin: 0 }}
-              onPress={() => handleRestoreTransaction(transaction)}
-            />
-            <IconButton
-              icon="delete-forever"
-              size={20}
-              iconColor={theme.colors.error}
-              style={{ backgroundColor: theme.colors.errorContainer, margin: 0 }}
-              onPress={() => handleDeletePermanently(transaction)}
-            />
+            {deletedOnInfo && (
+              <Text variant="bodySmall" style={[styles.deletedOnText, deletedOnInfo.isWarning ? styles.warningText : null]}>
+                {deletedOnInfo.text}
+              </Text>
+            )}
+            <View style={styles.iconContainer}>
+              <IconButton
+                icon="restore"
+                size={20}
+                iconColor={theme.colors.onPrimaryContainer}
+                style={{ backgroundColor: theme.colors.primaryContainer, margin: 0, marginRight: 2.5 }}
+                onPress={() => handleRestoreTransaction(transaction)}
+              />
+              <IconButton
+                icon="delete-forever"
+                size={20}
+                iconColor={theme.colors.error}
+                style={{ backgroundColor: theme.colors.errorContainer, margin: 0 }}
+                onPress={() => handleDeletePermanently(transaction)}
+              />
+            </View>
           </View>
 
           {/* Header Row */}
@@ -267,17 +312,6 @@ export const RecycleBinScreen: React.FC = () => {
               <Text variant="bodySmall" style={styles.transactionDate}>
                 {formatFullDate(transaction.date)}
               </Text>
-              {transaction.deleted_on && (() => {
-                const deletedDate = new Date(transaction.deleted_on);
-                const autoDeleteDate = new Date(deletedDate);
-                autoDeleteDate.setDate(autoDeleteDate.getDate() + 3);
-                const daysLeft = Math.ceil((autoDeleteDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                return (
-                  <Text variant="bodySmall" style={[styles.deletedOnText, daysLeft <= 1 ? styles.warningText : null]}>
-                    {daysLeft > 0 ? `Auto-delete in ${daysLeft} day${daysLeft > 1 ? 's' : ''}` : 'Pending deletion'}
-                  </Text>
-                );
-              })()}
             </View>
             <View style={styles.rightSection}>
               {!isMetalOnly && (
@@ -293,8 +327,8 @@ export const RecycleBinScreen: React.FC = () => {
 
           {/* Transaction Details */}
           <View style={styles.expandedContent}>
-            <Divider style={styles.expandedDivider} />
-            {transaction.entries.map((entry, index) => (
+            {transaction.entries.length > 0 && <Divider style={styles.expandedDivider} />}
+            {transaction.entries.length > 0 ? transaction.entries.map((entry, index) => (
               <React.Fragment key={index}>
                 {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
                   <>
@@ -381,7 +415,7 @@ export const RecycleBinScreen: React.FC = () => {
                   </View>
                 )}
               </React.Fragment>
-            ))}
+            )) : null}
             
             {!isMetalOnly && (
               <>
@@ -398,12 +432,13 @@ export const RecycleBinScreen: React.FC = () => {
             )}
             
             <View style={styles.paymentRow}>
-              {!isMetalOnly && transaction.amountPaid > 0 && (
+              {!isMetalOnly && transaction.amountPaid !== 0 && (
                 <Text variant="bodySmall" style={styles.paymentLabel}>
-                  {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
+                  {transaction.entries.length === 0 ? (transaction.amountPaid > 0 ? 'Received' : 'Given') 
+                  : (transaction.total > 0 ? 'Amount Received' : 'Amount Given')}: ₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                 </Text>
               )}
-              {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
+              {(!(!isMetalOnly && transaction.amountPaid !== 0)) && <View style={{ flex: 1 }} />}
               <Text variant="bodySmall" style={[styles.transactionBalance, { color: transactionBalanceColor }]}>
                 {transactionBalanceLabel}
               </Text>
@@ -643,10 +678,15 @@ const styles = StyleSheet.create({
   },
   editButtonRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: theme.spacing.xs,
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.xs,
+  },
+  iconContainer: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs,
   },
   loadingContainer: {
     flex: 1,

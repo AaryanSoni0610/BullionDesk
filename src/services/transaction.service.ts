@@ -414,7 +414,7 @@ export class TransactionService {
       if (isMoneyOnlyTransaction) {
         // For money-only: received amount directly affects balance
         // Positive received = merchant receives = customer debt reduced
-        finalBalance = -receivedAmount;
+        finalBalance = receivedAmount;
       } else {
         finalBalance = netAmount >= 0
           ? netAmount - receivedAmount - discountExtraAmount
@@ -648,10 +648,10 @@ export class TransactionService {
           );
         }
 
-        // Create ledger entry for money-only or when there's a payment change
+        // Create ledger entry when there's a payment change
         const deltaAmount = receivedAmount - previousAmountPaid;
         
-        if (deltaAmount !== 0 || isMoneyOnlyTransaction) {
+        if (deltaAmount !== 0) {
           let ledgerTimestamp = transactionDate;
           if (!isMoneyOnlyTransaction) {
             const entryTimestamps = entries
@@ -663,12 +663,10 @@ export class TransactionService {
             }
           }
           
-          const ledgerDelta = isMoneyOnlyTransaction && deltaAmount === 0 ? receivedAmount : deltaAmount;
-          
           // Get the full transaction object to pass to ledger service
           const fullTransaction = await this.getTransactionById(transactionId);
           if (fullTransaction) {
-            await LedgerService.createLedgerEntry(fullTransaction, ledgerDelta, ledgerTimestamp);
+            await LedgerService.createLedgerEntry(fullTransaction, deltaAmount, ledgerTimestamp);
           }
         }
 

@@ -397,8 +397,8 @@ export class LedgerService {
           transaction.customerId,
           transaction.customerName,
           timestamp,
-          transaction.total >= 0 ? Math.abs(deltaAmount) : 0,
-          transaction.total < 0 ? Math.abs(deltaAmount) : 0,
+          deltaAmount >= 0 ? Math.abs(deltaAmount) : 0,
+          deltaAmount < 0 ? Math.abs(deltaAmount) : 0,
           timestamp
         ]
       );

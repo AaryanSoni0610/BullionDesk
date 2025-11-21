@@ -67,10 +67,17 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   const getAmountColor = (transaction: Transaction) => {
-    // Blue for Given (purchase), Green for Received (sell)
-    const isReceived = transaction.total > 0;
-    return isReceived ? theme.colors.sellColor : theme.colors.primary;
-  };
+      const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+      if (isMoneyOnly) {
+        // For money-only: positive amountPaid = received (green), negative = given (blue)
+        const isReceived = transaction.amountPaid > 0;
+        return isReceived ? theme.colors.sellColor : theme.colors.primary;
+      } else {
+        // Blue for Given (purchase), Green for Received (sell)
+        const isReceived = transaction.total > 0;
+        return isReceived ? theme.colors.sellColor : theme.colors.primary;
+      }
+    };
 
   const getPrimaryItems = (transaction: Transaction) => {
     const sellItems: string[] = [];
@@ -226,8 +233,11 @@ export const HomeScreen: React.FC = () => {
         transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       } else if (isMoneyOnly){
-        const isDebt = transaction.total < 0;
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+        // For money-only, amountPaid determines the direction
+        // amountPaid < 0 (Given) -> Debt (Customer owes)
+        // amountPaid > 0 (Received) -> Balance (Customer credit)
+        const isDebt = transaction.amountPaid < 0;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
         transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
       }
     }

@@ -321,9 +321,9 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   // Determine if entry modifications are locked
   // Allow editing metal-only transactions at any time
   const areEntriesLocked = isEditing && isOldTransaction && !isMetalOnly;
-  
-  // Always show FAB unless entries are locked (removed money-only check)
-  const shouldShowFAB = !areEntriesLocked;
+
+  // Show FAB for non-money-only transactions or when editing money-only transactions
+  const shouldShowFAB = !isMoneyOnlyTransaction || isEditing;
   
   // Apply discount/extra to net amount
   const adjustedNetAmount = netAmount > 0 
@@ -509,10 +509,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
             <Card style={styles.entryCard} mode="outlined">
               <Card.Content style={styles.entryCardContent}>
                 <Text variant="titleMedium" style={styles.moneyOnlyText}>
-                  💰 Money-Only Entry
-                </Text>
-                <Text variant="bodySmall" style={styles.moneyOnlyHint}>
-                  Enter the amount given or received below
+                  No entry is added
                 </Text>
               </Card.Content>
             </Card>
@@ -607,22 +604,31 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         <Divider style={styles.sectionDivider} />
 
         {/* Total Card - hide for metal-only transactions */}
-        {!isMetalOnly && entries.some(entry => entry.type !== 'money') && (
+        {!isMetalOnly && (entries.some(entry => entry.type !== 'money') || isMoneyOnlyTransaction) && (
           <>
             <Card style={styles.totalCard} mode="contained">
               <Card.Content>
                 <View style={styles.totalSection}>
                   <Text variant="titleMedium">
-                    {adjustedNetAmount > 0 ? 'Customer Pays:' : 'Customer Gets:'}
+                    {isMoneyOnlyTransaction 
+                      ? (pendingMoneyType === 'receive' ? 'Customer Pays:' : 'Customer Gets:')
+                      : (adjustedNetAmount > 0 ? 'Customer Pays:' : 'Customer Gets:')
+                    }
                   </Text>
                   <Text 
                     variant="titleMedium" 
                     style={[
                       styles.totalAmount,
-                      { color: adjustedNetAmount > 0 ? theme.colors.sellColor : theme.colors.primary }
+                      { color: isMoneyOnlyTransaction 
+                        ? (pendingMoneyType === 'receive' ? theme.colors.sellColor : theme.colors.primary)
+                        : (adjustedNetAmount > 0 ? theme.colors.sellColor : theme.colors.primary)
+                      }
                     ]}
                   >
-                    ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}
+                    ₹{formatIndianNumber(isMoneyOnlyTransaction 
+                      ? 0
+                      : Math.abs(adjustedNetAmount)
+                    )}
                   </Text>
                 </View>
 
@@ -631,14 +637,27 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                 {/* Enhanced Money Input */}
                 <View>
                   <TextInput
-                    label={adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)"}
-                    value={receivedAmount}
+                    label={isMoneyOnlyTransaction 
+                      ? (pendingMoneyType === 'receive' ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                      : (adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                    }
+                    value={Math.abs(parseFloat(receivedAmount || '0')).toString()}
                     onChangeText={(text) => {
-                      setReceivedAmount(text);
-                      setHasPaymentInteracted(true);
+                      // Only allow editing if there are entries (not money-only)
+                      if (!isMoneyOnlyTransaction) {
+                        setReceivedAmount(text);
+                        setHasPaymentInteracted(true);
+                      } else {
+                        // For money-only transactions, determine sign based on money type
+                        const numericValue = parseFloat(text) || 0;
+                        const signedValue = pendingMoneyType === 'receive' ? numericValue : -numericValue;
+                        setReceivedAmount(signedValue.toString());
+                        setHasPaymentInteracted(true);
+                      }
                     }}
                     mode="outlined"
                     keyboardType="numeric"
+                    editable={!isMoneyOnlyTransaction} // Active but not editable unless there is at least one entry
                     style={[
                       styles.receivedInput,
                       paymentError ? styles.inputError : null
@@ -659,12 +678,8 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                       keyboardType="numeric"
                       style={styles.discountInput}
                       placeholder="0-100"
+                      disabled={isMoneyOnlyTransaction}
                     />
-                    <HelperText type="info" visible={true}>
-                      {netAmount > 0 
-                        ? "Give discount to customer (reduces their payment)" 
-                        : "Pay extra to customer (increases their receipt)"}
-                    </HelperText>
                   </View>
 
 
@@ -672,21 +687,33 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                   <View style={styles.quickAmountChips}>
                     <Chip 
                       mode="outlined" 
-                      onPress={() => setReceivedAmount(Math.abs(adjustedNetAmount).toString())}
+                      onPress={() => {
+                        if (!isMoneyOnlyTransaction) {
+                          setReceivedAmount(Math.abs(adjustedNetAmount).toString());
+                        }
+                      }}
                       style={styles.amountChip}
                     >
                       Full: ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}
                     </Chip>
                     <Chip 
                       mode="outlined" 
-                      onPress={() => setReceivedAmount((Math.abs(adjustedNetAmount) / 2).toString())}
+                      onPress={() => {
+                        if (!isMoneyOnlyTransaction) {
+                          setReceivedAmount((Math.abs(adjustedNetAmount) / 2).toString());
+                        }
+                      }}
                       style={styles.amountChip}
                     >
                       Half: ₹{formatIndianNumber(Math.abs(adjustedNetAmount) / 2)}
                     </Chip>
                     <Chip 
                       mode="outlined" 
-                      onPress={() => setReceivedAmount('')}
+                      onPress={() => {
+                        if (!isMoneyOnlyTransaction) {
+                          setReceivedAmount('');
+                        }
+                      }}
                       style={styles.amountChip}
                     >
                       Clear
@@ -734,7 +761,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           mode="contained"
           icon={isSaving ? undefined : "check"}
           onPress={handleSaveTransaction}
-          disabled={entries.length === 0 || isSaving || !!paymentError}
+          disabled={isSaving || !!paymentError}
           loading={isSaving}
           style={styles.saveButton}
           contentStyle={styles.saveButtonContent}

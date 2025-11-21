@@ -26,6 +26,8 @@ interface EntryScreenProps {
   onBack: () => void;
   onNavigateToSummary?: () => void;
   onAddEntry: (entry: TransactionEntry) => void;
+  isFirstEntryForMoneyOnlyTransaction?: boolean;
+  originalMoneyOnlyType?: 'receive' | 'give';
 }
 
 export const EntryScreen: React.FC<EntryScreenProps> = ({
@@ -35,6 +37,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   onBack,
   onNavigateToSummary,
   onAddEntry,
+  isFirstEntryForMoneyOnlyTransaction = false,
+  originalMoneyOnlyType,
 }) => {
   const { setPendingMoneyAmount, setPendingMoneyType } = useAppContext();
   
@@ -73,8 +77,9 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (hasMetalOnlyEntries) {
       // If metal-only entries exist, only allow metal-only (no new entries)
       return [];
-    } else if (hasSellPurchaseEntries) {
-      // If sell/purchase entries exist, only allow sell/purchase
+    } else if (existingEntries.length > 0) {
+      // If any entries exist (sell/purchase/money), only allow sell/purchase
+      // This prevents adding money entries to existing transactions
       return ['sell', 'purchase'];
     } else {
       // No entries exist, allow all types including money
@@ -83,7 +88,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   };
   
   const availableTypes = getAvailableTransactionTypes();
-  const [transactionType, setTransactionType] = useState<'purchase' | 'sell' | 'money'>('sell');
+  const [transactionType, setTransactionType] = useState<'purchase' | 'sell' | 'money'>(() => {
+    // If this is the first entry for a money-only transaction, set default based on original money type
+    if (isFirstEntryForMoneyOnlyTransaction && originalMoneyOnlyType) {
+      return originalMoneyOnlyType === 'receive' ? 'sell' : 'purchase';
+    }
+    return 'sell';
+  });
   const [moneyType, setMoneyType] = useState<'give' | 'receive'>('receive');
   const [itemType, setItemType] = useState<ItemType>('gold999');
   const [menuVisible, setMenuVisible] = useState(false);

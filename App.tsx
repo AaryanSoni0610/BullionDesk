@@ -154,6 +154,7 @@ const AppContent: React.FC<AppContentProps> = ({
     handleEditEntry,
     handleDeleteEntry,
     handleSaveTransaction,
+    pendingMoneyType,
   } = useAppContext();
 
   const handleAddMoreEntry = () => {
@@ -176,6 +177,8 @@ const AppContent: React.FC<AppContentProps> = ({
               onBack={onNavigateToTabs}
               onNavigateToSummary={onNavigateToSettlement}
               onAddEntry={handleAddEntry}
+              isFirstEntryForMoneyOnlyTransaction={editingTransactionId !== null && currentEntries.length === 0}
+              originalMoneyOnlyType={pendingMoneyType}
             />
           )}
           

@@ -318,6 +318,20 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       setTransactionCreatedAt(transaction.createdAt || transaction.date);
       setTransactionLastUpdatedAt(transaction.lastUpdatedAt || transaction.date);
 
+      // For money-only transactions, set the pending money type based on amountPaid
+      if (transaction.entries.length === 0) {
+        if (transaction.amountPaid > 0) {
+          setPendingMoneyType('receive'); // Money received from customer
+          setPendingMoneyAmount(transaction.amountPaid);
+        } else if (transaction.amountPaid < 0) {
+          setPendingMoneyType('give'); // Money given to customer
+          setPendingMoneyAmount(Math.abs(transaction.amountPaid));
+        } else {
+          setPendingMoneyType('receive'); // Default to receive
+          setPendingMoneyAmount(0);
+        }
+      }
+
       // Navigate to settlement screen to show transaction details
       onNavigateToSettlement();
     } catch (error) {

@@ -45,6 +45,10 @@ export const HistoryScreen: React.FC = () => {
   const { navigateToSettings, loadTransactionForEdit } = useAppContext();
   const navigation = useNavigation();
   
+  // State for tracking which transaction is being shared (memory optimization)
+  const [sharingTransactionId, setSharingTransactionId] = useState<string | null>(null);
+  const shareableCardRef = useRef<View>(null);
+  
   // Custom date range states
   const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
   const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
@@ -121,19 +125,26 @@ export const HistoryScreen: React.FC = () => {
     setAlertVisible(true);
   };
 
-  // Handle share transaction
-  const handleShareTransaction = async (transaction: Transaction, cardRef: React.RefObject<View>) => {
+  // Handle share transaction - optimized to render shareable card only when needed
+  const handleShareTransaction = async (transaction: Transaction) => {
     try {
-      if (!cardRef.current) {
+      // Set the transaction to be shared, which will render the shareable card
+      setSharingTransactionId(transaction.id);
+      
+      // Wait for the shareable card to render (give React time to complete the render cycle)
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      if (!shareableCardRef.current) {
         setAlertTitle('Error');
         setAlertMessage('Unable to capture transaction card');
         setAlertButtons([{ text: 'OK' }]);
         setAlertVisible(true);
+        setSharingTransactionId(null);
         return;
       }
 
       // Capture the card as an image with better quality settings
-      const uri = await captureRef(cardRef, {
+      const uri = await captureRef(shareableCardRef, {
         format: 'png',
         quality: 1,
         result: 'tmpfile',
@@ -147,6 +158,7 @@ export const HistoryScreen: React.FC = () => {
         setAlertMessage('Sharing is not available on this device');
         setAlertButtons([{ text: 'OK' }]);
         setAlertVisible(true);
+        setSharingTransactionId(null);
         return;
       }
 
@@ -155,12 +167,16 @@ export const HistoryScreen: React.FC = () => {
         mimeType: 'image/png',
         dialogTitle: `Transaction - ${transaction.customerName}`,
       });
+      
+      // Clean up - remove the shareable card from memory
+      setSharingTransactionId(null);
     } catch (error) {
       console.error('Error sharing transaction:', error);
       setAlertTitle('Error');
       setAlertMessage('Failed to share transaction');
       setAlertButtons([{ text: 'OK' }]);
       setAlertVisible(true);
+      setSharingTransactionId(null);
     }
   };
 
@@ -438,18 +454,21 @@ export const HistoryScreen: React.FC = () => {
   );
 
   const getAmountColor = (transaction: Transaction) => {
-    // Blue for Given (purchase), Green for Received (sell)
-    const isReceived = transaction.total > 0;
-    return isReceived ? theme.colors.sellColor : theme.colors.primary;
+    const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+    if (isMoneyOnly) {
+      // For money-only: positive amountPaid = received (green), negative = given (blue)
+      const isReceived = transaction.amountPaid > 0;
+      return isReceived ? theme.colors.sellColor : theme.colors.primary;
+    } else {
+      // Blue for Given (purchase), Green for Received (sell)
+      const isReceived = transaction.total > 0;
+      return isReceived ? theme.colors.sellColor : theme.colors.primary;
+    }
   };
 
-  // Enhanced Transaction Card Component
-  const TransactionCard: React.FC<{ transaction: Transaction; isShareable?: boolean }> = ({ transaction, isShareable = false }) => {
-    const shareableCardRef = useRef<View>(null);
+  // Enhanced Transaction Card Component (optimized - no hidden card)
+  const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
-    
-    const cardStyle = isShareable ? styles.shareableCard : styles.transactionCard;
-    const contentStyle = isShareable ? styles.shareableCardContent : undefined;
     
     // Calculate transaction-specific remaining balance
     let transactionBalanceLabel = 'Settled';
@@ -506,53 +525,46 @@ export const HistoryScreen: React.FC = () => {
     }
     
     return (
-      <>
-        {/* Visible Card with Action Buttons */}
-        <Card style={cardStyle}>
-          <Card.Content style={contentStyle}>
-            
-            {!isShareable && (
-              <>
-                {/* Action Buttons Row */}
-                <View style={styles.editButtonRow}>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.deleteButton]}
-                    onPress={() => handleDeleteTransaction(transaction)}
-                  >
-                    <Icon name="delete" size={16} color={theme.colors.error} />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.shareButton]}
-                    onPress={() => handleShareTransaction(transaction, shareableCardRef)}
-                  >
-                    <Icon name="share-variant" size={16} color={theme.colors.success} />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
-                    onPress={() => {
-                      if (isSettledAndOld(transaction)) {
-                        setAlertTitle('Cannot Edit Transaction');
-                        setAlertMessage('This transaction has been settled and is too old to edit.');
-                        setAlertButtons([{ text: 'OK' }]);
-                        setAlertVisible(true);
-                      } else {
-                        loadTransactionForEdit(transaction.id);
-                      }
-                    }}
-                    disabled={isSettledAndOld(transaction)}
-                  >
-                    <Icon 
-                      name="pencil" 
-                      size={16} 
-                      color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
-                    />
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+      <Card style={styles.transactionCard}>
+        <Card.Content>
+          {/* Action Buttons Row */}
+          <View style={styles.editButtonRow}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.deleteButton]}
+              onPress={() => handleDeleteTransaction(transaction)}
+            >
+              <Icon name="delete" size={16} color={theme.colors.error} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.shareButton]}
+              onPress={() => handleShareTransaction(transaction)}
+            >
+              <Icon name="share-variant" size={16} color={theme.colors.success} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
+              onPress={() => {
+                if (isSettledAndOld(transaction)) {
+                  setAlertTitle('Cannot Edit Transaction');
+                  setAlertMessage('This transaction has been settled and is too old to edit.');
+                  setAlertButtons([{ text: 'OK' }]);
+                  setAlertVisible(true);
+                } else {
+                  loadTransactionForEdit(transaction.id);
+                }
+              }}
+              disabled={isSettledAndOld(transaction)}
+            >
+              <Icon 
+                name="pencil" 
+                size={16} 
+                color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
+              />
+            </TouchableOpacity>
+          </View>
 
-            {/* Header Row */}
-            <View style={styles.cardHeader}>
+          {/* Header Row */}
+          <View style={styles.cardHeader}>
               <View style={styles.customerInfo}>
                 <Text variant="titleMedium" style={styles.customerName}>
                   {highlightSearchText(transaction.customerName, searchQuery)}
@@ -575,7 +587,7 @@ export const HistoryScreen: React.FC = () => {
 
             {/* Transaction Details - Always Visible */}
             <View style={styles.expandedContent}>
-              <Divider style={styles.expandedDivider} />
+              {transaction.entries.length > 0 && <Divider style={styles.expandedDivider} />}
               {transaction.entries.map((entry, index) => (
                 <React.Fragment key={index}>
                   {/* Special handling for rani/rupa purchase items */}
@@ -718,7 +730,7 @@ export const HistoryScreen: React.FC = () => {
                   <Divider style={styles.totalDivider} />
                   <View style={styles.totalRow}>
                     <Text variant="bodySmall" style={styles.totalLabel}>
-                      Total
+                      Total:
                     </Text>
                     <Text variant="bodySmall" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
                       ₹{formatIndianNumber(Math.abs(transaction.total))}
@@ -729,9 +741,10 @@ export const HistoryScreen: React.FC = () => {
               
               {/* Payment/Balance Row */}
               <View style={styles.paymentRow}>
-                {!isMetalOnly && transaction.amountPaid > 0 && (
+                {!isMetalOnly && (
                   <Text variant="bodySmall" style={styles.paymentLabel}>
-                    {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
+                    {transaction.entries.length === 0 ? transaction.amountPaid > 0 ? 'Received' : 'Given' 
+                    : transaction.amountPaid > 0 ? 'Received' : 'Given'}: ₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                   </Text>
                 )}
                 {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
@@ -744,209 +757,8 @@ export const HistoryScreen: React.FC = () => {
             </View>
           </Card.Content>
         </Card>
-
-        {/* Hidden Shareable Card (without action buttons) for screenshot */}
-        <View style={styles.hiddenCard} collapsable={false}>
-          <View ref={shareableCardRef} collapsable={false} style={styles.shareableCardWrapper}>
-            <Card style={styles.shareableCard}>
-              <Card.Content style={styles.shareableCardContent}>
-                {/* Header Row */}
-                <View style={styles.cardHeader}>
-                  <View style={styles.customerInfo}>
-                    <Text variant="titleMedium" style={styles.customerName}>
-                      {transaction.customerName}
-                    </Text>
-                    <Text variant="bodySmall" style={styles.transactionDate}>
-                      {formatFullDate(transaction.date)}
-                    </Text>
-                  </View>
-                  <View style={styles.rightSection}>
-                    {!isMetalOnly && (
-                      <Text 
-                        variant="titleMedium" 
-                        style={[styles.amount, { color: getAmountColor(transaction) }]}
-                      >
-                        {formatTransactionAmount(transaction)}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-
-                {/* Transaction Details - Always Visible */}
-                <View style={styles.expandedContent}>
-                  <Divider style={styles.expandedDivider} />
-                  {transaction.entries.map((entry, index) => (
-                    <React.Fragment key={index}>
-                      {/* Special handling for rani/rupa purchase items */}
-                      {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
-                        <>
-                          <View style={styles.entryRow}>
-                            <Text variant="bodySmall" style={styles.entryType}>
-                              ↙️ {getItemDisplayName(entry)}{(() => {
-                                const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
-                                  e.itemType === entry.itemType && e.type === entry.type
-                                );
-                                const totalCount = transaction.entries.filter(e => 
-                                  e.itemType === entry.itemType && e.type === entry.type
-                                ).length;
-                                if (totalCount > 1) {
-                                  return ` ${sameTypeEntries.length}`;
-                                }
-                                return '';
-                              })()}
-                            </Text>
-                            <Text variant="bodySmall" style={styles.entryDetails}>
-                              {(() => {
-                                const weight = entry.weight || 0;
-                                const touch = entry.touch || 100;
-                                const cut = entry.cut || 0;
-                                const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                                const pureWeight = (weight * effectiveTouch) / 100;
-                                const formattedPureWeight = entry.itemType === 'rani' 
-                                  ? formatPureGoldPrecise(pureWeight) 
-                                  : formatPureSilver(pureWeight);
-                                
-                                const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-                                // For rani purchases, format pure weight with last digit as 0
-                                const displayPureWeight = entry.itemType === 'rani' && entry.type === 'purchase'
-                                  ? (Math.floor(pureWeight * 100) / 100).toFixed(3)
-                                  : formattedPureWeight.toFixed(fixedDigits);
-                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${displayPureWeight}g`;
-                              })()}
-                            </Text>
-                          </View>
-                          {!entry.metalOnly && entry.price && entry.price > 0 && (() => {
-                            // For rani purchases, don't show price if paired with gold999/gold995 sell at same price
-                            if (entry.itemType === 'rani' && entry.type === 'purchase') {
-                              const hasMatchingGoldSell = transaction.entries.some(otherEntry => 
-                                (otherEntry.itemType === 'gold999' || otherEntry.itemType === 'gold995') && 
-                                otherEntry.type === 'sell' && 
-                                otherEntry.price === entry.price
-                              );
-                              return !hasMatchingGoldSell;
-                            }
-                            // For rupu purchases, don't show price if paired with silver sell at same price
-                            if (entry.itemType === 'rupu' && entry.type === 'purchase') {
-                              const hasMatchingSilverSell = transaction.entries.some(otherEntry => 
-                                otherEntry.itemType === 'silver' && 
-                                otherEntry.type === 'sell' && 
-                                otherEntry.price === entry.price
-                              );
-                              return !hasMatchingSilverSell;
-                            }
-                            return true;
-                          })() ? (
-                            <View style={styles.entryRow}>
-                              <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
-                                ₹{formatIndianNumber(entry.price)}
-                              </Text>
-                            </View>
-                          ) : null}
-                        </>
-                      ) : (
-                        <View style={styles.entryRow}>
-                          <Text variant="bodySmall" style={styles.entryType}>
-                            {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
-                              if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                                const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
-                                  e.itemType === entry.itemType && e.type === entry.type
-                                );
-                                const totalCount = transaction.entries.filter(e => 
-                                  e.itemType === entry.itemType && e.type === entry.type
-                                ).length;
-                                if (totalCount > 1) {
-                                  return ` ${sameTypeEntries.length}`;
-                                }
-                              }
-                              return '';
-                            })()}
-                          </Text>
-                          <Text variant="bodySmall" style={styles.entryDetails}>
-                            {entry.weight && (() => {
-                              // Special formatting for rani/rupu sell items
-                              if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                                const weight = entry.weight || 0;
-                                const touch = entry.touch || 100;
-                                const cut = entry.cut || 0;
-                                const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                                const pureWeight = (weight * effectiveTouch) / 100;
-                                const formattedPureWeight = entry.itemType === 'rani' 
-                                  ? formatPureGoldPrecise(pureWeight) 
-                                  : formatPureSilver(pureWeight);
-                                
-                                const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-                                if (entry.type === 'sell') {
-                                  return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
-                                } else {
-                                  return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
-                                }
-                              } else {
-                                // Default formatting for other items
-                                const isGold = entry.itemType.includes('gold');
-                                const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
-                                return `${formattedWeight}g`;
-                              }
-                            })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
-                          </Text>
-                        </View>
-                      )}
-                      
-                      {/* Show Rupu silver returns */}
-                      {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
-                        <>
-                          {entry.silverWeight && entry.silverWeight > 0 && (
-                            <View style={styles.entryRow}>
-                              <Text variant="bodySmall" style={[styles.entryType]}>
-                                ↗️ Silver
-                              </Text>
-                              <Text variant="bodySmall" style={[styles.entryDetails]}>
-                                {Math.floor(entry.silverWeight).toFixed(1)}g
-                              </Text>
-                            </View>
-                          )}
-                        </>
-                      )}
-                      
-                    </React.Fragment>
-                  ))}
-                  
-                  {/* Total Row - Show only for non-metal-only transactions */}
-                  {!isMetalOnly && (
-                    <>
-                      <Divider style={styles.totalDivider} />
-                      <View style={styles.totalRow}>
-                        <Text variant="bodySmall" style={styles.totalLabel}>
-                          Total
-                        </Text>
-                        <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
-                          ₹{formatIndianNumber(Math.abs(transaction.total))}
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                  
-                  {/* Payment/Balance Row */}
-                  <View style={styles.paymentRow}>
-                    {!isMetalOnly && transaction.amountPaid > 0 && (
-                      <Text variant="bodySmall" style={styles.paymentLabel}>
-                        {transaction.total > 0 ? 'Amount Received' : 'Amount Given'}: ₹{formatIndianNumber(transaction.amountPaid)}
-                      </Text>
-                    )}
-                    {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
-                    <Text variant="bodySmall" style={[styles.transactionBalance, 
-                      { color: transactionBalanceColor }
-                    ]}>
-                      {transactionBalanceLabel}
-                    </Text>
-                  </View>
-                </View>
-              </Card.Content>
-            </Card>
-          </View>
-        </View>
-      </>
-    );
-  };
+      );
+    };
 
   if (isLoading) {
     return (
@@ -1124,6 +936,253 @@ export const HistoryScreen: React.FC = () => {
         maximumDate={new Date()} // Allow selecting today
       />
     )}
+    
+    {/* Conditionally render shareable card only when sharing */}
+    {sharingTransactionId && (() => {
+      const transaction = transactions.find(t => t.id === sharingTransactionId);
+      if (!transaction) return null;
+      
+      const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+      
+      // Calculate transaction balance (same logic as TransactionCard)
+      let transactionBalanceLabel = 'Settled';
+      let transactionBalanceColor = theme.colors.primary;
+      
+      if (isMetalOnly) {
+        const metalItems: string[] = [];
+        transaction.entries.forEach(entry => {
+          if (entry.metalOnly) {
+            const itemName = getItemDisplayName(entry);
+            const weight = entry.weight || 0;
+            const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+            const formattedWeight = isGold ? weight.toFixed(3) : Math.floor(weight);
+            const label = entry.type === 'sell' ? 'Debt' : 'Balance';
+            metalItems.push(`${label}: ${itemName} ${formattedWeight}g`);
+          }
+        });
+        if (metalItems.length > 0) {
+          transactionBalanceLabel = metalItems.join(', ');
+          const isDebt = metalItems.some(item => item.startsWith('Debt'));
+          const isBalance = metalItems.some(item => item.startsWith('Balance'));
+          if (isDebt) {
+            transactionBalanceColor = theme.colors.debtColor;
+          } else if (isBalance) {
+            transactionBalanceColor = theme.colors.success;
+          }
+        }
+      } else {
+        const transactionRemaining = transaction.total >= 0 
+          ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
+          : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
+        
+        const hasRemainingBalance = transactionRemaining !== 0;
+        const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+
+        if (hasRemainingBalance) {
+          if (!isMoneyOnly) {
+            const isDebt = transaction.total > 0;
+            transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+            transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+          } else {
+            const isDebt = transaction.amountPaid < 0;
+            transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+            transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+          }
+        } else {
+          transactionBalanceColor = theme.colors.primary;
+        }
+      }
+      
+      return (
+        <View style={styles.hiddenCard} collapsable={false}>
+          <View ref={shareableCardRef} collapsable={false} style={styles.shareableCardWrapper}>
+            <Card style={styles.shareableCard}>
+              <Card.Content style={styles.shareableCardContent}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.customerInfo}>
+                    <Text variant="titleMedium" style={styles.customerName}>
+                      {transaction.customerName}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.transactionDate}>
+                      {formatFullDate(transaction.date)}
+                    </Text>
+                  </View>
+                  <View style={styles.rightSection}>
+                    {!isMetalOnly && (
+                      <Text 
+                        variant="titleMedium" 
+                        style={[styles.amount, { color: getAmountColor(transaction) }]}
+                      >
+                        {formatTransactionAmount(transaction)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.expandedContent}>
+                  {transaction.entries.length > 0 && <Divider style={styles.expandedDivider} />}
+                  {transaction.entries.map((entry, index) => (
+                    <React.Fragment key={index}>
+                      {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
+                        <>
+                          <View style={styles.entryRow}>
+                            <Text variant="bodySmall" style={styles.entryType}>
+                              ↙️ {getItemDisplayName(entry)}{(() => {
+                                const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                );
+                                const totalCount = transaction.entries.filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                ).length;
+                                if (totalCount > 1) {
+                                  return ` ${sameTypeEntries.length}`;
+                                }
+                                return '';
+                              })()}
+                            </Text>
+                            <Text variant="bodySmall" style={styles.entryDetails}>
+                              {(() => {
+                                const weight = entry.weight || 0;
+                                const touch = entry.touch || 100;
+                                const cut = entry.cut || 0;
+                                const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                                const pureWeight = (weight * effectiveTouch) / 100;
+                                const formattedPureWeight = entry.itemType === 'rani' 
+                                  ? formatPureGoldPrecise(pureWeight) 
+                                  : formatPureSilver(pureWeight);
+                                
+                                const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                                const displayPureWeight = entry.itemType === 'rani' && entry.type === 'purchase'
+                                  ? (Math.floor(pureWeight * 100) / 100).toFixed(3)
+                                  : formattedPureWeight.toFixed(fixedDigits);
+                                return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${displayPureWeight}g`;
+                              })()}
+                            </Text>
+                          </View>
+                          {!entry.metalOnly && entry.price && entry.price > 0 && (() => {
+                            if (entry.itemType === 'rani' && entry.type === 'purchase') {
+                              const hasMatchingGoldSell = transaction.entries.some(otherEntry => 
+                                (otherEntry.itemType === 'gold999' || otherEntry.itemType === 'gold995') && 
+                                otherEntry.type === 'sell' && 
+                                otherEntry.price === entry.price
+                              );
+                              return !hasMatchingGoldSell;
+                            }
+                            if (entry.itemType === 'rupu' && entry.type === 'purchase') {
+                              const hasMatchingSilverSell = transaction.entries.some(otherEntry => 
+                                otherEntry.itemType === 'silver' && 
+                                otherEntry.type === 'sell' && 
+                                otherEntry.price === entry.price
+                              );
+                              return !hasMatchingSilverSell;
+                            }
+                            return true;
+                          })() ? (
+                            <View style={styles.entryRow}>
+                              <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
+                                ₹{formatIndianNumber(entry.price)}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </>
+                      ) : (
+                        <View style={styles.entryRow}>
+                          <Text variant="bodySmall" style={styles.entryType}>
+                            {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
+                              if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                                const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                );
+                                const totalCount = transaction.entries.filter(e => 
+                                  e.itemType === entry.itemType && e.type === entry.type
+                                ).length;
+                                if (totalCount > 1) {
+                                  return ` ${sameTypeEntries.length}`;
+                                }
+                              }
+                              return '';
+                            })()}
+                          </Text>
+                          <Text variant="bodySmall" style={styles.entryDetails}>
+                            {entry.weight && (() => {
+                              if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+                                const weight = entry.weight || 0;
+                                const touch = entry.touch || 100;
+                                const cut = entry.cut || 0;
+                                const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                                const pureWeight = (weight * effectiveTouch) / 100;
+                                const formattedPureWeight = entry.itemType === 'rani' 
+                                  ? formatPureGoldPrecise(pureWeight) 
+                                  : formatPureSilver(pureWeight);
+                                
+                                const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+                                if (entry.type === 'sell') {
+                                  return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPureWeight.toFixed(fixedDigits)}g`;
+                                } else {
+                                  return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}%`;
+                                }
+                              } else {
+                                const isGold = entry.itemType.includes('gold');
+                                const formattedWeight = isGold ? (entry.weight || 0).toFixed(3) : (entry.weight || 0).toFixed(1);
+                                return `${formattedWeight}g`;
+                              }
+                            })()}{(!entry.metalOnly && entry.price && entry.price > 0) ? ` : ₹${formatIndianNumber(entry.price)}` : ''}
+                          </Text>
+                        </View>
+                      )}
+                      
+                      {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
+                        <>
+                          {entry.silverWeight && entry.silverWeight > 0 && (
+                            <View style={styles.entryRow}>
+                              <Text variant="bodySmall" style={[styles.entryType]}>
+                                ↗️ Silver
+                              </Text>
+                              <Text variant="bodySmall" style={[styles.entryDetails]}>
+                                {Math.floor(entry.silverWeight).toFixed(1)}g
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      )}
+                    </React.Fragment>
+                  ))}
+                  
+                  {!isMetalOnly && (
+                    <>
+                      <Divider style={styles.totalDivider} />
+                      <View style={styles.totalRow}>
+                        <Text variant="bodySmall" style={styles.totalLabel}>
+                          Total:
+                        </Text>
+                        <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
+                          ₹{formatIndianNumber(Math.abs(transaction.total))}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                  
+                  <View style={styles.paymentRow}>
+                    {!isMetalOnly && transaction.amountPaid > 0 && (
+                      <Text variant="bodySmall" style={styles.paymentLabel}>
+                        {transaction.entries.length === 0 ? transaction.amountPaid > 0 ? 'Received' : 'Given' 
+                    : transaction.amountPaid > 0 ? 'Received' : 'Given'}: ₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
+                      </Text>
+                    )}
+                    {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
+                    <Text variant="bodySmall" style={[styles.transactionBalance, 
+                      { color: transactionBalanceColor }
+                    ]}>
+                      {transactionBalanceLabel}
+                    </Text>
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+          </View>
+        </View>
+      );
+    })()}
     </>
   );
 };

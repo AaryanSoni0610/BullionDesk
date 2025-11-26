@@ -161,8 +161,8 @@ export const formatTransactionAmount = (transaction: any): string => {
     amount = Math.abs(transaction.amountPaid || 0);
     isReceived = (transaction.amountPaid || 0) > 0;
   } else {
-    // For regular transactions, show amountPaid
-    amount = transaction.amountPaid || 0;
+    // For regular transactions, show amountPaid (absolute value)
+    amount = Math.abs(transaction.amountPaid || 0);
     isReceived = transaction.total > 0;
   }
   

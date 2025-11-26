@@ -75,16 +75,31 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   // Determine available transaction types
   const getAvailableTransactionTypes = () => {
     if (hasMetalOnlyEntries) {
-      // If metal-only entries exist, only allow metal-only (no new entries)
+      // If metal-only entries exist, do not allow adding non-metal entries
       return [];
-    } else if (existingEntries.length > 0) {
-      // If any entries exist (sell/purchase/money), only allow sell/purchase
-      // This prevents adding money entries to existing transactions
-      return ['sell', 'purchase'];
-    } else {
-      // No entries exist, allow all types including money
-      return ['sell', 'purchase', 'money'];
     }
+
+    // If this is the special case of editing a money-only transaction and there
+    // are no existing entries yet, only allow the first entry type based on the
+    // original money-only transaction type:
+    // - originalMoneyOnlyType === 'receive'  => first entry must be 'sell'
+    // - originalMoneyOnlyType === 'give'     => first entry must be 'purchase'
+    if (isFirstEntryForMoneyOnlyTransaction) {
+      if (originalMoneyOnlyType === 'receive') return ['sell'];
+      if (originalMoneyOnlyType === 'give') return ['purchase'];
+      // fallback: allow sell/purchase
+      return ['sell', 'purchase'];
+    }
+
+    // If there are existing entries (editing a transaction with entries),
+    // never allow money entries — only sell/purchase are allowed.
+    if (existingEntries.length > 0) {
+      return ['sell', 'purchase'];
+    }
+
+    // Default case (creating a new transaction with no entries): allow money
+    // as well as sell/purchase.
+    return ['sell', 'purchase', 'money'];
   };
   
   const availableTypes = getAvailableTransactionTypes();
@@ -185,6 +200,12 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     // Metal-only transactions have no subtotal (no money involved)
     if (metalOnly) {
       return 0;
+    }
+
+    // Handle money transactions
+    if (transactionType === 'money') {
+      const amountNum = parseFloat(amount) || 0;
+      return moneyType === 'receive' ? amountNum : -amountNum;
     }
 
     const weightNum = parseFloat(weight) || 0;

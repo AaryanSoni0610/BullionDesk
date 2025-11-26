@@ -335,10 +335,10 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     
     setIsSaving(true);
     try {
-      // Calculate effective received amount including discount/extra
+      // Calculate effective received amount including discount/extra (signed)
       const effectiveReceived = netAmount > 0 
-        ? received  // Sell: merchant receives amountPaid
-        : received + discountExtraAmount; // Purchase: merchant gives amountPaid + extra
+        ? received  // Sell: merchant receives amountPaid (positive)
+        : -(received + discountExtraAmount); // Purchase: merchant gives amountPaid + extra (negative)
       
       // Determine save date: null for today (use current date/time), or selected date with random time
       const today = new Date();

@@ -416,10 +416,10 @@ export class TransactionService {
         // Positive received = merchant receives = customer debt reduced
         finalBalance = receivedAmount;
       } else {
-        finalBalance = netAmount >= 0
-          ? netAmount - receivedAmount - discountExtraAmount
-          : receivedAmount - Math.abs(netAmount) - discountExtraAmount;
-        finalBalance *= -1;
+        // receivedAmount is signed: positive = merchant receives, negative = merchant pays
+        // For sells (netAmount > 0): balance = -(netAmount - receivedAmount - discount)
+        // For purchases (netAmount < 0): balance = -(netAmount - receivedAmount)
+        finalBalance = (netAmount - receivedAmount - discountExtraAmount) * -1;
       }
 
       // Special case for 'adjust' customer - always zero balance
@@ -430,6 +430,7 @@ export class TransactionService {
       let transactionId: string;
       let previousAmountPaid = 0;
       let oldBalanceEffect = 0;
+      let existingTransaction: Transaction | null | undefined;
 
       // Begin transaction
       await db.execAsync('BEGIN TRANSACTION');
@@ -437,7 +438,7 @@ export class TransactionService {
       try {
         if (isUpdate) {
           // UPDATE existing transaction
-          const existingTransaction = await this.getTransactionById(existingTransactionId!);
+          existingTransaction = await this.getTransactionById(existingTransactionId!);
           
           if (!existingTransaction) {
             await db.execAsync('ROLLBACK');
@@ -649,7 +650,7 @@ export class TransactionService {
         }
 
         // Create ledger entry when there's a payment change
-        const deltaAmount = receivedAmount - previousAmountPaid;
+        const deltaAmount = receivedAmount;
         
         if (deltaAmount !== 0) {
           let ledgerTimestamp = transactionDate;
@@ -666,7 +667,8 @@ export class TransactionService {
           // Get the full transaction object to pass to ledger service
           const fullTransaction = await this.getTransactionById(transactionId);
           if (fullTransaction) {
-            await LedgerService.createLedgerEntry(fullTransaction, deltaAmount, ledgerTimestamp);
+            // Pass netAmount to help determine ledger direction
+            await LedgerService.createLedgerEntry(fullTransaction, deltaAmount, ledgerTimestamp, netAmount);
           }
         }
 

@@ -500,9 +500,11 @@ export const HistoryScreen: React.FC = () => {
       }
     } else {
       // For money transactions, show money balance
+      // For SELL (total > 0): remaining = total - amountPaid - discount
+      // For PURCHASE (total < 0): remaining = total - amountPaid
       const transactionRemaining = transaction.total >= 0 
-        ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
-        : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
+        ? transaction.total - transaction.amountPaid - transaction.discountExtraAmount
+        : transaction.total - transaction.amountPaid;
       
       const hasRemainingBalance = transactionRemaining !== 0;
       
@@ -971,9 +973,11 @@ export const HistoryScreen: React.FC = () => {
           }
         }
       } else {
+        // For SELL (total > 0): remaining = total - amountPaid - discount
+        // For PURCHASE (total < 0): remaining = total - amountPaid
         const transactionRemaining = transaction.total >= 0 
-          ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
-          : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
+          ? transaction.total - transaction.amountPaid - transaction.discountExtraAmount
+          : transaction.total - transaction.amountPaid;
         
         const hasRemainingBalance = transactionRemaining !== 0;
         const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;

@@ -379,12 +379,41 @@ export class LedgerService {
   static async createLedgerEntry(
     transaction: Transaction,
     deltaAmount: number,
-    timestamp: string
+    timestamp: string,
+    netAmount?: number
   ): Promise<boolean> {
     try {
       const db = DatabaseService.getDatabase();
       
       const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Determine ledger direction based on transaction type and deltaAmount
+      // For money-only transactions (netAmount === 0 or undefined), use deltaAmount sign:
+      //   - positive deltaAmount = merchant receives money = amountReceived
+      //   - negative deltaAmount = merchant gives money = amountGiven
+      // For regular transactions, check netAmount (transaction total):
+      //   - netAmount > 0 (sell/inward): positive deltaAmount = received, negative = refund (given)
+      //   - netAmount < 0 (purchase/outward): positive deltaAmount = given more, negative = refund (received)
+      const isMoneyOnly = netAmount === undefined || netAmount === 0;
+      let amountReceived = 0;
+      let amountGiven = 0;
+      
+      if (isMoneyOnly) {
+        // Money-only transaction: deltaAmount sign determines direction
+        amountReceived = deltaAmount > 0 ? Math.abs(deltaAmount) : 0;
+        amountGiven = deltaAmount < 0 ? Math.abs(deltaAmount) : 0;
+      } else {
+        // Regular transaction: use deltaAmount sign to determine direction
+        // Positive deltaAmount = merchant receives money = amountReceived
+        // Negative deltaAmount = merchant gives money = amountGiven
+        if (deltaAmount > 0) {
+          amountReceived = Math.abs(deltaAmount);
+          amountGiven = 0;
+        } else {
+          amountReceived = 0;
+          amountGiven = Math.abs(deltaAmount);
+        }
+      }
       
       // Insert ledger entry
       await db.runAsync(
@@ -397,8 +426,8 @@ export class LedgerService {
           transaction.customerId,
           transaction.customerName,
           timestamp,
-          deltaAmount >= 0 ? Math.abs(deltaAmount) : 0,
-          deltaAmount < 0 ? Math.abs(deltaAmount) : 0,
+          amountReceived,
+          amountGiven,
           timestamp
         ]
       );

@@ -219,12 +219,11 @@ export const HomeScreen: React.FC = () => {
       }
     } else {
       // For money transactions, show money balance
-      // finalBalance = netAmount >= 0
-          // ? netAmount - receivedAmount - discountExtraAmount  // SELL: customer pays less due to discount
-          // : receivedAmount - Math.abs(netAmount) - discountExtraAmount; // PURCHASE: merchant pays, adjust for extra
+      // For SELL (total > 0): remaining = total - amountPaid - discount (customer owes merchant)
+      // For PURCHASE (total < 0): remaining = total - amountPaid (merchant owes customer)
       const transactionRemaining = transaction.total >= 0 
-        ? Math.abs(transaction.total) - transaction.amountPaid - Math.abs(transaction.discountExtraAmount)
-        : transaction.amountPaid - Math.abs(transaction.total) - Math.abs(transaction.discountExtraAmount);
+        ? transaction.total - transaction.amountPaid - transaction.discountExtraAmount
+        : transaction.total - transaction.amountPaid;
 
       const hasRemainingBalance = transactionRemaining != 0;
 

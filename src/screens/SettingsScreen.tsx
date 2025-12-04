@@ -878,7 +878,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v4.2.6
+        message={`BullionDesk v5.2.6
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

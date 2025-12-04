@@ -386,14 +386,9 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     // For sell/purchase transactions (INVERTED SIGN CONVENTION):
     // Positive balance = merchant owes customer (credit)
     // Negative balance = customer owes merchant (debt)
-    // Formula: receivedAmount - netAmount + discount
-    if (adjustedNetAmount > 0) {
-      // Sell: customer should pay adjustedNetAmount
-      finalBalance = received - adjustedNetAmount; // Negative = debt, Positive = overpaid
-    } else {
-      // Purchase: merchant should pay adjustedNetAmount
-      finalBalance = received - adjustedNetAmount; // Positive = merchant owes, Negative = underpaid
-    }
+    // received is always positive in UI, but represents merchant receiving (positive) or giving (negative)
+    const signedReceived = adjustedNetAmount > 0 ? received : -received;
+    finalBalance = signedReceived - adjustedNetAmount;
   }
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => {

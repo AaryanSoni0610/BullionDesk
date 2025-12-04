@@ -336,9 +336,20 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     setIsSaving(true);
     try {
       // Calculate effective received amount including discount/extra (signed)
-      const effectiveReceived = netAmount > 0 
-        ? received  // Sell: merchant receives amountPaid (positive)
-        : -(received + discountExtraAmount); // Purchase: merchant gives amountPaid + extra (negative)
+      // For money-only: received already has correct sign (positive = receive, negative = give)
+      // For sell: merchant receives money (positive)
+      // For purchase: merchant gives money (negative)
+      let effectiveReceived: number;
+      if (isMoneyOnlyTransaction) {
+        // Money-only: received already has correct sign from EntryScreen
+        effectiveReceived = received;
+      } else if (netAmount > 0) {
+        // Sell: merchant receives amountPaid (positive)
+        effectiveReceived = received;
+      } else {
+        // Purchase: merchant gives amountPaid + extra (negative)
+        effectiveReceived = -(received + discountExtraAmount);
+      }
       
       // Determine save date: null for today (use current date/time), or selected date with random time
       const today = new Date();
@@ -367,21 +378,21 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   let finalBalance: number;
   
   if (isMoneyOnlyTransaction) {
-    // For money-only transactions (no entries):
-    // Positive received = customer pays merchant = reduces debt
-    // Negative received = merchant pays customer = increases debt
-    // Since we're recording what merchant receives/gives:
-    // received > 0: merchant receives (customer debt reduced) = negative balance change
-    // received < 0: merchant gives (customer debt increased) = positive balance change
-    finalBalance = -received;
+    // For money-only transactions (INVERTED SIGN CONVENTION):
+    // Positive received = merchant receives money = customer has balance/credit
+    // Negative received = merchant gives money = customer has debt
+    finalBalance = received;
   } else {
-    // For sell/purchase transactions:
+    // For sell/purchase transactions (INVERTED SIGN CONVENTION):
+    // Positive balance = merchant owes customer (credit)
+    // Negative balance = customer owes merchant (debt)
+    // Formula: receivedAmount - netAmount + discount
     if (adjustedNetAmount > 0) {
-      // Inward flow: Customer pays merchant
-      finalBalance = adjustedNetAmount - received; // Positive = debt, Negative = balance
+      // Sell: customer should pay adjustedNetAmount
+      finalBalance = received - adjustedNetAmount; // Negative = debt, Positive = overpaid
     } else {
-      // Outward flow: Merchant pays customer
-      finalBalance = adjustedNetAmount + received; // Negative = still owes, Positive = overpaid
+      // Purchase: merchant should pay adjustedNetAmount
+      finalBalance = received - adjustedNetAmount; // Positive = merchant owes, Negative = underpaid
     }
   }
 
@@ -726,20 +737,19 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                 {/* Final Balance */}
                 <View style={styles.balanceSection}>
                   <Text variant="titleMedium">
-                    {adjustedNetAmount > 0 
-                      ? (finalBalance > 0 ? 'Debt:' : 'Balance:') 
-                      : (finalBalance < 0 ? 'Balance:' : 'Debt:')}
+                    {/* INVERTED SIGN: positive = balance, negative = debt */}
+                    {finalBalance > 0 ? 'Balance:' : finalBalance < 0 ? 'Debt:' : 'Settled'}
                   </Text>
                   <Text 
                     variant="titleMedium" 
                     style={[
                       styles.balanceAmount,
                       { 
-                        color: (adjustedNetAmount > 0 && finalBalance > 0) || (adjustedNetAmount <= 0 && finalBalance > 0)
-                          ? theme.colors.debtColor 
-                          : (adjustedNetAmount > 0 && finalBalance < 0) || (adjustedNetAmount <= 0 && finalBalance < 0)
-                            ? theme.colors.balanceColor 
-                            : theme.colors.onSurface 
+                        color: finalBalance > 0
+                          ? theme.colors.success  // Positive = balance (green)
+                          : finalBalance < 0
+                            ? theme.colors.debtColor  // Negative = debt (orange)
+                            : theme.colors.onSurface  // Zero = settled
                       }
                     ]}
                   >

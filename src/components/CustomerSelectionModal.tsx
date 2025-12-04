@@ -80,13 +80,14 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   // Enhanced filter function with database search
   const filterCustomers = useCallback(async (query: string) => {
     if (query.trim() === '') {
-      setFilteredCustomers([]);
+      // Show all customers when no search query
+      setFilteredCustomers(customers);
     } else {
       // Use database-level search instead of in-memory filtering
       const filtered = await CustomerService.searchCustomers(query, ['adjust'], 50);
       setFilteredCustomers(filtered);
     }
-  }, []);
+  }, [customers]);
 
   // Debounced search function
   const debouncedSearch = useCallback(
@@ -136,6 +137,13 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       loadCustomers();
     }
   }, [visible]);
+
+  // Update filtered customers when customers list changes and no search query
+  useEffect(() => {
+    if (searchQuery.trim() === '' && customers.length > 0) {
+      setFilteredCustomers(customers);
+    }
+  }, [customers, searchQuery]);
 
   useEffect(() => {
     debouncedSearch(searchQuery);
@@ -273,7 +281,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.trim().toLowerCase()) &&
     searchQuery.trim().toLowerCase() !== 'adjust';
 
-  const showRecentCustomers = searchQuery.trim() === '' && recentCustomers.length > 0;
+  const showRecentCustomers = false; // Disabled since we now show all customers when no search query
 
   const renderCustomerItem = ({ item }: { item: Customer }) => {
     const balanceText = formatMetalBalances(item);
@@ -394,7 +402,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
             {showRecentCustomers && (
               <>
                 <Text variant="labelMedium" style={styles.sectionLabel}>
-                  All Customers
+                  Recent Customers
                 </Text>
                 <FlatList
                   data={recentCustomers}
@@ -407,13 +415,20 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
             )}
             
             {filteredCustomers.length > 0 && (
-              <FlatList
-                data={filteredCustomers}
-                renderItem={renderCustomerItem}
-                keyExtractor={item => item.id}
-                style={styles.customerList}
-                showsVerticalScrollIndicator={false}
-              />
+              <>
+                {searchQuery.trim() === '' && (
+                  <Text variant="labelMedium" style={styles.sectionLabel}>
+                    All Customers
+                  </Text>
+                )}
+                <FlatList
+                  data={filteredCustomers}
+                  renderItem={renderCustomerItem}
+                  keyExtractor={item => item.id}
+                  style={styles.customerList}
+                  showsVerticalScrollIndicator={false}
+                />
+              </>
             )}
             
             {searchQuery.trim() !== '' && filteredCustomers.length === 0 && !showCreateButton && (

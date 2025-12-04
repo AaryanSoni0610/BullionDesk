@@ -104,6 +104,7 @@ export const LedgerScreen: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'yesterday' | 'custom'>('today');
   const [selectedInventory, setSelectedInventory] = useState<'gold' | 'silver' | 'money'>('gold');
+  const [showOnlyRaniRupu, setShowOnlyRaniRupu] = useState(false); // Filter to show only rani/rupu in gold/silver subledgers
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showExportDatePicker, setShowExportDatePicker] = useState(false);
@@ -143,7 +144,7 @@ export const LedgerScreen: React.FC = () => {
     
     if (isConfirmed && selectedDate) {
       setExportDate(selectedDate);
-      exportLedgerToPDF(selectedDate);
+      exportLedgerToPDF(selectedDate, showOnlyRaniRupu);
     } else if (event.type === 'dismissed') {
       // User cancelled, don't change anything
       setShowExportDatePicker(false);
@@ -158,7 +159,12 @@ export const LedgerScreen: React.FC = () => {
 
   useEffect(() => {
     loadInventoryData();
-  }, [selectedPeriod, customDate]);
+  }, [selectedPeriod, customDate, showOnlyRaniRupu, selectedInventory]);
+
+  // Reset filter when switching subledgers
+  useEffect(() => {
+    setShowOnlyRaniRupu(false);
+  }, [selectedInventory]);
 
   // Handle hardware back button - navigate to home screen
   useFocusEffect(
@@ -231,13 +237,15 @@ export const LedgerScreen: React.FC = () => {
       
       // Add itemType-filtered queries for gold and silver subledgers
       if (selectedInventory === 'gold') {
+        const goldItemTypes = showOnlyRaniRupu ? ['rani'] : ['gold999', 'gold995'];
         basePromises.push(
-          TransactionService.getTransactionsByDateRange(startDate, endDate, ['gold999', 'gold995', 'rani']),
+          TransactionService.getTransactionsByDateRange(startDate, endDate, goldItemTypes),
           RaniRupaStockService.getStockByType('rani')
         );
       } else if (selectedInventory === 'silver') {
+        const silverItemTypes = showOnlyRaniRupu ? ['rupu'] : ['silver'];
         basePromises.push(
-          TransactionService.getTransactionsByDateRange(startDate, endDate, ['silver', 'rupu']),
+          TransactionService.getTransactionsByDateRange(startDate, endDate, silverItemTypes),
           RaniRupaStockService.getStockByType('rupu')
         );
       } else {
@@ -577,7 +585,7 @@ export const LedgerScreen: React.FC = () => {
     };
   };
 
-  const exportLedgerToPDF = async (date: Date) => {
+  const exportLedgerToPDF = async (date: Date, showOnlyRaniRupu: boolean = false) => {
     try {
       // Calculate date range for the selected date
       const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -627,12 +635,15 @@ export const LedgerScreen: React.FC = () => {
               date: transaction.date
             });
           }
-          goldEntries.push({
-            transactionId: transaction.id,
-            customerName,
-            entry,
-            date: transaction.date
-          });
+          // Filter based on showOnlyRaniRupu state
+          if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
+            goldEntries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry,
+              date: transaction.date
+            });
+          }
         });
       });
 
@@ -657,12 +668,15 @@ export const LedgerScreen: React.FC = () => {
               });
             }
           }
-          silverEntries.push({
-            transactionId: transaction.id,
-            customerName,
-            entry,
-            date: transaction.date
-          });
+          // Filter based on showOnlyRaniRupu state
+          if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
+            silverEntries.push({
+              transactionId: transaction.id,
+              customerName,
+              entry,
+              date: transaction.date
+            });
+          }
         });
       });
 
@@ -687,14 +701,14 @@ export const LedgerScreen: React.FC = () => {
       moneyEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const goldOpeningBalances = {
-        gold999: data.goldInventory.gold999,
-        gold995: data.goldInventory.gold995,
-        rani: calculateTotalStockWeight(raniStockData, 'rani')
+        gold999: showOnlyRaniRupu ? 0 : data.goldInventory.gold999,
+        gold995: showOnlyRaniRupu ? 0 : data.goldInventory.gold995,
+        rani: showOnlyRaniRupu ? calculateTotalStockWeight(raniStockData, 'rani') : 0
       };
 
       const silverOpeningBalances = {
-        silver: data.silverInventory.silver,
-        rupu: calculateTotalStockWeight(rupuStockData, 'rupu')
+        silver: showOnlyRaniRupu ? 0 : data.silverInventory.silver,
+        rupu: showOnlyRaniRupu ? calculateTotalStockWeight(rupuStockData, 'rupu') : 0
       };
 
       // Calculate gold opening balances
@@ -712,26 +726,26 @@ export const LedgerScreen: React.FC = () => {
           // Purchase = received, so subtract from opening
           switch (entry.entry.itemType) {
             case 'gold999':
-              goldOpeningBalances.gold999 -= weight;
+              if (!showOnlyRaniRupu) goldOpeningBalances.gold999 -= weight;
               break;
             case 'gold995':
-              goldOpeningBalances.gold995 -= weight;
+              if (!showOnlyRaniRupu) goldOpeningBalances.gold995 -= weight;
               break;
             case 'rani':
-              goldOpeningBalances.rani -= weight;
+              if (showOnlyRaniRupu) goldOpeningBalances.rani -= weight;
               break;
           }
         } else {
           // Sell = given, so add to opening
           switch (entry.entry.itemType) {
             case 'gold999':
-              goldOpeningBalances.gold999 += weight;
+              if (!showOnlyRaniRupu) goldOpeningBalances.gold999 += weight;
               break;
             case 'gold995':
-              goldOpeningBalances.gold995 += weight;
+              if (!showOnlyRaniRupu) goldOpeningBalances.gold995 += weight;
               break;
             case 'rani':
-              goldOpeningBalances.rani += weight;
+              if (showOnlyRaniRupu) goldOpeningBalances.rani += weight;
               break;
           }
         }
@@ -746,20 +760,20 @@ export const LedgerScreen: React.FC = () => {
           // Purchase = received, so subtract from opening
           switch (entry.entry.itemType) {
             case 'silver':
-              silverOpeningBalances.silver -= weight;
+              if (!showOnlyRaniRupu) silverOpeningBalances.silver -= weight;
               break;
             case 'rupu':
-              silverOpeningBalances.rupu -= weight;
+              if (showOnlyRaniRupu) silverOpeningBalances.rupu -= weight;
               break;
           }
         } else {
           // Sell = given, so add to opening
           switch (entry.entry.itemType) {
             case 'silver':
-              silverOpeningBalances.silver += weight;
+              if (!showOnlyRaniRupu) silverOpeningBalances.silver += weight;
               break;
             case 'rupu':
-              silverOpeningBalances.rupu += weight;
+              if (showOnlyRaniRupu) silverOpeningBalances.rupu += weight;
               break;
           }
         }
@@ -844,8 +858,12 @@ export const LedgerScreen: React.FC = () => {
           <!-- Gold Subledger -->
           <h3 style="color: #E65100;">Gold Subledger</h3>
           <div class="chips">
-            <span class="chip">Gold 999: ${formatWeight(goldOpeningBalances.gold999)}</span>
-            <span class="chip">Gold 995: ${formatWeight(goldOpeningBalances.gold995)}</span>
+            ${showOnlyRaniRupu ? 
+              `<span class="chip">Rani: ${formatWeight(goldOpeningBalances.rani)}</span>` :
+              `<span class="chip">Gold 999: ${formatWeight(goldOpeningBalances.gold999)}</span>
+               <span class="chip">Gold 995: ${formatWeight(goldOpeningBalances.gold995)}</span>`
+            }
+          </div>
           <table>
             <thead>
               <tr>
@@ -889,9 +907,12 @@ export const LedgerScreen: React.FC = () => {
             </tbody>
           </table>
           <div class="chips">
-            <span class="chip">Gold 999: ${formatWeight(data.goldInventory.gold999)}</span>
-            <span class="chip">Gold 995: ${formatWeight(data.goldInventory.gold995)}</span>
-            <span class="chip">Rani: ${calculateTotalStockWeight(raniStockData, 'rani').toFixed(3)}g</span>
+            ${showOnlyRaniRupu ?
+              `<span class="chip">Rani: ${calculateTotalStockWeight(raniStockData, 'rani').toFixed(3)}g</span>` :
+              `<span class="chip">Gold 999: ${formatWeight(data.goldInventory.gold999)}</span>
+               <span class="chip">Gold 995: ${formatWeight(data.goldInventory.gold995)}</span>
+               <span class="chip">Rani: ${calculateTotalStockWeight(raniStockData, 'rani').toFixed(3)}g</span>`
+            }
           </div>
           
           <hr/>
@@ -899,7 +920,10 @@ export const LedgerScreen: React.FC = () => {
           <!-- Silver Subledger -->
           <h3 style="color: #B0BEC5;">Silver Subledger</h3>
           <div class="chips">
-            <span class="chip">Silver: ${formatWeight(silverOpeningBalances.silver, true)}</span>
+            ${showOnlyRaniRupu ?
+              `<span class="chip">Rupu: ${formatWeight(silverOpeningBalances.rupu, true)}</span>` :
+              `<span class="chip">Silver: ${formatWeight(silverOpeningBalances.silver, true)}</span>`
+            }
           </div>
           <table>
             <thead>
@@ -938,8 +962,11 @@ export const LedgerScreen: React.FC = () => {
             </tbody>
           </table>
           <div class="chips">
-            <span class="chip">Silver: ${formatWeight(data.silverInventory.silver, true)}</span>
-            <span class="chip">Rupu: ${calculateTotalStockWeight(rupuStockData, 'rupu').toFixed(1)}g</span>
+            ${showOnlyRaniRupu ?
+              `<span class="chip">Rupu: ${calculateTotalStockWeight(rupuStockData, 'rupu').toFixed(1)}g</span>` :
+              `<span class="chip">Silver: ${formatWeight(data.silverInventory.silver, true)}</span>
+               <span class="chip">Rupu: ${calculateTotalStockWeight(rupuStockData, 'rupu').toFixed(1)}g</span>`
+            }
           </div>
 
           <hr/>
@@ -1452,8 +1479,10 @@ export const LedgerScreen: React.FC = () => {
                   Gold 995: {formatWeight(inventoryData.goldInventory.gold995)}
                 </Chip>
                 <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
+                  mode={showOnlyRaniRupu ? "outlined" : "flat"}
+                  selected={showOnlyRaniRupu}
+                  onPress={() => setShowOnlyRaniRupu(!showOnlyRaniRupu)}
+                  style={[styles.inventoryChip, { backgroundColor: showOnlyRaniRupu ? '#FFF3E0' : '#FFF8E1' }]}
                   textStyle={{ color: '#E65100' }}
                 >
                   Rani: {calculateTotalStockWeight(raniStock, 'rani').toFixed(3)}g
@@ -1469,8 +1498,10 @@ export const LedgerScreen: React.FC = () => {
                   Silver: {formatWeight(inventoryData.silverInventory.silver, true)}
                 </Chip>
                 <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
+                  mode={showOnlyRaniRupu ? "outlined" : "flat"}
+                  selected={showOnlyRaniRupu}
+                  onPress={() => setShowOnlyRaniRupu(!showOnlyRaniRupu)}
+                  style={[styles.inventoryChip, { backgroundColor: showOnlyRaniRupu ? '#F1F8E9' : '#ECEFF1' }]}
                   textStyle={{ color: '#455A64' }}
                 >
                   Rupu: {calculateTotalStockWeight(rupuStock, 'rupu').toFixed(1)}g

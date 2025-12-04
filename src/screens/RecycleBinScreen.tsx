@@ -252,25 +252,24 @@ export const RecycleBinScreen: React.FC = () => {
       const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
       
       if (isMoneyOnly) {
-        // For money-only transactions, use amountPaid directly
-        const isDebt = transaction.amountPaid < 0;
-        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
-        transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+        // For money-only transactions (NEW SIGN CONVENTION):
+        // amountPaid > 0 = merchant received = customer has balance/credit
+        // amountPaid < 0 = merchant gave = customer has debt
+        const isBalance = transaction.amountPaid > 0;
+        transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
+        transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
       } else {
         // For regular transactions with entries
-        if (transaction.settlementType === 'full') {
+        // Formula: amountPaid - total + discount
+        // Positive = balance (merchant owes), Negative = debt (customer owes)
+        const transactionRemaining = transaction.amountPaid - transaction.total + transaction.discountExtraAmount;
+        
+        if (transactionRemaining === 0) {
           transactionBalanceLabel = 'Settled';
-        } else if (transaction.settlementType === 'partial') {
-          const balanceAmount = Math.abs(transaction.total - transaction.amountPaid);
-          transactionBalanceLabel = transaction.total > 0 
-            ? `Balance: ₹${formatIndianNumber(balanceAmount)}`
-            : `Debt: ₹${formatIndianNumber(balanceAmount)}`;
-          transactionBalanceColor = transaction.total > 0 ? theme.colors.success : theme.colors.debtColor;
         } else {
-          transactionBalanceLabel = transaction.total > 0 
-            ? `Balance: ₹${formatIndianNumber(Math.abs(transaction.total))}`
-            : `Debt: ₹${formatIndianNumber(Math.abs(transaction.total))}`;
-          transactionBalanceColor = transaction.total > 0 ? theme.colors.success : theme.colors.debtColor;
+          const isDebt = transactionRemaining < 0;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+          transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
         }
       }
     }

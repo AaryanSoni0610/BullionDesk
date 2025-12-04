@@ -412,14 +412,19 @@ export class TransactionService {
       // Final balance calculation
       let finalBalance: number;
       if (isMoneyOnlyTransaction) {
-        // For money-only: received amount directly affects balance
-        // Positive received = merchant receives = customer debt reduced
+        // For money-only transactions (INVERTED SIGN CONVENTION):
+        // Positive receivedAmount = merchant receives money = customer balance increases (credit)
+        // Negative receivedAmount = merchant gives money = customer balance decreases (debt)
         finalBalance = receivedAmount;
       } else {
-        // receivedAmount is signed: positive = merchant receives, negative = merchant pays
-        // For sells (netAmount > 0): balance = -(netAmount - receivedAmount - discount)
-        // For purchases (netAmount < 0): balance = -(netAmount - receivedAmount)
-        finalBalance = (netAmount - receivedAmount - discountExtraAmount) * -1;
+        // Regular transactions (INVERTED SIGN CONVENTION):
+        // Positive balance = merchant owes customer (credit)
+        // Negative balance = customer owes merchant (debt)
+        // For sells: customer should pay netAmount, they paid receivedAmount
+        // Remaining: netAmount - receivedAmount = what customer still owes (negative balance)
+        // For purchases: merchant should pay netAmount, they paid receivedAmount
+        // Remaining: netAmount - receivedAmount = what merchant still owes (positive balance)
+        finalBalance = receivedAmount - netAmount + discountExtraAmount;
       }
 
       // Special case for 'adjust' customer - always zero balance
@@ -453,13 +458,13 @@ export class TransactionService {
           const isOldMetalOnly = existingTransaction.entries.some(entry => entry.metalOnly === true);
           
           if (isOldMoneyOnly) {
+            // For old money-only transactions, the balance effect was amountPaid (inverted)
             oldBalanceEffect = existingTransaction.amountPaid;
           } else if (!isOldMetalOnly) {
             const oldNetAmount = existingTransaction.total;
             const oldReceivedAmount = existingTransaction.amountPaid;
-            oldBalanceEffect = oldNetAmount >= 0 
-              ? oldReceivedAmount - oldNetAmount - existingTransaction.discountExtraAmount
-              : Math.abs(oldNetAmount) - oldReceivedAmount - existingTransaction.discountExtraAmount;
+            // Inverted formula: receivedAmount - netAmount + discount
+            oldBalanceEffect = oldReceivedAmount - oldNetAmount + existingTransaction.discountExtraAmount;
           }
 
           // REVERSE old metal balances
@@ -650,7 +655,8 @@ export class TransactionService {
         }
 
         // Create ledger entry when there's a payment change
-        const deltaAmount = receivedAmount;
+        // For updates, calculate delta from previous amount; for new transactions, use full amount
+        const deltaAmount = isUpdate ? (receivedAmount - previousAmountPaid) : receivedAmount;
         
         if (deltaAmount !== 0) {
           let ledgerTimestamp = transactionDate;
@@ -767,15 +773,14 @@ export class TransactionService {
       let balanceEffect = 0;
       
       if (isMoneyOnly) {
-        // For money-only transactions, reverse the amountPaid effect
+        // For money-only transactions, reverse the balance effect which was amountPaid (inverted)
         balanceEffect = transaction.amountPaid;
       } else if (!isMetalOnly) {
         const netAmount = transaction.total;
         const receivedAmount = transaction.amountPaid;
         const discountExtraAmount = transaction.discountExtraAmount;
-        balanceEffect = netAmount >= 0 
-          ? receivedAmount - netAmount - discountExtraAmount
-          : Math.abs(netAmount) - receivedAmount - discountExtraAmount;
+        // Inverted formula: receivedAmount - netAmount + discount
+        balanceEffect = receivedAmount - netAmount + discountExtraAmount;
       }
 
       // Reverse metal balances for metal-only entries
@@ -932,15 +937,21 @@ export class TransactionService {
       let updatedCustomer = { ...customer };
       console.log('Restoring transaction for customer:', updatedCustomer);
 
+      const isMoneyOnly = transaction.entries.length === 0;
       const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
       let balanceEffect = 0;
-      if (!isMetalOnly) {
+      
+      if (isMoneyOnly) {
+        // For money-only transactions, restore the balance effect which was amountPaid (inverted)
+        balanceEffect = transaction.amountPaid;
+        updatedCustomer.balance += balanceEffect;
+        console.log('Restored money-only balance effect:', balanceEffect);
+      } else if (!isMetalOnly) {
         const netAmount = transaction.total;
         const receivedAmount = transaction.amountPaid;
         const discountExtraAmount = transaction.discountExtraAmount;
-        balanceEffect = netAmount >= 0 
-          ? receivedAmount - netAmount - discountExtraAmount
-          : Math.abs(netAmount) - receivedAmount - discountExtraAmount;
+        // Inverted formula: receivedAmount - netAmount + discount
+        balanceEffect = receivedAmount - netAmount + discountExtraAmount;
         
         updatedCustomer.balance += balanceEffect;
         console.log('Restored money balance effect:', balanceEffect);

@@ -70,8 +70,24 @@ export class InventoryService {
         money: 0
       };
 
-      // Calculate effects from ledger_entry_items table
-      // This provides accurate inventory impact from all entries including partial payments
+      // Calculate money effects from ledger_entries (includes money-only transactions)
+      const moneyEntries = await DatabaseService.getAllAsyncBatch<{
+        amountReceived: number;
+        amountGiven: number;
+      }>(`
+        SELECT le.amountReceived, le.amountGiven
+        FROM ledger_entries le
+        WHERE le.deleted_on IS NULL
+      `);
+
+      moneyEntries.forEach(entry => {
+        // amountReceived = merchant receives money (inflow) = positive effect
+        // amountGiven = merchant gives money (outflow) = negative effect
+        effects.money += entry.amountReceived;
+        effects.money -= entry.amountGiven;
+      });
+
+      // Calculate effects from ledger_entry_items table for item transactions
       const items = await DatabaseService.getAllAsyncBatch<{
         type: string;
         itemType: string;
@@ -88,10 +104,9 @@ export class InventoryService {
 
       items.forEach(item => {
         if (item.type === 'money') {
-          // Money entries: subtotal represents money flow
-          // Positive subtotal = merchant receives money (inflow)
-          // Negative subtotal = merchant gives money (outflow)
-          effects.money += item.subtotal;
+          // Money entries in items: subtotal represents money flow
+          // This is already counted in ledger_entries above, so skip
+          // (Money entries in items are legacy/redundant)
         } else if (item.metalOnly === 1) {
           // Metal-only entries affect metal balances
           const weight = (item.itemType === 'rani' || item.itemType === 'rupu') 
@@ -107,10 +122,8 @@ export class InventoryService {
           else if (item.itemType === 'silver') effects.silver += metalFlow;
           else if (item.itemType === 'rani') effects.rani += metalFlow;
           else if (item.itemType === 'rupu') effects.rupu += metalFlow;
-        } else {
-          // Regular sell/purchase entries affect money only
-          effects.money += item.subtotal;
         }
+        // Regular sell/purchase entries: money is already counted from ledger_entries
       });
 
       return effects;

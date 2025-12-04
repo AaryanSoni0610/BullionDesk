@@ -101,6 +101,7 @@ export const CustomerListScreen: React.FC = () => {
 
   const formatBalance = (balance: number) => {
     if (balance === 0) return 'Settled';
+    // INVERTED: positive = balance (merchant owes), negative = debt (customer owes)
     if (balance > 0) return `Balance: ₹${formatIndianNumber(Math.abs(balance))}`;
     else return `Debt: ₹${formatIndianNumber(Math.abs(balance))}`;
   };
@@ -183,14 +184,16 @@ export const CustomerListScreen: React.FC = () => {
       customersWithBalances.forEach(customer => {
         const metalBalances = customer.metalBalances || {};
         
-        // Process money balance/debt
+        // Process money balance/debt (INVERTED SIGN)
         if (customer.balance > 0) {
+          // Positive = merchant owes customer (balance)
           pdfData.push({
             customer: customer.name,
             balance: `₹${formatIndianNumber(Math.abs(customer.balance))}`,
             debt: ''
           });
         } else if (customer.balance < 0) {
+          // Negative = customer owes merchant (debt)
           pdfData.push({
             customer: customer.name,
             balance: '',

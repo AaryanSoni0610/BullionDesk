@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Customer, TransactionEntry } from '../types';
+import { Customer, TransactionEntry, ItemType } from '../types';
 import { CustomerService } from '../services/customer.service';
 import { TransactionService } from '../services/transaction.service';
+
+export interface LastEntryState {
+  transactionType: 'purchase' | 'sell' | 'money';
+  itemType: ItemType;
+}
 
 interface AlertButton {
   text: string;
@@ -27,6 +32,10 @@ interface AppContextType {
   transactionCreatedAt: string | null;
   transactionLastUpdatedAt: string | null;
   
+  // Last Entry State
+  lastEntryState: LastEntryState | null;
+  setLastEntryState: (state: LastEntryState | null) => void;
+
   // Modal Management
   customerModalVisible: boolean;
   setCustomerModalVisible: (visible: boolean) => void;
@@ -106,6 +115,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [pendingMoneyType, setPendingMoneyType] = useState<'give' | 'receive'>('receive');
   const [transactionCreatedAt, setTransactionCreatedAt] = useState<string | null>(null);
   const [transactionLastUpdatedAt, setTransactionLastUpdatedAt] = useState<string | null>(null);
+  const [lastEntryState, setLastEntryState] = useState<LastEntryState | null>(null);
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
   const [allowCustomerCreation, setAllowCustomerCreation] = useState(true);
   const [isCustomerSelectionForRaniRupa, setIsCustomerSelectionForRaniRupa] = useState(false);
@@ -141,6 +151,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setPendingMoneyType('receive');
     setTransactionCreatedAt(null);
     setTransactionLastUpdatedAt(null);
+    setLastEntryState(null);
     onNavigateToTabs();
   };
 
@@ -268,6 +279,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
       if (result.success) {
         // Navigate back to tabs (no snackbar message)
+        setLastEntryState(null);
         onNavigateToTabs();
       } else {
         console.error('❌ Transaction save failed:', result.error);
@@ -355,6 +367,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setPendingMoneyType,
     transactionCreatedAt,
     transactionLastUpdatedAt,
+    lastEntryState,
+    setLastEntryState,
     customerModalVisible,
     setCustomerModalVisible,
     allowCustomerCreation,

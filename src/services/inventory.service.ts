@@ -152,30 +152,19 @@ export class InventoryService {
     try {
       const db = DatabaseService.getDatabase();
       
-      // Calculate opening balance effects
-      const openingEffects = await this.calculateOpeningBalanceEffects();
-
-      // Adjust base inventory based on opening balance effects
-      const adjustedInventory = {
-        gold999: inventory.gold999 - openingEffects.gold999,
-        gold995: inventory.gold995 - openingEffects.gold995,
-        silver: inventory.silver - openingEffects.silver,
-        rani: inventory.rani - openingEffects.rani,
-        rupu: inventory.rupu - openingEffects.rupu,
-        money: inventory.money - openingEffects.money
-      };
-
+      // Direct update of base inventory without adjusting for existing transactions
+      // Base inventory now represents the standalone starting point
       await db.runAsync(
         `UPDATE base_inventory 
          SET gold999 = ?, gold995 = ?, silver = ?, rani = ?, rupu = ?, money = ? 
          WHERE id = 1`,
         [
-          adjustedInventory.gold999,
-          adjustedInventory.gold995,
-          adjustedInventory.silver,
-          adjustedInventory.rani,
-          adjustedInventory.rupu,
-          adjustedInventory.money
+          inventory.gold999,
+          inventory.gold995,
+          inventory.silver,
+          inventory.rani,
+          inventory.rupu,
+          inventory.money
         ]
       );
 

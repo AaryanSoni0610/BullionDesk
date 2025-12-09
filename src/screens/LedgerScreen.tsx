@@ -311,10 +311,10 @@ export const LedgerScreen: React.FC = () => {
 
   const handleInventoryAdjustment = async (values: Record<string, any>) => {
     try {
-      const gold999Value = values.gold999 || 0;
-      const gold995Value = values.gold995 || 0;
-      const silverValue = values.silver || 0;
-      const moneyValue = values.money || 0;
+      const gold999Value = parseFloat(values.gold999) || 0;
+      const gold995Value = parseFloat(values.gold995) || 0;
+      const silverValue = parseFloat(values.silver) || 0;
+      const moneyValue = parseFloat(values.money) || 0;
 
       // Create or get "Adjust" customer
       let adjustCustomer = await CustomerService.getCustomerByName('Adjust');
@@ -637,12 +637,15 @@ export const LedgerScreen: React.FC = () => {
           }
           // Filter based on showOnlyRaniRupu state
           if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
-            goldEntries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry,
-              date: transaction.date
-            });
+            // Filter out 0 weight entries
+            if ((extEntry.weight || 0) > 0) {
+              goldEntries.push({
+                transactionId: transaction.id,
+                customerName,
+                entry,
+                date: transaction.date
+              });
+            }
           }
         });
       });
@@ -670,12 +673,15 @@ export const LedgerScreen: React.FC = () => {
           }
           // Filter based on showOnlyRaniRupu state
           if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
-            silverEntries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry,
-              date: transaction.date
-            });
+            // Filter out 0 weight entries
+            if ((extEntry.weight || 0) > 0) {
+              silverEntries.push({
+                transactionId: transaction.id,
+                customerName,
+                entry,
+                date: transaction.date
+              });
+            }
           }
         });
       });
@@ -1126,12 +1132,15 @@ export const LedgerScreen: React.FC = () => {
           }
 
           if (includeEntry) {
-            entries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry,
-              date: transaction.date
-            });
+            // Filter out 0 weight entries
+            if ((entry.weight || 0) > 0) {
+              entries.push({
+                transactionId: transaction.id,
+                customerName,
+                entry,
+                date: transaction.date
+              });
+            }
           }
         });
       });

@@ -125,7 +125,7 @@ export const SettingsScreen: React.FC = () => {
   const handleSetBaseInventoryWithWarning = () => {
     showAlert(
       '⚠️ Important Warning',
-      'Setting base inventory when there are existing customer balances or transactions can significantly affect your inventory calculations.\n\nPlease ensure that:\n• All customer balances represent opening balances only\n• No actual business transactions have been recorded yet\n• You understand that this will adjust your base inventory to account for existing balances\n\nThis action cannot be easily undone.',
+      'Setting base inventory will overwrite your starting inventory values.\n\nPlease ensure that:\n• You are entering the initial/opening stock values\n• Current inventory will be calculated as Base Inventory + Transactions\n\nThis action cannot be easily undone.',
       [
         {
           text: 'Cancel',
@@ -781,10 +781,10 @@ export const SettingsScreen: React.FC = () => {
         }
         message={
           inventoryDialogStep === 'gold'
-            ? 'Enter the current gold inventory levels:'
+            ? 'Enter the base (opening) gold inventory levels:'
             : inventoryDialogStep === 'silver'
-            ? 'Enter the current silver inventory levels:'
-            : 'Enter the current money balance:'
+            ? 'Enter the base (opening) silver inventory levels:'
+            : 'Enter the base (opening) money balance:'
         }
         inputs={inventoryInputs}
         onSubmit={handleInventoryDialogSubmit}

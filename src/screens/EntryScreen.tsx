@@ -40,12 +40,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   isFirstEntryForMoneyOnlyTransaction = false,
   originalMoneyOnlyType,
 }) => {
-  const { setPendingMoneyAmount, setPendingMoneyType } = useAppContext();
+  const { setPendingMoneyAmount, setPendingMoneyType, lastEntryState, setLastEntryState } = useAppContext();
   
   // Check what types of entries already exist (excluding the one being edited)
   const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
   const hasSellPurchaseEntries = otherEntries.some(entry => entry.type === 'sell' || entry.type === 'purchase');
   const hasMetalOnlyEntries = otherEntries.some(entry => entry.metalOnly === true);
+  const hasPricedEntries = otherEntries.some(entry => entry.type !== 'money' && entry.metalOnly === false);
   
   // Handle back button navigation
   const handleBack = () => {
@@ -76,7 +77,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const getAvailableTransactionTypes = () => {
     if (hasMetalOnlyEntries) {
       // If metal-only entries exist, do not allow adding non-metal entries
-      return [];
+      return ['sell', 'purchase'];
     }
 
     // If this is the special case of editing a money-only transaction and there
@@ -108,12 +109,20 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (isFirstEntryForMoneyOnlyTransaction && originalMoneyOnlyType) {
       return originalMoneyOnlyType === 'receive' ? 'sell' : 'purchase';
     }
+    if (lastEntryState && !editingEntry) return lastEntryState.transactionType;
     return 'sell';
   });
   const [moneyType, setMoneyType] = useState<'give' | 'receive'>('receive');
-  const [itemType, setItemType] = useState<ItemType>('gold999');
+  const [itemType, setItemType] = useState<ItemType>(() => {
+    if (lastEntryState && !editingEntry) return lastEntryState.itemType;
+    return 'gold999';
+  });
   const [menuVisible, setMenuVisible] = useState(false);
-  const [metalOnly, setMetalOnly] = useState(false);
+  const [metalOnly, setMetalOnly] = useState(() => {
+    if (hasMetalOnlyEntries) return true;
+    if (hasPricedEntries) return false;
+    return false;
+  });
   
   // Input fields
   const [weight, setWeight] = useState('');
@@ -176,6 +185,15 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setSilverWeight('');
     }
   }, [transactionType, itemType, rupuReturnType]);
+
+  // Enforce metal-only constraints
+  useEffect(() => {
+    if (hasMetalOnlyEntries) {
+      setMetalOnly(true);
+    } else if (hasPricedEntries) {
+      setMetalOnly(false);
+    }
+  }, [hasMetalOnlyEntries, hasPricedEntries]);
 
   const getItemOptions = () => {
     const allOptions = [
@@ -353,6 +371,12 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
       onAddEntry(entry);
       
+      // Save last entry state for next entry
+      setLastEntryState({
+        transactionType: transactionType as 'purchase' | 'sell' | 'money',
+        itemType,
+      });
+      
       // Reset form on success
       setWeight('');
       setPrice('');
@@ -450,7 +474,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             <RadioButton
               value="metal-only"
               status={metalOnly ? 'checked' : 'unchecked'}
-              onPress={() => setMetalOnly(!metalOnly)}
+              onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
+              disabled={hasMetalOnlyEntries || hasPricedEntries}
             />
             <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
           </View>
@@ -518,7 +543,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             <RadioButton
               value="metal-only"
               status={metalOnly ? 'checked' : 'unchecked'}
-              onPress={() => setMetalOnly(!metalOnly)}
+              onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
+              disabled={hasMetalOnlyEntries || hasPricedEntries}
             />
             <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
           </View>
@@ -557,9 +583,16 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           <RadioButton
             value="metal-only"
             status={metalOnly ? 'checked' : 'unchecked'}
-            onPress={() => setMetalOnly(!metalOnly)}
+            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
+            disabled={hasMetalOnlyEntries || hasPricedEntries}
           />
-          <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
+          <Text 
+            variant="bodyLarge" 
+            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)} 
+            style={[styles.metalOnlyText, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}
+          >
+            Metal Only
+          </Text>
         </View>
         
         {!metalOnly && (

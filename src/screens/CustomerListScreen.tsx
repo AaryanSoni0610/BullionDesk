@@ -24,9 +24,10 @@ import { theme } from '../theme';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
 import { TransactionService } from '../services/transaction.service';
-import { formatFullDate, formatIndianNumber } from '../utils/formatting';
+import { formatFullDate, formatIndianNumber, formatPureGoldPrecise, formatPureSilver, customFormatPureSilver } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import * as FileSystem from 'expo-file-system';
+import CustomAlert from '../components/CustomAlert';
 
 export const CustomerListScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,6 +36,12 @@ export const CustomerListScreen: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [ledgerCache, setLedgerCache] = useState<Map<string, { data: LedgerEntry[], timestamp: number }>>(new Map());
+  const [customersWithTransactions, setCustomersWithTransactions] = useState<Set<string>>(new Set());
+  const [areTransactionsChecked, setAreTransactionsChecked] = useState(false);
+  const [deleteAlertVisible, setDeleteAlertVisible] = useState(false);
+  const [deleteAlertTitle, setDeleteAlertTitle] = useState('');
+  const [deleteAlertMessage, setDeleteAlertMessage] = useState('');
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
 
   const { navigateToSettings } = useAppContext();
 
@@ -61,12 +68,32 @@ export const CustomerListScreen: React.FC = () => {
 
   const loadAllCustomers = async () => {
     try {
+      setAreTransactionsChecked(false);
       const allCustomers = await CustomerService.getAllCustomers();
       setCustomers(allCustomers);
       setFilteredCustomers(allCustomers); // Initially show all customers
+
+      // Check which customers have transactions (optimized with Promise.all)
+      const transactionChecks = await Promise.all(
+        allCustomers.map(async (customer) => {
+          const hasTransactions = await hasCustomerTransactions(customer.id);
+          return { id: customer.id, hasTransactions };
+        })
+      );
+
+      const customersWithTxns = new Set<string>();
+      transactionChecks.forEach(check => {
+        if (check.hasTransactions) {
+          customersWithTxns.add(check.id);
+        }
+      });
+      
+      setCustomersWithTransactions(customersWithTxns);
+      setAreTransactionsChecked(true);
     } catch (error) {
       console.error('Error loading customers:', error);
       setError('Failed to load customers');
+      setAreTransactionsChecked(true); // Ensure we don't get stuck in unchecked state
     }
   };
 
@@ -163,13 +190,24 @@ export const CustomerListScreen: React.FC = () => {
     return parts.join(' | ');
   };
 
+  // Check if customer has any transactions
+  const hasCustomerTransactions = async (customerId: string): Promise<boolean> => {
+    try {
+      const transactions = await TransactionService.getTransactionsByCustomerId(customerId);
+      return transactions.length > 0;
+    } catch (error) {
+      console.error('Error checking customer transactions:', error);
+      return true; // Assume has transactions if error occurs
+    }
+  };
+
   const exportCustomersToPDF = async () => {
     try {
       // Load all customers for PDF export (not just searched ones)
       const allCustomers = await CustomerService.getAllCustomers();
       
       // Prepare data for PDF - export all customers with debt/balance
-      const pdfData: Array<{customer: string, balance: string, debt: string}> = [];
+      const pdfData: Array<{customer: string, goldBalance: string, goldDebt: string, silverBalance: string, silverDebt: string, moneyBalance: string, moneyDebt: string}> = [];
       
       // Filter customers to only include those with debt/balance
       const customersWithBalances = allCustomers.filter(customer => {
@@ -184,22 +222,13 @@ export const CustomerListScreen: React.FC = () => {
       customersWithBalances.forEach(customer => {
         const metalBalances = customer.metalBalances || {};
         
-        // Process money balance/debt (INVERTED SIGN)
-        if (customer.balance > 0) {
-          // Positive = merchant owes customer (balance)
-          pdfData.push({
-            customer: customer.name,
-            balance: `₹${formatIndianNumber(Math.abs(customer.balance))}`,
-            debt: ''
-          });
-        } else if (customer.balance < 0) {
-          // Negative = customer owes merchant (debt)
-          pdfData.push({
-            customer: customer.name,
-            balance: '',
-            debt: `₹${formatIndianNumber(Math.abs(customer.balance))}`
-          });
-        }
+        // Create gold column content
+        const goldBalances: string[] = [];
+        const goldDebts: string[] = [];
+        const silverBalances: string[] = [];
+        const silverDebts: string[] = [];
+        let moneyBalance = '';
+        let moneyDebt = '';
         
         // Process metal balances/debts
         Object.entries(metalBalances).forEach(([type, balance]) => {
@@ -218,20 +247,39 @@ export const CustomerListScreen: React.FC = () => {
             const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance)).toFixed(1);
             const balanceText = `${displayName} ${formattedBalance}g`;
             
-            if (balance > 0) {
-              pdfData.push({
-                customer: customer.name,
-                balance: balanceText,
-                debt: ''
-              });
+            if (isGold) {
+              if (balance > 0) {
+                goldBalances.push(balanceText);
+              } else {
+                goldDebts.push(balanceText);
+              }
             } else {
-              pdfData.push({
-                customer: customer.name,
-                balance: '',
-                debt: balanceText
-              });
+              if (balance > 0) {
+                silverBalances.push(balanceText);
+              } else {
+                silverDebts.push(balanceText);
+              }
             }
           }
+        });
+        
+        // Process money balance/debt (INVERTED SIGN)
+        if (customer.balance > 0) {
+          // Positive = merchant owes customer (balance)
+          moneyBalance = `₹${formatIndianNumber(Math.abs(customer.balance))}`;
+        } else if (customer.balance < 0) {
+          // Negative = customer owes merchant (debt)
+          moneyDebt = `₹${formatIndianNumber(Math.abs(customer.balance))}`;
+        }
+        
+        pdfData.push({
+          customer: customer.name,
+          goldBalance: goldBalances.join('<br>'),
+          goldDebt: goldDebts.join('<br>'),
+          silverBalance: silverBalances.join('<br>'),
+          silverDebt: silverDebts.join('<br>'),
+          moneyBalance: moneyBalance,
+          moneyDebt: moneyDebt
         });
       });
       
@@ -269,6 +317,7 @@ export const CustomerListScreen: React.FC = () => {
               background-color: #f5f5f5;
               font-weight: bold;
               color: #555;
+              text-align: center;
             }
             tr:nth-child(even) {
               background-color: #f9f9f9;
@@ -298,7 +347,16 @@ export const CustomerListScreen: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Customer</th>
+                <th rowspan="2">Customer</th>
+                <th colspan="2">Gold</th>
+                <th colspan="2">Silver</th>
+                <th colspan="2">Money</th>
+              </tr>
+              <tr>
+                <th>Balance</th>
+                <th>Debt</th>
+                <th>Balance</th>
+                <th>Debt</th>
                 <th>Balance</th>
                 <th>Debt</th>
               </tr>
@@ -307,8 +365,12 @@ export const CustomerListScreen: React.FC = () => {
               ${pdfData.map(row => `
                 <tr>
                   <td class="customer-name">${row.customer}</td>
-                  <td class="balance">${row.balance}</td>
-                  <td class="debt">${row.debt}</td>
+                  <td class="balance">${row.goldBalance}</td>
+                  <td class="debt">${row.goldDebt}</td>
+                  <td class="balance">${row.silverBalance}</td>
+                  <td class="debt">${row.silverDebt}</td>
+                  <td class="balance">${row.moneyBalance}</td>
+                  <td class="debt">${row.moneyDebt}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -424,54 +486,75 @@ export const CustomerListScreen: React.FC = () => {
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Type</th>
-                <th>Details</th>
+                <th>Money</th>
+                <th>Bullion</th>
               </tr>
             </thead>
             <tbody>
               ${ledgerData.map(entry => {
                 const date = formatFullDate(entry.date);
-                let transactionType = '';
-                let details = '';
-
+                
+                let moneyHtml = '';
                 if (entry.amountReceived > 0) {
-                  transactionType = 'Receive';
-                  details = `₹${formatIndianNumber(entry.amountReceived)}`;
+                    moneyHtml = `<span style="color: #2e7d32;">₹${formatIndianNumber(entry.amountReceived)}</span>`; // Green
                 } else if (entry.amountGiven > 0) {
-                  transactionType = 'Give';
-                  details = `₹${formatIndianNumber(entry.amountGiven)}`;
-                } else {
-                  const hasSell = entry.entries.some(e => e.type === 'sell');
-                  const hasPurchase = entry.entries.some(e => e.type === 'purchase');
+                    moneyHtml = `<span style="color: #1976d2;">₹${formatIndianNumber(entry.amountGiven)}</span>`; // Blue
+                }
 
-                  if (hasSell) {
-                    transactionType = 'Sell';
-                  } else if (hasPurchase) {
-                    transactionType = 'Purchase';
-                  }
+                const metalEntries = entry.entries.filter(e => e.type !== 'money');
+                const sellEntries = metalEntries.filter(e => e.type === 'sell');
+                const purchaseEntries = metalEntries.filter(e => e.type === 'purchase');
+                const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
 
-                  const metalDetails: string[] = [];
-                  entry.entries.forEach(e => {
-                    if (e.type !== 'money') {
-                      const isGold = e.itemType.includes('gold') || e.itemType === 'rani';
-                      const weight = isGold ? e.weight?.toFixed(3) : Math.floor(e.weight || 0).toFixed(1);
+                const bullionDetails = sortedMetalEntries.map(e => {
+                    const isSell = e.type === 'sell';
+                    const arrow = isSell ? '↗️' : '↙️';
+                    let details = '';
+                    
+                    if (e.itemType === 'rani' || e.itemType === 'rupu') {
+                      const weight = e.weight || 0;
+                      const touch = e.touch || 100;
+                      const cut = e.cut || 0;
+                      let effectiveTouch = touch;
+                      let pureWeight = weight*touch/100;
+                      const decimalPlaces = e.itemType === 'rani' ? 3 : 1;
+
+                      let weightStr = '';
+                      if (e.itemType === 'rani') {
+                          if (isSell) {
+                            effectiveTouch = Math.max(0, touch - cut);
+                            pureWeight = (weight * effectiveTouch) / 1000;
+                            weightStr = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
+                          } else {
+                              weightStr = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
+                          }
+                      } else {
+                          if (isSell) {
+                            weightStr = `${customFormatPureSilver(weight, touch).toFixed(1)}g`;
+                          } else {
+                            weightStr = `${formatPureSilver(pureWeight)}g`;
+                          }
+                      }
+                      
+                      const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
+                      details = `${typeName} ${weight.toFixed(decimalPlaces)}g - ${effectiveTouch.toFixed(2)}% - ${weightStr}`;
+                    } else {
+                      const isGold = e.itemType.includes('gold');
+                      const weight = e.weight || 0;
+                      const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
                       const typeName = e.itemType === 'gold999' ? 'Gold 999' :
                                       e.itemType === 'gold995' ? 'Gold 995' :
-                                      e.itemType === 'rani' ? 'Rani' :
-                                      e.itemType === 'silver' ? 'Silver' :
-                                      e.itemType === 'rupu' ? 'Rupu' : e.itemType;
-                      const detail = `${typeName} ${weight}g`;
-                      metalDetails.push(detail);
+                                      e.itemType === 'silver' ? 'Silver' : e.itemType;
+                      details = `${typeName} ${formattedWeight}g`;
                     }
-                  });
-                  details = metalDetails.join(', ');
-                }
+                    return `<div>${arrow} ${details}</div>`;
+                }).join('');
 
                 return `
                   <tr>
                     <td>${date}</td>
-                    <td>${transactionType}</td>
-                    <td>${details}</td>
+                    <td>${moneyHtml}</td>
+                    <td>${bullionDetails}</td>
                   </tr>
                 `;
               }).join('')}
@@ -546,7 +629,15 @@ export const CustomerListScreen: React.FC = () => {
       // Get metal transactions and convert them to ledger-like entries
       const metalLedgerEntries: LedgerEntry[] = [];
 
+      // Create a set of transaction IDs that are already in moneyLedgerEntries
+      const existingTransactionIds = new Set(moneyLedgerEntries.map(entry => entry.transactionId));
+
       customerTransactions.forEach(transaction => {
+        // Skip if this transaction is already represented in moneyLedgerEntries
+        if (existingTransactionIds.has(transaction.id)) {
+            return;
+        }
+
         // Only include transactions that have entries (exclude money-only)
         const hasEntries = transaction.entries && transaction.entries.length > 0;
 
@@ -600,6 +691,57 @@ export const CustomerListScreen: React.FC = () => {
     }
   };
 
+  const handleDeleteCustomer = async (customer: Customer) => {
+    try {
+      // Check if customer has transactions
+      const hasTransactions = await hasCustomerTransactions(customer.id);
+      
+      if (hasTransactions) {
+        setError('Cannot delete customer with existing transactions');
+        return;
+      }
+
+      // Set up custom alert
+      setCustomerToDelete(customer);
+      setDeleteAlertTitle('Delete Customer');
+      setDeleteAlertMessage(`Are you sure you want to delete "${customer.name}"? This action cannot be undone.`);
+      setDeleteAlertVisible(true);
+    } catch (error) {
+      console.error('Error checking customer transactions:', error);
+      setError('Failed to check customer transactions');
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!customerToDelete) return;
+
+    try {
+      // Delete the customer
+      const success = await CustomerService.deleteCustomer(customerToDelete.id);
+      
+      if (success) {
+        // Remove from local state
+        setCustomers(prev => prev.filter(c => c.id !== customerToDelete.id));
+        setFilteredCustomers(prev => prev.filter(c => c.id !== customerToDelete.id));
+        setError(''); // Clear any previous error
+      } else {
+        setError('Failed to delete customer');
+      }
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      setError('Failed to delete customer');
+    } finally {
+      // Close the alert
+      setDeleteAlertVisible(false);
+      setCustomerToDelete(null);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteAlertVisible(false);
+    setCustomerToDelete(null);
+  };
+
   const toggleCardExpansion = async (customerId: string) => {
     const newExpanded = new Set(expandedCards);
     if (newExpanded.has(customerId)) {
@@ -613,63 +755,98 @@ export const CustomerListScreen: React.FC = () => {
   };
 
   const renderLedgerEntry = (entry: LedgerEntry) => {
-    
     const date = formatFullDate(entry.date);
-    let transactionType = '';
-    let details = '';
-
-    // Determine transaction type and details
+    
+    // Money Column Logic
+    let moneyText = '';
+    let moneyColor = theme.colors.onSurface;
+    
     if (entry.amountReceived > 0) {
-      transactionType = 'Receive';
-      details = `₹${formatIndianNumber(entry.amountReceived)}`;
+        moneyText = `₹${formatIndianNumber(entry.amountReceived)}`;
+        moneyColor = theme.colors.sellColor; // Green
     } else if (entry.amountGiven > 0) {
-      transactionType = 'Give';
-      details = `₹${formatIndianNumber(entry.amountGiven)}`;
-    } else {
-      // Metal transaction - check entries for type
-      const hasSell = entry.entries.some(e => e.type === 'sell');
-      const hasPurchase = entry.entries.some(e => e.type === 'purchase');
-
-      if (hasSell) {
-        transactionType = 'Sell';
-      } else if (hasPurchase) {
-        transactionType = 'Purchase';
-      }
-
-      // Get metal details
-      const metalDetails: string[] = [];
-      entry.entries.forEach(e => {
-        if (e.type !== 'money') {
-          const isGold = e.itemType.includes('gold') || e.itemType === 'rani';
-          const weight = isGold ? e.weight?.toFixed(3) : Math.floor(e.weight || 0).toFixed(1);
-          const typeName = e.itemType === 'gold999' ? 'Gold 999' :
-                          e.itemType === 'gold995' ? 'Gold 995' :
-                          e.itemType === 'rani' ? 'Rani' :
-                          e.itemType === 'silver' ? 'Silver' :
-                          e.itemType === 'rupu' ? 'Rupu' : e.itemType;
-          const detail = `${typeName} ${weight}g`;
-          metalDetails.push(detail);
-        }
-      });
-      details = metalDetails.join(', ');
+        moneyText = `₹${formatIndianNumber(entry.amountGiven)}`;
+        moneyColor = theme.colors.primary; // Blue
     }
+
+    // Bullion Column Logic
+    const bullionEntries: React.ReactNode[] = [];
+    
+    // Filter and sort entries: Sell first, then Purchase
+    const metalEntries = entry.entries.filter(e => e.type !== 'money');
+    const sellEntries = metalEntries.filter(e => e.type === 'sell');
+    const purchaseEntries = metalEntries.filter(e => e.type === 'purchase');
+    
+    const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
+
+    sortedMetalEntries.forEach((e, index) => {
+        const isSell = e.type === 'sell';
+        const arrow = isSell ? '↗️' : '↙️';
+        let details = '';
+        
+        if (e.itemType === 'rani' || e.itemType === 'rupu') {
+             const weight = e.weight || 0;
+             const touch = e.touch || 100;
+             const cut = e.cut || 0;
+             const effectiveTouch = e.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+             const pureWeight = (weight * effectiveTouch) / 100;
+             
+             if (e.itemType === 'rani') {
+                 if (isSell) {
+                     // 3 decimal precision
+                     details = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
+                 } else {
+                     // Purchase: 2 decimal precision (X.YZ0)
+                     details = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
+                 }
+             } else {
+                 // Rupu
+                 if (isSell) {
+                    // Use precision from raniRupuBulkSell screen (usually 1 decimal for silver)
+                    details = `${formatPureSilver(pureWeight).toFixed(1)}g`;
+                 } else {
+                    // Purchase: same as purchase entry in entry screen (integer)
+                    details = `${formatPureSilver(pureWeight)}g`;
+                 }
+             }
+             
+             const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
+             details = `${typeName} ${details}`;
+
+        } else {
+             // Gold/Silver
+             const isGold = e.itemType.includes('gold');
+             const weight = e.weight || 0;
+             const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
+             
+             const typeName = e.itemType === 'gold999' ? 'Gold 999' :
+                              e.itemType === 'gold995' ? 'Gold 995' :
+                              e.itemType === 'silver' ? 'Silver' : e.itemType;
+             
+             details = `${typeName} ${formattedWeight}g`;
+        }
+        
+        bullionEntries.push(
+            <Text key={index} variant="bodySmall" style={{ color: theme.colors.onSurface }}>
+                {arrow} {details}
+            </Text>
+        );
+    });
 
     return (
       <View style={styles.transactionRow}>
-        <View style={styles.transactionCell}>
+        <View style={[styles.transactionCell, { flex: 0.8 }]}> 
           <Text variant="bodyMedium" style={styles.transactionDate}>
             {date}
           </Text>
         </View>
-        <View style={styles.transactionCell}>
-          <Text variant="bodyMedium" style={[styles.transactionType, { textAlign: 'center' }]}>
-            {transactionType}
+        <View style={[styles.transactionCell, { flex: 1 }]}>
+          <Text variant="bodyMedium" style={[styles.transactionAmount, { color: moneyColor, textAlign: 'center' }]}>
+            {moneyText}
           </Text>
         </View>
-        <View style={styles.transactionCell}>
-          <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
-            {details}
-          </Text>
+        <View style={[styles.transactionCell, { flex: 1.5 }]}>
+            {bullionEntries}
         </View>
       </View>
     );
@@ -696,6 +873,15 @@ export const CustomerListScreen: React.FC = () => {
           )}
           right={() => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
+                <IconButton
+                  icon="delete-outline"
+                  size={18}
+                  onPress={() => handleDeleteCustomer(item)}
+                  style={{ marginRight: -5, marginTop: 0, marginBottom: 0 }}
+                  iconColor={theme.colors.error}
+                />
+              )}
               <IconButton
                 icon="tray-arrow-up"
                 size={18}
@@ -718,14 +904,14 @@ export const CustomerListScreen: React.FC = () => {
           <View style={styles.expandedContent}>
             {/* Transaction Header */}
             <View style={styles.transactionHeader}>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left' }]}>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 0.8 }]}>
                 Date
               </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-                Type
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center', flex: 1 }]}>
+                Money
               </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
-                Details
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 1.5 }]}>
+                Bullion
               </Text>
             </View>
 
@@ -807,6 +993,26 @@ export const CustomerListScreen: React.FC = () => {
           />
         )}
       </View>
+
+      {/* Delete Confirmation Alert */}
+      <CustomAlert
+        visible={deleteAlertVisible}
+        title={deleteAlertTitle}
+        message={deleteAlertMessage}
+        buttons={[
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: handleDeleteCancel,
+          },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: handleDeleteConfirm,
+          },
+        ]}
+        onDismiss={handleDeleteCancel}
+      />
     </SafeAreaView>
   );
 };

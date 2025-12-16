@@ -77,7 +77,7 @@ interface AppContextType {
   handleAddEntry: (entry: TransactionEntry) => void;
   handleEditEntry: (entryId: string) => void;
   handleDeleteEntry: (entryId: string) => void;
-  handleSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null) => Promise<void>;
+  handleSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null, note?: string) => Promise<void>;
   loadTransactionForEdit: (transactionId: string) => Promise<void>;
 }
 
@@ -253,7 +253,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   };
 
-  const handleSaveTransaction = async (receivedAmount: number = 0, discountExtraAmount: number = 0, saveDate?: Date | null) => {
+  const handleSaveTransaction = async (receivedAmount: number = 0, discountExtraAmount: number = 0, saveDate?: Date | null, note?: string) => {
     // Guard against concurrent saves
     if (isSavingTransaction) {
       return;
@@ -274,7 +274,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         receivedAmount,
         editingTransactionId || undefined,
         discountExtraAmount,
-        saveDate
+        saveDate,
+        note
       );
 
       if (result.success) {

@@ -49,6 +49,7 @@ export class DatabaseService {
           lastToLastGivenMoney REAL NOT NULL DEFAULT 0,
           settlementType TEXT NOT NULL CHECK(settlementType IN ('full', 'partial', 'none')),
           deleted_on DATE,
+          note TEXT,
           createdAt DATETIME NOT NULL,
           lastUpdatedAt DATETIME NOT NULL,
           FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE
@@ -172,6 +173,13 @@ export class DatabaseService {
       await db.runAsync(
         'INSERT OR IGNORE INTO base_inventory (id, gold999, gold995, silver, rani, rupu, money) VALUES (1, 0, 0, 0, 0, 0, 0)'
       );
+
+      // Add note column to transactions table if it doesn't exist
+      try {
+        await db.execAsync('ALTER TABLE transactions ADD COLUMN note TEXT;');
+      } catch (e) {
+        // Column likely already exists, ignore error
+      }
 
     } catch (error) {
       console.error('Error initializing database:', error);

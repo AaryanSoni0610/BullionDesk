@@ -132,7 +132,7 @@ export const HistoryScreen: React.FC = () => {
       setSharingTransactionId(transaction.id);
       
       // Wait for the shareable card to render (give React time to complete the render cycle)
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       if (!shareableCardRef.current) {
         setAlertTitle('Error');
@@ -707,22 +707,6 @@ export const HistoryScreen: React.FC = () => {
                     </View>
                   )}
                   
-                  {/* Show Rupu silver returns */}
-                  {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
-                    <>
-                      {entry.silverWeight && entry.silverWeight > 0 && (
-                        <View style={styles.entryRow}>
-                          <Text variant="bodySmall" style={[styles.entryType]}>
-                            ↗️ Silver
-                          </Text>
-                          <Text variant="bodySmall" style={[styles.entryDetails]}>
-                            {Math.floor(entry.silverWeight).toFixed(1)}g
-                          </Text>
-                        </View>
-                      )}
-                    </>
-                  )}
-                  
                 </React.Fragment>
               ))}
               
@@ -736,6 +720,21 @@ export const HistoryScreen: React.FC = () => {
                     </Text>
                     <Text variant="bodySmall" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
                       ₹{formatIndianNumber(Math.abs(transaction.total))}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {/* Note Display */}
+              {transaction.note && (
+                <>
+                  <Divider style={styles.totalDivider} />
+                  <View style={styles.noteRow}>
+                    <Text variant="bodySmall" style={styles.noteLabel}>
+                      Note:
+                    </Text>
+                    <Text variant="bodySmall" style={styles.noteText}>
+                      {transaction.note}
                     </Text>
                   </View>
                 </>
@@ -1132,21 +1131,7 @@ export const HistoryScreen: React.FC = () => {
                           </Text>
                         </View>
                       )}
-                      
-                      {entry.itemType === 'rupu' && entry.type === 'purchase' && entry.rupuReturnType === 'silver' && (
-                        <>
-                          {entry.silverWeight && entry.silverWeight > 0 && (
-                            <View style={styles.entryRow}>
-                              <Text variant="bodySmall" style={[styles.entryType]}>
-                                ↗️ Silver
-                              </Text>
-                              <Text variant="bodySmall" style={[styles.entryDetails]}>
-                                {Math.floor(entry.silverWeight).toFixed(1)}g
-                              </Text>
-                            </View>
-                          )}
-                        </>
-                      )}
+
                     </React.Fragment>
                   ))}
                   
@@ -1159,6 +1144,21 @@ export const HistoryScreen: React.FC = () => {
                         </Text>
                         <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
                           ₹{formatIndianNumber(Math.abs(transaction.total))}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                  
+                  {/* Note Display */}
+                  {transaction.note && (
+                    <>
+                      <Divider style={styles.totalDivider} />
+                      <View style={styles.noteRow}>
+                        <Text variant="bodySmall" style={styles.noteLabel}>
+                          Note:
+                        </Text>
+                        <Text variant="bodySmall" style={styles.noteText}>
+                          {transaction.note}
                         </Text>
                       </View>
                     </>
@@ -1410,6 +1410,21 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.colors.outline + '20',
     marginTop: theme.spacing.xs,
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingTop: theme.spacing.xs,
+    paddingBottom: theme.spacing.xs,
+  },
+  noteLabel: {
+    color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Roboto_500Medium',
+    flex: 1,
+  },
+  noteText: {
+    color: theme.colors.onSurface,
+    fontFamily: 'Roboto_400Regular',
   },
   transactionBalance: {
     fontFamily: 'Roboto_500Medium',

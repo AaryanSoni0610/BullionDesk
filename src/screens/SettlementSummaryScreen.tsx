@@ -28,11 +28,12 @@ interface SettlementSummaryScreenProps {
   onAddMoreEntry: () => void;
   onDeleteEntry: (entryId: string) => void;
   onEditEntry: (entryId: string) => void;
-  onSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null) => void;
+  onSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null, note?: string) => void;
   editingTransactionId?: string | null;
   lastGivenMoney?: number;
   transactionCreatedAt?: string | null;
   transactionLastUpdatedAt?: string | null;
+  initialNote?: string;
 }
 
 export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = ({
@@ -46,6 +47,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   editingTransactionId,
   lastGivenMoney = 0,
   transactionCreatedAt,
+  initialNote = '',
 }) => {
   const { pendingMoneyAmount, setPendingMoneyAmount, pendingMoneyType } = useAppContext();
   
@@ -67,6 +69,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   
   const [paymentError, setPaymentError] = useState('');
   const [discountExtra, setDiscountExtra] = useState('');
+  const [note, setNote] = useState(initialNote);
   const [isSaving, setIsSaving] = useState(false);
   const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
   const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
@@ -366,7 +369,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         saveDate.setHours(randomHour, randomMinute, 0, 0);
       }
       
-      await onSaveTransaction(effectiveReceived, discountExtraAmount, saveDate);
+      await onSaveTransaction(effectiveReceived, discountExtraAmount, saveDate, note);
     } catch (error) {
       console.error('Failed to save transaction:', error);
     } finally {
@@ -725,6 +728,16 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                       Clear
                     </Chip>
                   </View>
+
+                  {/* Note Input */}
+                  <TextInput
+                    label="Note"
+                    value={note}
+                    onChangeText={setNote}
+                    mode="outlined"
+                    style={{ marginTop: 6 }}
+                    placeholder="Add a note..."
+                  />
                 </View>
 
                 <Divider style={styles.totalDivider} />
@@ -857,12 +870,12 @@ const styles = StyleSheet.create({
   },
   sectionDivider: {
     marginVertical: theme.spacing.lg,
-    height: 2,
+    height: 1,
     backgroundColor: theme.colors.outline,
   },
   entryCard: {
-    marginBottom: theme.spacing.md,
     borderRadius: 12,
+    marginTop: theme.spacing.sm,
   },
   entryCardContent: {
     paddingVertical: theme.spacing.md,
@@ -888,9 +901,7 @@ const styles = StyleSheet.create({
   },
   editButton: {
     margin: 0,
-  },
-  deleteButton: {
-    margin: 0,
+    marginTop: -8,
   },
   entryDivider: {
     marginVertical: theme.spacing.sm,
@@ -903,12 +914,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto_500Medium',
   },
   summaryCard: {
-    marginBottom: theme.spacing.md,
     borderRadius: 12,
   },
   summaryTitle: {
     textAlign: 'left',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
     fontFamily: 'Roboto_700Bold',
   },
   customerHeaderRow: {
@@ -956,23 +966,22 @@ const styles = StyleSheet.create({
     marginVertical: theme.spacing.md,
   },
   totalCard: {
-    marginBottom: theme.spacing.md,
     borderRadius: 12,
   },
   totalSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.md,
   },
   totalAmount: {
     fontFamily: 'Roboto_700Bold',
   },
   totalDivider: {
     marginVertical: theme.spacing.md,
+    height: 1,
   },
   receivedInput: {
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
   discountInput: {
     marginBottom: theme.spacing.sm,

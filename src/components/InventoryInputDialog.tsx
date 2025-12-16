@@ -23,6 +23,7 @@ interface InventoryInputDialogProps {
   onRadioChange?: (key: string, value: string) => void;
   requireAtLeastOneNumeric?: boolean;
   allowDefaults?: boolean; // New prop to allow proceeding with default values
+  disableRequiredValidation?: boolean; // New prop to disable "Required" validation for empty fields
 }
 
 export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
@@ -35,6 +36,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   onRadioChange,
   requireAtLeastOneNumeric = false,
   allowDefaults = false, // Default to false to maintain existing behavior
+  disableRequiredValidation = false, // Default to false
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
@@ -118,18 +120,22 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
           // Numeric validation for price inputs
           const numValue = parseFloat(value);
           if (!value.trim()) {
-            newErrors[input.key] = 'Required';
-            hasErrors = true;
+            if (!disableRequiredValidation) {
+                newErrors[input.key] = 'Required';
+                hasErrors = true;
+            }
           } else if (isNaN(numValue)) {
             newErrors[input.key] = 'Must be a number';
             hasErrors = true;
-          } else if (numValue < 0) {
-            newErrors[input.key] = 'Must be positive';
-            hasErrors = true;
+          } else if (numValue < 0 && !disableRequiredValidation) {
+             // Only enforce positive values if validation is enabled
+             // For adjustments (disableRequiredValidation=true), negative values are allowed
+             newErrors[input.key] = 'Must be positive';
+             hasErrors = true;
           }
         } else {
           // Text validation for name inputs
-          if (!value.trim()) {
+          if (!value.trim() && !disableRequiredValidation) {
             newErrors[input.key] = 'Required';
             hasErrors = true;
           }

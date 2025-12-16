@@ -24,12 +24,13 @@ export class TransactionService {
         lastGivenMoney: number;
         lastToLastGivenMoney: number;
         settlementType: string;
+        note?: string;
         createdAt: string;
         lastUpdatedAt: string;
       }>('SELECT * FROM transactions WHERE deleted_on IS NULL ORDER BY date DESC');
 
       const result: Transaction[] = [];
-      
+
       for (const trans of transactions) {
         // Get entries for this transaction
         const entries = await DatabaseService.getAllAsyncBatch<any>(
@@ -69,6 +70,7 @@ export class TransactionService {
           lastGivenMoney: trans.lastGivenMoney,
           lastToLastGivenMoney: trans.lastToLastGivenMoney,
           settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+          note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
         });
@@ -131,6 +133,7 @@ export class TransactionService {
           lastGivenMoney: trans.lastGivenMoney,
           lastToLastGivenMoney: trans.lastToLastGivenMoney,
           settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+          note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
         });
@@ -225,6 +228,7 @@ export class TransactionService {
           lastGivenMoney: trans.lastGivenMoney,
           lastToLastGivenMoney: trans.lastToLastGivenMoney,
           settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+          note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
         });
@@ -286,6 +290,7 @@ export class TransactionService {
         lastGivenMoney: trans.lastGivenMoney,
         lastToLastGivenMoney: trans.lastToLastGivenMoney,
         settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+        note: trans.note,
         createdAt: trans.createdAt,
         lastUpdatedAt: trans.lastUpdatedAt,
       };
@@ -356,6 +361,7 @@ export class TransactionService {
           lastGivenMoney: trans.lastGivenMoney,
           lastToLastGivenMoney: trans.lastToLastGivenMoney,
           settlementType: trans.settlementType as 'full' | 'partial' | 'none',
+          note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
         });
@@ -386,7 +392,8 @@ export class TransactionService {
     receivedAmount: number = 0,
     existingTransactionId?: string,
     discountExtraAmount: number = 0,
-    saveDate?: Date | null
+    saveDate?: Date | null,
+    note?: string
   ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
     const db = DatabaseService.getDatabase();
     
@@ -427,8 +434,8 @@ export class TransactionService {
         finalBalance = receivedAmount - netAmount + discountExtraAmount;
       }
 
-      // Special case for 'adjust' customer - always zero balance
-      if (customer.name.toLowerCase() === 'adjust') {
+      // Special case for 'adjust' and 'expense(kharch)' customers - always zero balance
+      if (customer.name.toLowerCase() === 'adjust' || customer.name.toLowerCase() === 'expense(kharch)') {
         finalBalance = 0;
       }
 
@@ -503,21 +510,25 @@ export class TransactionService {
           await db.runAsync('DELETE FROM transaction_entries WHERE transaction_id = ?', [transactionId]);
 
           // Update transaction
+          // Only update date if saveDate is explicitly provided
+          const newDate = saveDate ? transactionDate : existingTransaction.date;
+          
           await db.runAsync(
             `UPDATE transactions 
              SET customerName = ?, date = ?, discountExtraAmount = ?, total = ?, 
                  amountPaid = ?, lastGivenMoney = ?, lastToLastGivenMoney = ?, 
-                 settlementType = ?, lastUpdatedAt = ?
+                 settlementType = ?, note = ?, lastUpdatedAt = ?
              WHERE id = ?`,
             [
               customer.name.trim(),
-              transactionDate,
+              newDate,
               discountExtraAmount,
               netAmount,
               receivedAmount,
               receivedAmount,
               previousAmountPaid,
               finalBalance === 0 ? 'full' : 'partial',
+              note || null,
               now,
               transactionId
             ]
@@ -555,8 +566,8 @@ export class TransactionService {
           await db.runAsync(
             `INSERT INTO transactions 
              (id, deviceId, customerId, customerName, date, discountExtraAmount, total, 
-              amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, createdAt, lastUpdatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, note, createdAt, lastUpdatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               transactionId,
               deviceId,
@@ -569,6 +580,7 @@ export class TransactionService {
               receivedAmount,
               0,
               finalBalance === 0 ? 'full' : 'partial',
+              note || null,
               transactionDate,
               now
             ]
@@ -627,6 +639,9 @@ export class TransactionService {
           }
 
           // Insert entry
+          // Preserve original creation date for existing entries during update
+          const entryCreatedAt = (isUpdate && entry.createdAt) ? entry.createdAt : (isUpdate ? now : entryTimestamp);
+
           await db.runAsync(
             `INSERT INTO transaction_entries 
              (id, transaction_id, type, itemType, weight, price, touch, cut, extraPerKg, 
@@ -648,7 +663,7 @@ export class TransactionService {
               entry.metalOnly ? 1 : 0,
               stockId || null,
               entry.subtotal,
-              isUpdate ? now : entryTimestamp,
+              entryCreatedAt,
               now
             ]
           );
@@ -660,7 +675,9 @@ export class TransactionService {
         
         if (deltaAmount !== 0) {
           let ledgerTimestamp = transactionDate;
-          if (!isMoneyOnlyTransaction) {
+          // Only align ledger timestamp with entries for NEW transactions
+          // For updates, we want the ledger entry to reflect the payment time (now)
+          if (!isUpdate && !isMoneyOnlyTransaction) {
             const entryTimestamps = entries
               .map(entry => entry.createdAt)
               .filter((timestamp): timestamp is string => timestamp !== undefined)
@@ -764,7 +781,6 @@ export class TransactionService {
         return false;
       }
 
-
       // Check if this is a money-only transaction
       const isMoneyOnly = transaction.entries.length === 0;
       
@@ -781,6 +797,11 @@ export class TransactionService {
         const discountExtraAmount = transaction.discountExtraAmount;
         // Inverted formula: receivedAmount - netAmount + discount
         balanceEffect = receivedAmount - netAmount + discountExtraAmount;
+      }
+
+      // Special case for 'adjust' and 'expense(kharch)' customers - always zero balance
+      if (customer.name.toLowerCase() === 'adjust' || customer.name.toLowerCase() === 'expense(kharch)') {
+        balanceEffect = 0;
       }
 
       // Reverse metal balances for metal-only entries
@@ -858,6 +879,7 @@ export class TransactionService {
         lastGivenMoney: number;
         lastToLastGivenMoney: number;
         settlementType: string;
+        note: string | null;
         deleted_on: string;
         createdAt: string;
         lastUpdatedAt: string;
@@ -904,6 +926,7 @@ export class TransactionService {
           lastToLastGivenMoney: trans.lastToLastGivenMoney,
           settlementType: trans.settlementType as 'full' | 'partial' | 'none',
           deleted_on: trans.deleted_on,
+          note: trans.note || undefined,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
         });

@@ -10,13 +10,14 @@ import { useAppContext } from '../context/AppContext';
 import { CustomerService } from '../services/customer.service';
 import { InventoryService } from '../services/inventory.service';
 import { DatabaseService } from '../services/database.sqlite';
+import { RaniRupaStockService } from '../services/raniRupaStock.service';
 import { NotificationService } from '../services/notificationService';
 import { BackupService } from '../services/backupService';
 import { EncryptionService } from '../services/encryptionService';
 import { EncryptionKeyDialog } from '../components/EncryptionKeyDialog';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 import CustomAlert from '../components/CustomAlert';
-import { formatIndianNumber, formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
+import { formatIndianNumber, formatPureGoldPrecise, formatPureSilver, customFormatPureSilver } from '../utils/formatting';
 
 export const SettingsScreen: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
@@ -29,6 +30,8 @@ export const SettingsScreen: React.FC = () => {
   const [keyDialogCallback, setKeyDialogCallback] = React.useState<((key: string | null) => void) | null>(null);
   const [customers, setCustomers] = React.useState<any[]>([]);
   const [baseInventory, setBaseInventory] = React.useState<any>(null);
+  const [raniTotal, setRaniTotal] = React.useState(0);
+  const [rupuTotal, setRupuTotal] = React.useState(0);
   const [openingBalanceEffects, setOpeningBalanceEffects] = React.useState<any>(null);
   const [isLoadingCustomers, setIsLoadingCustomers] = React.useState(true);
   const [isLoadingInventory, setIsLoadingInventory] = React.useState(true);
@@ -56,15 +59,24 @@ export const SettingsScreen: React.FC = () => {
         setAutoBackupEnabled(backupEnabled);
 
         // Load customers and base inventory
-        const [customersData, inventoryData, effectsData] = await Promise.all([
+        const [customersData, inventoryData, effectsData, raniStock, rupuStock] = await Promise.all([
           CustomerService.getAllCustomers(),
           InventoryService.getBaseInventory(),
-          InventoryService.calculateOpeningBalanceEffects()
+          InventoryService.calculateOpeningBalanceEffects(),
+          RaniRupaStockService.getStockByType('rani'),
+          RaniRupaStockService.getStockByType('rupu')
         ]);
         
         setCustomers(customersData);
         setBaseInventory(inventoryData);
         setOpeningBalanceEffects(effectsData);
+
+        // Calculate Rani/Rupu totals
+        const raniPure = raniStock.reduce((sum, item) => sum + ((item.weight * item.touch) / 100), 0);
+        const rupuPure = rupuStock.reduce((sum, item) => sum + customFormatPureSilver(item.weight, item.touch), 0);
+        
+        setRaniTotal(raniPure);
+        setRupuTotal(rupuPure);
         
         // Don't auto-initialize directories here
         // They will be created on demand when needed
@@ -147,12 +159,12 @@ export const SettingsScreen: React.FC = () => {
       {
         key: 'gold999',
         label: 'Gold 999 (g)',
-        value: (0).toFixed(3),
+        value: (baseInventory?.gold999 || 0).toFixed(3),
       },
       {
         key: 'gold995',
         label: 'Gold 995 (g)',
-        value: (0).toFixed(3),
+        value: (baseInventory?.gold995 || 0).toFixed(3),
       }
     ]);
     setCollectedInventoryData({});
@@ -170,7 +182,7 @@ export const SettingsScreen: React.FC = () => {
         {
           key: 'silver',
           label: 'Base Silver (g)',
-          value: (updatedData.silver !== undefined ? updatedData.silver : 0).toFixed(1),
+          value: (updatedData.silver !== undefined ? updatedData.silver : (baseInventory?.silver || 0)).toFixed(1),
         }
       ]);
     } else if (inventoryDialogStep === 'silver') {
@@ -180,7 +192,7 @@ export const SettingsScreen: React.FC = () => {
         {
           key: 'money',
           label: 'Money (₹)',
-          value: (updatedData.money !== undefined ? updatedData.money : 0).toString(),
+          value: (updatedData.money !== undefined ? updatedData.money : (baseInventory?.money || 0)).toString(),
         }
       ]);
     } else if (inventoryDialogStep === 'money') {
@@ -196,9 +208,11 @@ export const SettingsScreen: React.FC = () => {
         money: updatedData.money !== undefined ? updatedData.money : 0
       };
 
-      InventoryService.setBaseInventory(finalInventory).then(success => {
+      InventoryService.setBaseInventory(finalInventory).then(async success => {
         if (success) {
-          setBaseInventory(finalInventory);
+          // Fetch fresh data from DB to ensure consistency and correct types
+          const freshInventory = await InventoryService.getBaseInventory();
+          setBaseInventory(freshInventory);
           showAlert('Success', 'Base inventory has been set successfully.');
         } else {
           showAlert('Error', 'Failed to set base inventory.');
@@ -634,7 +648,7 @@ export const SettingsScreen: React.FC = () => {
             left={props => <List.Icon {...props} icon="package-variant-closed" />}
             onPress={() => {
               if (baseInventory) {
-                let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(baseInventory.rani)}g\nRupu: ${formatPureSilver(baseInventory.rupu)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
+                let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(raniTotal)}g\nRupu: ${formatPureSilver(rupuTotal)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
                 
                 showAlert(
                   'Base Inventory',
@@ -878,7 +892,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v5.2.6
+        message={`BullionDesk v6.2.6
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

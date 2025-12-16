@@ -27,6 +27,7 @@ export interface Transaction {
   lastToLastGivenMoney: number; // Previous total paid (for calculating delta)
   settlementType: 'full' | 'partial' | 'none';
   deleted_on?: string; // Date when transaction was deleted (soft delete)
+  note?: string; // Optional note for the transaction
   createdAt: string; // ISO datetime when transaction was created
   lastUpdatedAt: string; // ISO datetime when transaction was last updated
 }

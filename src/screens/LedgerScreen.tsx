@@ -341,12 +341,11 @@ export const LedgerScreen: React.FC = () => {
       if (hasMetalAdjustments) {
         // Create transaction entries
         const entries: any[] = [];
-        let entryId = 1;
 
         // Gold 999 adjustment
         if (gold999Value !== 0) {
           entries.push({
-            id: `entry_${entryId++}`,
+            // Let saveTransaction generate unique ID
             type: gold999Value > 0 ? 'purchase' : 'sell',
             itemType: 'gold999',
             weight: Math.abs(gold999Value),
@@ -360,7 +359,7 @@ export const LedgerScreen: React.FC = () => {
         // Gold 995 adjustment
         if (gold995Value !== 0) {
           entries.push({
-            id: `entry_${entryId++}`,
+            // Let saveTransaction generate unique ID
             type: gold995Value > 0 ? 'purchase' : 'sell',
             itemType: 'gold995',
             weight: Math.abs(gold995Value),
@@ -374,7 +373,7 @@ export const LedgerScreen: React.FC = () => {
         // Silver adjustment
         if (silverValue !== 0) {
           entries.push({
-            id: `entry_${entryId++}`,
+            // Let saveTransaction generate unique ID
             type: silverValue > 0 ? 'purchase' : 'sell',
             itemType: 'silver',
             weight: Math.abs(silverValue),
@@ -408,7 +407,7 @@ export const LedgerScreen: React.FC = () => {
 
         const entriesNew: any[] = [];
         entriesNew.push({
-          id: `entry_${Date.now()}`,
+          // Let saveTransaction generate unique ID
           type: 'money', // Correct type for money entries
           moneyType, // 'receive' or 'give'
           amount, // Raw amount value
@@ -543,7 +542,9 @@ export const LedgerScreen: React.FC = () => {
       });
     });
 
-    const netBalance = customers.reduce((sum, customer) => sum + customer.balance, 0);
+    const netBalance = customers
+      .filter(c => c.name !== 'Adjust' && c.name !== 'Expense(Kharch)')
+      .reduce((sum, customer) => sum + customer.balance, 0);
     
     // Calculate inventory totals (excluding rani from gold and rupu from silver)
     goldInventory.total = goldInventory.gold999 + goldInventory.gold995;
@@ -599,8 +600,8 @@ export const LedgerScreen: React.FC = () => {
         LedgerService.getLedgerEntriesByDateRange(startDateStr, endDateStr),
         TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
         LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
-        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr, ['gold999', 'gold995', 'rani']),
-        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr, ['silver', 'rupu']),
+        TransactionService.getTransactionsByDateRange(startDateStr, endDateStr, ['gold999', 'gold995', 'rani']),
+        TransactionService.getTransactionsByDateRange(startDateStr, endDateStr, ['silver', 'rupu']),
         RaniRupaStockService.getStockByType('rani'),
         RaniRupaStockService.getStockByType('rupu')
       ]);
@@ -1105,7 +1106,7 @@ export const LedgerScreen: React.FC = () => {
                   weight: extEntry.actualGoldGiven,
                   subtotal: 0 // Not shown in subledger
                 },
-                date: transaction.date
+                date: extEntry.createdAt || transaction.date
               });
             }
           }
@@ -1125,7 +1126,7 @@ export const LedgerScreen: React.FC = () => {
                     weight: extEntry.silverWeight,
                     subtotal: 0
                   },
-                  date: transaction.date
+                  date: extEntry.createdAt || transaction.date
                 });
               }
             }
@@ -1138,7 +1139,7 @@ export const LedgerScreen: React.FC = () => {
                 transactionId: transaction.id,
                 customerName,
                 entry,
-                date: transaction.date
+                date: entry.createdAt || transaction.date
               });
             }
           }
@@ -1649,6 +1650,7 @@ export const LedgerScreen: React.FC = () => {
         onCancel={() => setShowAdjustAlert(false)}
         onSubmit={handleInventoryAdjustment}
         requireAtLeastOneNumeric={true}
+        disableRequiredValidation={true}
       />
     </SafeAreaView>
   );

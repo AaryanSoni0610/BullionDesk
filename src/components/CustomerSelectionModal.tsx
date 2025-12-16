@@ -22,7 +22,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Customer } from '../types';
 import { theme } from '../theme';
 import { CustomerService } from '../services/customer.service';
-import { formatIndianNumber } from '../utils/formatting';
+import { formatIndianNumber, formatPureGold, formatPureSilver } from '../utils/formatting';
 
 interface CustomerSelectionModalProps {
   visible: boolean;
@@ -118,6 +118,18 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   useEffect(() => {
     const loadCustomers = async () => {
       try {
+        // Ensure 'Expense(Kharch)' customer exists
+        let expenseCustomer = await CustomerService.getCustomerByName('Expense(Kharch)');
+        if (!expenseCustomer) {
+             expenseCustomer = {
+                id: `expense_${Date.now()}`,
+                name: 'Expense(Kharch)',
+                balance: 0,
+                metalBalances: { gold999: 0, gold995: 0, rani: 0, silver: 0, rupu: 0 }
+             };
+             await CustomerService.saveCustomer(expenseCustomer);
+        }
+
         // Load all customers excluding 'adjust' at database level
         const allCustomers = await CustomerService.getAllCustomersExcluding(['adjust']);
         setCustomers(allCustomers);
@@ -229,16 +241,30 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     };
     
     Object.entries(metalBalances).forEach(([type, balance]) => {
-      if (balance && Math.abs(balance) > 0.001) {
-        const isGold = type.includes('gold') || type === 'rani';
-        const displayName = metalTypeNames[type] || type;
-        const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
-        
-        if (balance > 0) {
-          balanceItems.push(`${displayName} ${formattedBalance}g`);
-        } else {
-          debtItems.push(`${displayName} ${formattedBalance}g`);
-        }
+      if (typeof balance !== 'number' || Math.abs(balance) <= 0.001) return;
+
+      const displayName = (metalTypeNames as any)[type] || type;
+      let formattedBalance = '';
+
+      if (type === 'rani') {
+        // Use pure gold formatter and show 3 decimal places
+        const pure = formatPureGold(Math.abs(balance));
+        formattedBalance = pure.toFixed(3);
+      } else if (type === 'rupu') {
+        // Use pure silver formatter and show 1 decimal place as requested
+        const pure = formatPureSilver(Math.abs(balance));
+        formattedBalance = pure.toFixed(1);
+      } else if (type.includes('gold')) {
+        formattedBalance = Math.abs(balance).toFixed(3);
+      } else {
+        // silver and other types
+        formattedBalance = Math.floor(Math.abs(balance)).toString();
+      }
+
+      if (balance > 0) {
+        balanceItems.push(`${displayName} ${formattedBalance}g`);
+      } else {
+        debtItems.push(`${displayName} ${formattedBalance}g`);
       }
     });
     

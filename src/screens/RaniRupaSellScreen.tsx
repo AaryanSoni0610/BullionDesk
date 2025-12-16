@@ -42,6 +42,7 @@ export const RaniRupaSellScreen: React.FC = () => {
   const [selectedType, setSelectedType] = useState<'rani' | 'rupu'>('rani');
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
   const [extraWeight, setExtraWeight] = useState('');
   const [cutValue, setCutValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -152,6 +153,7 @@ export const RaniRupaSellScreen: React.FC = () => {
 
       setInventoryItems(items);
       setSelectedItems(new Set());
+      setSelectAll(false);
     } catch (error) {
       console.error('Error loading inventory items:', error);
       showAlert('Error', 'Failed to load inventory items');
@@ -184,6 +186,25 @@ export const RaniRupaSellScreen: React.FC = () => {
       newSelected.add(itemId);
     }
     setSelectedItems(newSelected);
+    
+    // Update selectAll state based on whether all items are selected
+    if (inventoryItems.length > 0 && newSelected.size === inventoryItems.length) {
+      setSelectAll(true);
+    } else {
+      setSelectAll(false);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    const newSelectAll = !selectAll;
+    setSelectAll(newSelectAll);
+    
+    if (newSelectAll) {
+      const allIds = new Set(inventoryItems.map(item => item.id));
+      setSelectedItems(allIds);
+    } else {
+      setSelectedItems(new Set());
+    }
   };
 
   const calculateTotalPureWeight = () => {
@@ -462,6 +483,19 @@ export const RaniRupaSellScreen: React.FC = () => {
           ]}
           style={styles.segmentedButtons}
         />
+        
+        {/* Select All Checkbox */}
+        {inventoryItems.length > 0 && (
+          <View style={styles.selectAllContainer}>
+            <Checkbox
+              status={selectAll ? 'checked' : 'unchecked'}
+              onPress={toggleSelectAll}
+            />
+            <Text onPress={toggleSelectAll} style={styles.selectAllText}>
+              Select All {selectedType === 'rani' ? 'Rani' : 'Rupu'} Items
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Items List */}
@@ -586,6 +620,17 @@ const styles = StyleSheet.create({
   },
   segmentedButtons: {
     marginBottom: 8,
+  },
+  selectAllContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: -16,
+    marginLeft: -6,
+  },
+  selectAllText: {
+    marginLeft: 8,
+    fontFamily: 'Roboto_500Medium',
   },
   itemsList: {
     flex: 1,

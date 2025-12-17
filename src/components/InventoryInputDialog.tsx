@@ -118,20 +118,18 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
       if (input.type === 'text') {
         if (input.keyboardType === 'numeric') {
           // Numeric validation for price inputs
-          const numValue = parseFloat(value);
-          if (!value.trim()) {
-            if (!disableRequiredValidation) {
-                newErrors[input.key] = 'Required';
-                hasErrors = true;
+          // Only validate if there's a value (allow empty when disableRequiredValidation is true)
+          if (value.trim()) {
+            const numValue = parseFloat(value);
+            if (isNaN(numValue)) {
+              newErrors[input.key] = 'Must be a number';
+              hasErrors = true;
             }
-          } else if (isNaN(numValue)) {
-            newErrors[input.key] = 'Must be a number';
+            // Allow negative values when disableRequiredValidation is true (for adjustments)
+          } else if (!disableRequiredValidation) {
+            // Only mark as required if disableRequiredValidation is false
+            newErrors[input.key] = 'Required';
             hasErrors = true;
-          } else if (numValue < 0 && !disableRequiredValidation) {
-             // Only enforce positive values if validation is enabled
-             // For adjustments (disableRequiredValidation=true), negative values are allowed
-             newErrors[input.key] = 'Must be positive';
-             hasErrors = true;
           }
         } else {
           // Text validation for name inputs
@@ -142,7 +140,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
         }
       } else {
         // For radio and select inputs
-        if (!value.trim()) {
+        if (!value.trim() && !disableRequiredValidation) {
           newErrors[input.key] = 'Required';
           hasErrors = true;
         }
@@ -150,10 +148,11 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
     });
 
     // Check if at least one numeric field has a value when required
-    if (requireAtLeastOneNumeric) {
+    if (requireAtLeastOneNumeric && !hasErrors) {
       const hasAtLeastOneNumeric = inputs.some(input => {
         if (input.type === 'text' && input.keyboardType === 'numeric') {
           const value = values[input.key] || '';
+          if (!value.trim()) return false;
           const numValue = parseFloat(value);
           return !isNaN(numValue) && numValue !== 0;
         }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -111,9 +111,11 @@ export const RaniRupaSellScreen: React.FC = () => {
   };
 
   // Load inventory items based on selected type
-  useEffect(() => {
-    loadInventoryItems();
-  }, [selectedType]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInventoryItems();
+    }, [selectedType])
+  );
 
   // Reset cut value when switching away from rani
   useEffect(() => {

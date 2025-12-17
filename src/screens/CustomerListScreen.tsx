@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -43,7 +43,7 @@ export const CustomerListScreen: React.FC = () => {
   const [deleteAlertMessage, setDeleteAlertMessage] = useState('');
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
 
-  const { navigateToSettings } = useAppContext();
+  const { navigateToSettings, showAlert } = useAppContext();
 
   // Debounced search function with local filtering
   const debouncedSearch = useCallback(
@@ -61,10 +61,21 @@ export const CustomerListScreen: React.FC = () => {
     [customers] // Depend on customers so it updates when customers load
   );
 
-  // Load all customers initially
+  const expandedCardsRef = useRef(expandedCards);
   useEffect(() => {
-    loadAllCustomers();
-  }, []);
+    expandedCardsRef.current = expandedCards;
+  }, [expandedCards]);
+
+  // Load all customers on focus and refresh expanded cards
+  useFocusEffect(
+    useCallback(() => {
+      loadAllCustomers();
+      // Refresh ledger data for expanded cards
+      expandedCardsRef.current.forEach(id => {
+        fetchCustomerLedger(id);
+      });
+    }, [])
+  );
 
   const loadAllCustomers = async () => {
     try {
@@ -496,9 +507,9 @@ export const CustomerListScreen: React.FC = () => {
                 
                 let moneyHtml = '';
                 if (entry.amountReceived > 0) {
-                    moneyHtml = `<span style="color: #2e7d32;">₹${formatIndianNumber(entry.amountReceived)}</span>`; // Green
+                    moneyHtml = `<span style="color: #2e7d32;">↙️ ₹${formatIndianNumber(entry.amountReceived)}</span>`; // Green
                 } else if (entry.amountGiven > 0) {
-                    moneyHtml = `<span style="color: #1976d2;">₹${formatIndianNumber(entry.amountGiven)}</span>`; // Blue
+                    moneyHtml = `<span style="color: #1976d2;">↗️ ₹${formatIndianNumber(entry.amountGiven)}</span>`; // Blue
                 }
 
                 const metalEntries = entry.entries.filter(e => e.type !== 'money');
@@ -611,14 +622,8 @@ export const CustomerListScreen: React.FC = () => {
 
   const fetchCustomerLedger = async (customerId: string): Promise<LedgerEntry[]> => {
     const now = Date.now();
-    const CACHE_DURATION = 60000; // 1 minute
-
-    // Check cache first
-    const cached = ledgerCache.get(customerId);
-    if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-      return cached.data;
-    }
-
+    // Removed cache check to ensure fresh data
+    
     try {
       // Fetch both ledger entries and transactions for this customer directly from database
       const [moneyLedgerEntries, customerTransactions] = await Promise.all([
@@ -693,11 +698,9 @@ export const CustomerListScreen: React.FC = () => {
 
   const handleDeleteCustomer = async (customer: Customer) => {
     try {
-      // Check if customer has transactions
-      const hasTransactions = await hasCustomerTransactions(customer.id);
-      
-      if (hasTransactions) {
-        setError('Cannot delete customer with existing transactions');
+      // Prevent deletion of Expense(Kharch) account
+      if (customer.name === 'Expense(Kharch)') {
+        showAlert('Cannot Delete', 'The Expense(Kharch) account is a default account and cannot be deleted.');
         return;
       }
 
@@ -760,13 +763,16 @@ export const CustomerListScreen: React.FC = () => {
     // Money Column Logic
     let moneyText = '';
     let moneyColor = theme.colors.onSurface;
+    let moneyFlowArrow = '';
     
     if (entry.amountReceived > 0) {
-        moneyText = `₹${formatIndianNumber(entry.amountReceived)}`;
-        moneyColor = theme.colors.sellColor; // Green
+      moneyText = `₹${formatIndianNumber(entry.amountReceived)}`;
+      moneyColor = theme.colors.sellColor; // Green
+      moneyFlowArrow = '↙️';
     } else if (entry.amountGiven > 0) {
-        moneyText = `₹${formatIndianNumber(entry.amountGiven)}`;
-        moneyColor = theme.colors.primary; // Blue
+      moneyText = `₹${formatIndianNumber(entry.amountGiven)}`;
+      moneyColor = theme.colors.primary; // Blue
+      moneyFlowArrow = '↗️';
     }
 
     // Bullion Column Logic
@@ -836,16 +842,16 @@ export const CustomerListScreen: React.FC = () => {
     return (
       <View style={styles.transactionRow}>
         <View style={[styles.transactionCell, { flex: 0.8 }]}> 
-          <Text variant="bodyMedium" style={styles.transactionDate}>
+          <Text variant="bodySmall" style={styles.transactionDate}>
             {date}
           </Text>
         </View>
         <View style={[styles.transactionCell, { flex: 1 }]}>
-          <Text variant="bodyMedium" style={[styles.transactionAmount, { color: moneyColor, textAlign: 'center' }]}>
-            {moneyText}
+          <Text variant="bodySmall" style={[styles.transactionAmount, { color: moneyColor, textAlign: 'center' }]}>
+            {moneyFlowArrow} {moneyText}
           </Text>
         </View>
-        <View style={[styles.transactionCell, { flex: 1.5 }]}>
+        <View style={[styles.transactionCell, { flex: 1 }]}>
             {bullionEntries}
         </View>
       </View>
@@ -907,10 +913,10 @@ export const CustomerListScreen: React.FC = () => {
               <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 0.8 }]}>
                 Date
               </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center', flex: 1 }]}>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center', flex: 1, paddingRight: 10 }]}>
                 Money
               </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 1.5 }]}>
+              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 1 }]}>
                 Bullion
               </Text>
             </View>

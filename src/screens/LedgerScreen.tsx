@@ -18,7 +18,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullDate, formatFullTime, customFormatPureSilver, formatPureSilver } from '../utils/formatting';
+import { formatWeight, formatCurrency, formatPureGoldPrecise, formatFullTime, customFormatPureSilver, formatPureSilver } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
@@ -157,9 +157,11 @@ export const LedgerScreen: React.FC = () => {
     // Don't set selectedPeriod to 'custom' until date is actually selected
   };
 
-  useEffect(() => {
-    loadInventoryData();
-  }, [selectedPeriod, customDate, showOnlyRaniRupu, selectedInventory]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInventoryData();
+    }, [selectedPeriod, customDate, showOnlyRaniRupu, selectedInventory])
+  );
 
   // Reset filter when switching subledgers
   useEffect(() => {
@@ -222,11 +224,6 @@ export const LedgerScreen: React.FC = () => {
           upToEndDate = endDate;
       }
 
-      // Use database-level filtering for better performance
-      // Pre-filter transactions by itemType based on selected inventory
-      let goldTransactions: Transaction[] = [];
-      let silverTransactions: Transaction[] = [];
-      
       const basePromises: Promise<any>[] = [
         TransactionService.getTransactionsByDateRange(startDate, endDate),
         CustomerService.getAllCustomers(),
@@ -420,7 +417,7 @@ export const LedgerScreen: React.FC = () => {
         const resultNew = await TransactionService.saveTransaction(
           adjustCustomer,
           entriesNew,
-          0, // receivedAmount
+          moneyValue, // receivedAmount - Pass the money value to create ledger entry
           undefined, // existingTransactionId
           0 // discountExtraAmount
         );
@@ -636,8 +633,8 @@ export const LedgerScreen: React.FC = () => {
               date: transaction.date
             });
           }
-          // Filter based on showOnlyRaniRupu state
-          if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
+          // Filter based on showOnlyRaniRupu state - MODIFIED: Always include all types in PDF
+          // if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
             // Filter out 0 weight entries
             if ((extEntry.weight || 0) > 0) {
               goldEntries.push({
@@ -647,7 +644,7 @@ export const LedgerScreen: React.FC = () => {
                 date: transaction.date
               });
             }
-          }
+          // }
         });
       });
 
@@ -672,8 +669,8 @@ export const LedgerScreen: React.FC = () => {
               });
             }
           }
-          // Filter based on showOnlyRaniRupu state
-          if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
+          // Filter based on showOnlyRaniRupu state - MODIFIED: Always include all types in PDF
+          // if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
             // Filter out 0 weight entries
             if ((extEntry.weight || 0) > 0) {
               silverEntries.push({
@@ -683,7 +680,7 @@ export const LedgerScreen: React.FC = () => {
                 date: transaction.date
               });
             }
-          }
+          // }
         });
       });
 
@@ -898,7 +895,7 @@ export const LedgerScreen: React.FC = () => {
                     const touchNum = entry.touch || 0;
                     const weightNum = entry.weight || 0;
                     const pureGoldPrecise = (weightNum * touchNum) / 100;
-                    return `${weightNum.toFixed(3)}g, ${touchNum}%, ${formatPureGoldPrecise(pureGoldPrecise)}g`;
+                    return `${weightNum.toFixed(3)}g - ${touchNum.toFixed(2)}% - ${formatPureGoldPrecise(pureGoldPrecise).toFixed(3)}g`;
                   }
                   return `${formatWeight(weight, false)}`;
                 };
@@ -952,8 +949,7 @@ export const LedgerScreen: React.FC = () => {
                   if (entry.itemType === 'rupu') {
                     const touchNum = entry.touch || 0;
                     const weightNum = entry.weight || 0;
-                    const pureSilverPrecise = (weightNum * touchNum) / 100;
-                    return `${weightNum.toFixed(1)}g, ${touchNum}%, ${pureSilverPrecise.toFixed(1)}g`;
+                    return `${weightNum.toFixed(1)}g - ${touchNum.toFixed(2)}% - ${customFormatPureSilver(weightNum, touchNum).toFixed(1)}g`;
                   }
                   return `${formatWeight(weight, true)}`;
                 };
@@ -1078,8 +1074,107 @@ export const LedgerScreen: React.FC = () => {
           });
         }
       });
-      
+
     } else {
+      // Add opening stock entry for gold and silver subledgers (not for rani/rupu)
+      if (inventoryData && !showOnlyRaniRupu) {
+        // Calculate opening balances by reversing transactions in the current period
+        const goldOpeningBalances = {
+          gold999: inventoryData.goldInventory.gold999,
+          gold995: inventoryData.goldInventory.gold995
+        };
+        
+        const silverOpeningBalances = {
+          silver: inventoryData.silverInventory.silver
+        };
+
+        // Iterate through filtered transactions to reverse their effect
+        filteredTransactions.forEach(transaction => {
+          transaction.entries.forEach(entry => {
+            const extEntry = entry as ExtendedTransactionEntry;
+            const isPurchase = extEntry.type === 'purchase';
+            
+            // Handle Gold
+            if (selectedInventory === 'gold') {
+              const weight = extEntry.pureWeight || extEntry.weight || 0;
+              
+              if (extEntry.itemType === 'gold999') {
+                if (isPurchase) {
+                  goldOpeningBalances.gold999 -= weight;
+                } else { // sell
+                  goldOpeningBalances.gold999 += weight;
+                }
+              } else if (extEntry.itemType === 'gold995') {
+                if (isPurchase) {
+                  goldOpeningBalances.gold995 -= weight;
+                } else { // sell
+                  goldOpeningBalances.gold995 += weight;
+                }
+              } else if (extEntry.itemType === 'rani' && isPurchase && extEntry.actualGoldGiven) {
+                // Rani purchase with Gold 999 return (exchange)
+                // The Gold 999 was given (sold), so we add it back to opening balance
+                goldOpeningBalances.gold999 += extEntry.actualGoldGiven;
+              }
+            }
+            
+            // Handle Silver
+            if (selectedInventory === 'silver') {
+              const weight = extEntry.pureWeight || extEntry.weight || 0;
+              
+              if (extEntry.itemType === 'silver') {
+                if (isPurchase) {
+                  silverOpeningBalances.silver -= weight;
+                } else { // sell
+                  silverOpeningBalances.silver += weight;
+                }
+              } else if (extEntry.itemType === 'rupu' && isPurchase && extEntry.rupuReturnType === 'silver' && extEntry.silverWeight) {
+                // Rupu purchase with Silver return (exchange)
+                // The Silver was given (sold), so we add it back to opening balance
+                silverOpeningBalances.silver += extEntry.silverWeight;
+              }
+            }
+          });
+        });
+
+        // Apply rounding
+        goldOpeningBalances.gold999 = formatPureGoldPrecise(goldOpeningBalances.gold999);
+        goldOpeningBalances.gold995 = formatPureGoldPrecise(goldOpeningBalances.gold995);
+        silverOpeningBalances.silver = formatPureSilver(silverOpeningBalances.silver);
+
+        if (selectedInventory === 'gold') {
+          entries.push({
+            transactionId: 'opening-stock',
+            customerName: 'Opening Stock',
+            entry: {
+              id: 'opening-gold999',
+              type: 'purchase',
+              itemType: 'gold999',
+              weight: goldOpeningBalances.gold999,
+              pureWeight: goldOpeningBalances.gold999,
+              subtotal: 0,
+              _isOpeningStock: true,
+              _openingGold995: goldOpeningBalances.gold995
+            },
+            date: '1970-01-01T00:00:00.000Z' // Earliest date to appear first
+          });
+        } else if (selectedInventory === 'silver') {
+          entries.push({
+            transactionId: 'opening-stock',
+            customerName: 'Opening Stock',
+            entry: {
+              id: 'opening-silver',
+              type: 'purchase',
+              itemType: 'silver',
+              weight: silverOpeningBalances.silver,
+              pureWeight: silverOpeningBalances.silver,
+              subtotal: 0,
+              _isOpeningStock: true
+            },
+            date: '1970-01-01T00:00:00.000Z' // Earliest date to appear first
+          });
+        }
+      }
+      
       filteredTransactions.forEach(transaction => {
         const customerName = transaction.customerName;
         transaction.entries.forEach(entry => {
@@ -1198,6 +1293,49 @@ export const LedgerScreen: React.FC = () => {
       );
     } else {
       // For gold/silver: Customer, Purchase, Sell
+      
+      // Handle opening stock entry specially
+      if (entry._isOpeningStock) {
+        const isGold = selectedInventory === 'gold';
+        const gold999Opening = isGold ? (entry.weight || 0) : 0;
+        const gold995Opening = isGold ? (entry._openingGold995 || 0) : 0;
+        const silverOpening = !isGold ? (entry.weight || 0) : 0;
+        
+        return (
+          <View style={styles.transactionRow}>
+            <View style={styles.transactionCell}>
+              <Text variant="bodyMedium" style={styles.customerName}>
+                {customerName}
+              </Text>
+            </View>
+            <View style={styles.transactionCell}>
+              <View>
+                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center', color: theme.colors.sellColor }]}>
+                  {isGold ? formatWeight(gold999Opening) : formatWeight(silverOpening, true)}
+                </Text>
+                <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'center' }]}>
+                  {isGold ? 'Gold 999' : 'Silver'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.transactionCell}>
+              {isGold ? (
+                <View>
+                  <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right', color: theme.colors.sellColor }]}>
+                    {formatWeight(gold995Opening)}
+                  </Text>
+                  <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'right' }]}>
+                    Gold 995
+                  </Text>
+                </View>
+              ) : (
+                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>-</Text>
+              )}
+            </View>
+          </View>
+        );
+      }
+      
       const isPurchase = entry.type === 'purchase';
       
       // For Rani entries in gold subledger, recalculate pure weight with precise formatting

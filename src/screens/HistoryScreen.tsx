@@ -156,8 +156,7 @@ export const HistoryScreen: React.FC = () => {
       const uri = await captureRef(shareableCardRef, {
         format: 'png',
         quality: 1,
-        result: 'tmpfile',
-        width: 400,
+        result: 'tmpfile'
       });
 
       // Check if sharing is available
@@ -192,7 +191,6 @@ export const HistoryScreen: React.FC = () => {
   // Handle export date selection
   const handleExportDateChange = (event: any, selectedDate?: Date) => {
     const isConfirmed = event.type === 'set';
-    setShowExportDatePicker(Platform.OS === 'ios' && isConfirmed);
     
     if (isConfirmed && selectedDate) {
       setExportDate(selectedDate);
@@ -203,8 +201,15 @@ export const HistoryScreen: React.FC = () => {
   };
 
   const performExport = async (date: Date) => {
+    let imageUris: string[] = [];
     try {
       setIsExporting(true);
+
+      // Show loading alert
+      setAlertTitle('Exporting Transactions');
+      setAlertMessage('Preparing to export...');
+      setAlertButtons([]); // Non-dismissible
+      setAlertVisible(true);
       
       // Calculate date range for the selected date
       const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -228,26 +233,19 @@ export const HistoryScreen: React.FC = () => {
         setIsExporting(false);
         return;
       }
-
-      // Show loading alert
-      setAlertTitle('Exporting Transactions');
-      setAlertMessage('Preparing to export...');
-      setAlertButtons([]); // Non-dismissible
-      setAlertVisible(true);
-
       // Set transactions to render hidden cards
       setExportTransactions(filtered);
       setAlertMessage(`Found ${filtered.length} transactions. Rendering...`);
       
       // Wait for render
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Capture images
-      const imageUris: string[] = [];
+      // Capture images to temporary files
+      imageUris = [];
       for (let i = 0; i < filtered.length; i++) {
         setAlertMessage(`Exporting transactions ${i + 1}/${filtered.length}...`);
         // Small delay to allow UI update
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise(resolve => setTimeout(resolve, 1));
         
         const ref = exportCardRefs.current[i];
         if (ref) {
@@ -255,8 +253,7 @@ export const HistoryScreen: React.FC = () => {
             const uri = await captureRef(ref, {
               format: 'jpg',
               quality: 0.75,
-              result: 'base64',
-              width: 300,
+              result: 'tmpfile'
             });
             imageUris.push(uri);
           } catch (err) {
@@ -294,36 +291,46 @@ export const HistoryScreen: React.FC = () => {
         <html>
           <head>
             <style>
-              body { font-family: 'Helvetica', sans-serif; padding: 20px; }
-              h1 { text-align: center; color: #333; margin-bottom: 20px; }
-              table { width: 100%; border-collapse: collapse; }
-              td { width: 50%; padding: 10px; vertical-align: top; text-align: center; }
-              img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; }
+              body { font-family: Arial, sans-serif; }
+              h1 { text-align: center; }
+              .card { break-inside: avoid; margin-bottom: 16px; 
+              display: block; border-radius: 8px; 
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
             </style>
           </head>
           <body>
             <h1>Transactions - ${formattedDate}</h1>
-            <table>
+            <div style="column-count: 2; column-gap: 20px; margin-top: 10px;">
       `;
 
-      for (let i = 0; i < imageUris.length; i += 2) {
-        htmlContent += '<tr>';
-        
-        // First column
-        htmlContent += `<td><img src="data:image/png;base64,${imageUris[i]}" /></td>`;
-        
-        // Second column (if exists)
-        if (i + 1 < imageUris.length) {
-          htmlContent += `<td><img src="data:image/png;base64,${imageUris[i + 1]}" /></td>`;
-        } else {
-          htmlContent += '<td></td>';
+      for (let i = 0; i < imageUris.length; i++) {
+        try {
+          // 1. Read file to Base64 (One at a time!)
+          // This loads ONLY this single image into JS memory
+          const base64Data = await FileSystem.readAsStringAsync(imageUris[i], {
+            encoding: FileSystem.EncodingType.Base64
+          });
+
+          // 2. Append to HTML immediately
+          htmlContent += `
+            <div class="card">
+              <img src="data:image/jpeg;base64,${base64Data}" style="width: 100%;" />
+            </div>
+          `;
+
+          // 3. IMPORTANT: Clean up the temp file to save disk space
+          await FileSystem.deleteAsync(imageUris[i], { idempotent: true });
+
+          // The 'base64Data' variable now goes out of scope and is garbage collected
+          // before the next iteration starts.
+          
+        } catch (err) {
+          console.error(`Error capturing card ${i}:`, err);
         }
-        
-        htmlContent += '</tr>';
       }
 
       htmlContent += `
-            </table>
+            </div>
           </body>
         </html>
       `;
@@ -391,6 +398,15 @@ export const HistoryScreen: React.FC = () => {
         UTI: 'com.adobe.pdf'
       });
 
+      // Immediately clean up temporary image files after sharing
+      for (const imageUri of imageUris) {
+        try {
+          await FileSystem.deleteAsync(imageUri, { idempotent: true });
+        } catch (error) {
+          console.error('Error cleaning up temporary image file:', error);
+        }
+      }
+
     } catch (error) {
       console.error('Error exporting transactions:', error);
       setAlertTitle('Export Error');
@@ -398,6 +414,14 @@ export const HistoryScreen: React.FC = () => {
       setAlertButtons([{ text: 'OK' }]);
       setAlertVisible(true);
     } finally {
+      // Clean up temporary image files in case of error
+      for (const imageUri of imageUris) {
+        try {
+          await FileSystem.deleteAsync(imageUri, { idempotent: true });
+        } catch (error) {
+          console.error('Error cleaning up temporary image file:', error);
+        }
+      }
       setExportTransactions([]);
       setIsExporting(false);
       exportCardRefs.current = [];
@@ -422,9 +446,11 @@ export const HistoryScreen: React.FC = () => {
   };
   
 
-  useEffect(() => {
-    loadTransactions();
-  }, [selectedFilter, customEndDate]);
+  useFocusEffect(
+    useCallback(() => {
+      loadTransactions();
+    }, [selectedFilter, customStartDate, customEndDate])
+  );
 
   const loadTransactions = async (refresh = false) => {
     try {
@@ -692,7 +718,7 @@ export const HistoryScreen: React.FC = () => {
   };
 
   // Enhanced Transaction Card Component (optimized - no hidden card)
-  const TransactionCard: React.FC<{ transaction: Transaction; hideActions?: boolean }> = ({ transaction, hideActions = false }) => {
+  const TransactionCard: React.FC<{ transaction: Transaction; hideActions?: boolean; allowFontScaling?: boolean }> = ({ transaction, hideActions = false, allowFontScaling = true }) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
     
     // Calculate transaction-specific remaining balance
@@ -794,16 +820,17 @@ export const HistoryScreen: React.FC = () => {
           {/* Header Row */}
           <View style={styles.cardHeader}>
               <View style={styles.customerInfo}>
-                <Text variant="titleMedium" style={styles.customerName}>
+                <Text allowFontScaling={allowFontScaling} variant="titleMedium" style={styles.customerName}>
                   {highlightSearchText(transaction.customerName, searchQuery)}
                 </Text>
-                <Text variant="bodySmall" style={styles.transactionDate}>
+                <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.transactionDate}>
                   {formatFullDate(transaction.date)}
                 </Text>
               </View>
               <View style={styles.rightSection}>
                 {!isMetalOnly && (
                   <Text 
+                    allowFontScaling={allowFontScaling}
                     variant="titleMedium" 
                     style={[styles.amount, { color: getAmountColor(transaction) }]}
                   >
@@ -822,7 +849,7 @@ export const HistoryScreen: React.FC = () => {
                   {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
                     <>
                       <View style={styles.entryRow}>
-                        <Text variant="bodySmall" style={styles.entryType}>
+                        <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.entryType}>
                           ↙️ {getItemDisplayName(entry)}{(() => {
                             const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
                               e.itemType === entry.itemType && e.type === entry.type
@@ -836,7 +863,7 @@ export const HistoryScreen: React.FC = () => {
                             return '';
                           })()}
                         </Text>
-                        <Text variant="bodySmall" style={styles.entryDetails}>
+                        <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.entryDetails}>
                           {(() => {
                             const weight = entry.weight || 0;
                             const touch = entry.touch || 100;
@@ -878,7 +905,7 @@ export const HistoryScreen: React.FC = () => {
                         return true;
                       })() ? (
                         <View style={styles.entryRow}>
-                          <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
+                          <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
                             ₹{formatIndianNumber(entry.price)}
                           </Text>
                         </View>
@@ -886,7 +913,7 @@ export const HistoryScreen: React.FC = () => {
                     </>
                   ) : (
                     <View style={styles.entryRow}>
-                      <Text variant="bodySmall" style={styles.entryType}>
+                      <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.entryType}>
                         {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
                           if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                             const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
@@ -902,7 +929,7 @@ export const HistoryScreen: React.FC = () => {
                           return '';
                         })()}
                       </Text>
-                      <Text variant="bodySmall" style={styles.entryDetails}>
+                      <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.entryDetails}>
                         {entry.weight && (() => {
                           // Special formatting for rani/rupu sell items
                           if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
@@ -941,10 +968,10 @@ export const HistoryScreen: React.FC = () => {
                 <>
                   <Divider style={styles.totalDivider} />
                   <View style={styles.totalRow}>
-                    <Text variant="bodySmall" style={styles.totalLabel}>
+                    <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.totalLabel}>
                       Total:
                     </Text>
-                    <Text variant="bodySmall" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
+                    <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
                       ₹{formatIndianNumber(Math.abs(transaction.total))}
                     </Text>
                   </View>
@@ -956,10 +983,10 @@ export const HistoryScreen: React.FC = () => {
                 <>
                   <Divider style={styles.totalDivider} />
                   <View style={styles.noteRow}>
-                    <Text variant="bodySmall" style={styles.noteLabel}>
+                    <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.noteLabel}>
                       Note:
                     </Text>
-                    <Text variant="bodySmall" style={styles.noteText}>
+                    <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.noteText}>
                       {transaction.note}
                     </Text>
                   </View>
@@ -969,13 +996,13 @@ export const HistoryScreen: React.FC = () => {
               {/* Payment/Balance Row */}
               <View style={styles.paymentRow}>
                 {!isMetalOnly && (
-                  <Text variant="bodySmall" style={styles.paymentLabel}>
+                  <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={styles.paymentLabel}>
                     {transaction.entries.length === 0 ? transaction.amountPaid > 0 ? 'Received' : 'Given' 
                     : transaction.amountPaid > 0 ? 'Received' : 'Given'}: ₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                   </Text>
                 )}
                 {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
-                <Text variant="bodySmall" style={[styles.transactionBalance, 
+                <Text allowFontScaling={allowFontScaling} variant="bodySmall" style={[styles.transactionBalance, 
                   { color: transactionBalanceColor }
                 ]}>
                   {transactionBalanceLabel}
@@ -1156,7 +1183,7 @@ export const HistoryScreen: React.FC = () => {
       <DateTimePicker
         value={customStartDate || new Date()}
         mode="date"
-        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        display={'default'}
         onChange={handleStartDateChange}
         maximumDate={new Date(new Date().setDate(new Date().getDate() - 1))}
       />
@@ -1166,7 +1193,7 @@ export const HistoryScreen: React.FC = () => {
       <DateTimePicker
         value={customEndDate || customStartDate}
         mode="date"
-        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        display={'default'}
         onChange={handleEndDateChange}
         minimumDate={customStartDate}
         maximumDate={new Date()} // Allow selecting today
@@ -1178,7 +1205,7 @@ export const HistoryScreen: React.FC = () => {
       <DateTimePicker
         value={exportDate}
         mode="date"
-        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        display={'default'}
         onChange={handleExportDateChange}
         maximumDate={new Date()}
       />
@@ -1194,7 +1221,7 @@ export const HistoryScreen: React.FC = () => {
             style={styles.shareableCardWrapper}
             collapsable={false}
           >
-            <TransactionCard transaction={transaction} hideActions={true} />
+            <TransactionCard transaction={transaction} hideActions={true} allowFontScaling={false} />
           </View>
         ))}
       </View>
@@ -1263,16 +1290,17 @@ export const HistoryScreen: React.FC = () => {
               <Card.Content style={styles.shareableCardContent}>
                 <View style={styles.cardHeader}>
                   <View style={styles.customerInfo}>
-                    <Text variant="titleMedium" style={styles.customerName}>
+                    <Text allowFontScaling={false} variant="titleMedium" style={styles.customerName}>
                       {transaction.customerName}
                     </Text>
-                    <Text variant="bodySmall" style={styles.transactionDate}>
+                    <Text allowFontScaling={false} variant="bodySmall" style={styles.transactionDate}>
                       {formatFullDate(transaction.date)}
                     </Text>
                   </View>
                   <View style={styles.rightSection}>
                     {!isMetalOnly && (
                       <Text 
+                        allowFontScaling={false}
                         variant="titleMedium" 
                         style={[styles.amount, { color: getAmountColor(transaction) }]}
                       >
@@ -1289,7 +1317,7 @@ export const HistoryScreen: React.FC = () => {
                       {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
                         <>
                           <View style={styles.entryRow}>
-                            <Text variant="bodySmall" style={styles.entryType}>
+                            <Text allowFontScaling={false} variant="bodySmall" style={styles.entryType}>
                               ↙️ {getItemDisplayName(entry)}{(() => {
                                 const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
                                   e.itemType === entry.itemType && e.type === entry.type
@@ -1303,7 +1331,7 @@ export const HistoryScreen: React.FC = () => {
                                 return '';
                               })()}
                             </Text>
-                            <Text variant="bodySmall" style={styles.entryDetails}>
+                            <Text allowFontScaling={false} variant="bodySmall" style={styles.entryDetails}>
                               {(() => {
                                 const weight = entry.weight || 0;
                                 const touch = entry.touch || 100;
@@ -1342,7 +1370,7 @@ export const HistoryScreen: React.FC = () => {
                             return true;
                           })() ? (
                             <View style={styles.entryRow}>
-                              <Text variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
+                              <Text allowFontScaling={false} variant="bodySmall" style={[styles.entryDetails, { flex: 1 }]}>
                                 ₹{formatIndianNumber(entry.price)}
                               </Text>
                             </View>
@@ -1350,7 +1378,7 @@ export const HistoryScreen: React.FC = () => {
                         </>
                       ) : (
                         <View style={styles.entryRow}>
-                          <Text variant="bodySmall" style={styles.entryType}>
+                          <Text allowFontScaling={false} variant="bodySmall" style={styles.entryType}>
                             {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
                               if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                                 const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
@@ -1366,7 +1394,7 @@ export const HistoryScreen: React.FC = () => {
                               return '';
                             })()}
                           </Text>
-                          <Text variant="bodySmall" style={styles.entryDetails}>
+                          <Text allowFontScaling={false} variant="bodySmall" style={styles.entryDetails}>
                             {entry.weight && (() => {
                               if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
                                 const weight = entry.weight || 0;
@@ -1401,10 +1429,10 @@ export const HistoryScreen: React.FC = () => {
                     <>
                       <Divider style={styles.totalDivider} />
                       <View style={styles.totalRow}>
-                        <Text variant="bodySmall" style={styles.totalLabel}>
+                        <Text allowFontScaling={false} variant="bodySmall" style={styles.totalLabel}>
                           Total:
                         </Text>
-                        <Text variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
+                        <Text allowFontScaling={false} variant="bodyMedium" style={[styles.entryDetails, { color: getAmountColor(transaction) }]}>
                           ₹{formatIndianNumber(Math.abs(transaction.total))}
                         </Text>
                       </View>
@@ -1416,10 +1444,10 @@ export const HistoryScreen: React.FC = () => {
                     <>
                       <Divider style={styles.totalDivider} />
                       <View style={styles.noteRow}>
-                        <Text variant="bodySmall" style={styles.noteLabel}>
+                        <Text allowFontScaling={false} variant="bodySmall" style={styles.noteLabel}>
                           Note:
                         </Text>
-                        <Text variant="bodySmall" style={styles.noteText}>
+                        <Text allowFontScaling={false} variant="bodySmall" style={styles.noteText}>
                           {transaction.note}
                         </Text>
                       </View>
@@ -1428,13 +1456,13 @@ export const HistoryScreen: React.FC = () => {
                   
                   <View style={styles.paymentRow}>
                     {!isMetalOnly && transaction.amountPaid > 0 && (
-                      <Text variant="bodySmall" style={styles.paymentLabel}>
+                      <Text allowFontScaling={false} variant="bodySmall" style={styles.paymentLabel}>
                         {transaction.entries.length === 0 ? transaction.amountPaid > 0 ? 'Received' : 'Given' 
                     : transaction.amountPaid > 0 ? 'Received' : 'Given'}: ₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                       </Text>
                     )}
                     {(!(!isMetalOnly && transaction.amountPaid > 0)) && <View style={{ flex: 1 }} />}
-                    <Text variant="bodySmall" style={[styles.transactionBalance, 
+                    <Text allowFontScaling={false} variant="bodySmall" style={[styles.transactionBalance, 
                       { color: transactionBalanceColor }
                     ]}>
                       {transactionBalanceLabel}
@@ -1772,7 +1800,7 @@ const styles = StyleSheet.create({
   shareableCardWrapper: {
     backgroundColor: '#FAFAFA',
     padding: -5,
-    width: 300,
+    width: 350,
   },
   shareableCard: {
     borderRadius: 12,

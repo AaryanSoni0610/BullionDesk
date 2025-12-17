@@ -18,9 +18,11 @@ export const HomeScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const { setCustomerModalVisible, navigateToSettings } = useAppContext();
 
-  useEffect(() => {
-    loadRecentTransactions();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadRecentTransactions();
+    }, [])
+  );
 
   // Handle hardware back button - exit app on Home screen
   useFocusEffect(

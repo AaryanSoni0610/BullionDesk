@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,6 +14,7 @@ import {
   Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { Trade } from '../types';
 import { theme } from '../theme';
@@ -31,10 +32,12 @@ export const TradeScreen: React.FC = () => {
 
   const { showAlert, navigateToSettings } = useAppContext();
 
-  // Load trades on mount
-  useEffect(() => {
-    loadTrades();
-  }, []);
+  // Load trades on focus
+  useFocusEffect(
+    useCallback(() => {
+      loadTrades();
+    }, [])
+  );
 
   const loadTrades = async () => {
     try {

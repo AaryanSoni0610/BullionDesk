@@ -44,54 +44,56 @@ export const SettingsScreen: React.FC = () => {
   const [showAbout, setShowAbout] = React.useState(false);
   const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell, navigateToRecycleBin } = useAppContext();
 
-  // Check notification and backup status on mount
-  React.useEffect(() => {
-    // Configure BackupService to use CustomAlert
-    BackupService.setAlertFunction(showAlert);
-    
-    const checkSettings = async () => {
-      try {
-        
-        const notifEnabled = await NotificationService.isNotificationsEnabled();
-        setNotificationsEnabled(notifEnabled);
+  // Check notification and backup status on focus
+  useFocusEffect(
+    useCallback(() => {
+      // Configure BackupService to use CustomAlert
+      BackupService.setAlertFunction(showAlert);
+      
+      const checkSettings = async () => {
+        try {
+          
+          const notifEnabled = await NotificationService.isNotificationsEnabled();
+          setNotificationsEnabled(notifEnabled);
 
-        const backupEnabled = await BackupService.isAutoBackupEnabled();
-        setAutoBackupEnabled(backupEnabled);
+          const backupEnabled = await BackupService.isAutoBackupEnabled();
+          setAutoBackupEnabled(backupEnabled);
 
-        // Load customers and base inventory
-        const [customersData, inventoryData, effectsData, raniStock, rupuStock] = await Promise.all([
-          CustomerService.getAllCustomers(),
-          InventoryService.getBaseInventory(),
-          InventoryService.calculateOpeningBalanceEffects(),
-          RaniRupaStockService.getStockByType('rani'),
-          RaniRupaStockService.getStockByType('rupu')
-        ]);
-        
-        setCustomers(customersData);
-        setBaseInventory(inventoryData);
-        setOpeningBalanceEffects(effectsData);
+          // Load customers and base inventory
+          const [customersData, inventoryData, effectsData, raniStock, rupuStock] = await Promise.all([
+            CustomerService.getAllCustomers(),
+            InventoryService.getBaseInventory(),
+            InventoryService.calculateOpeningBalanceEffects(),
+            RaniRupaStockService.getStockByType('rani'),
+            RaniRupaStockService.getStockByType('rupu')
+          ]);
+          
+          setCustomers(customersData);
+          setBaseInventory(inventoryData);
+          setOpeningBalanceEffects(effectsData);
 
-        // Calculate Rani/Rupu totals
-        const raniPure = raniStock.reduce((sum, item) => sum + ((item.weight * item.touch) / 100), 0);
-        const rupuPure = rupuStock.reduce((sum, item) => sum + customFormatPureSilver(item.weight, item.touch), 0);
-        
-        setRaniTotal(raniPure);
-        setRupuTotal(rupuPure);
-        
-        // Don't auto-initialize directories here
-        // They will be created on demand when needed
-      } catch (error) {
-        console.error('Error checking settings:', error);
-      } finally {
-        setIsCheckingNotifications(false);
-        setIsCheckingBackup(false);
-        setIsLoadingCustomers(false);
-        setIsLoadingInventory(false);
-      }
-    };
+          // Calculate Rani/Rupu totals
+          const raniPure = raniStock.reduce((sum, item) => sum + ((item.weight * item.touch) / 100), 0);
+          const rupuPure = rupuStock.reduce((sum, item) => sum + customFormatPureSilver(item.weight, item.touch), 0);
+          
+          setRaniTotal(raniPure);
+          setRupuTotal(rupuPure);
+          
+          // Don't auto-initialize directories here
+          // They will be created on demand when needed
+        } catch (error) {
+          console.error('Error checking settings:', error);
+        } finally {
+          setIsCheckingNotifications(false);
+          setIsCheckingBackup(false);
+          setIsLoadingCustomers(false);
+          setIsLoadingInventory(false);
+        }
+      };
 
-    checkSettings();
-  }, []);
+      checkSettings();
+    }, [])
+  );
 
   // Handle hardware back button - navigate to home screen
   useFocusEffect(
@@ -892,7 +894,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v6.2.8
+        message={`BullionDesk v6.2.9
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

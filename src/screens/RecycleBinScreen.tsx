@@ -141,9 +141,11 @@ export const RecycleBinScreen: React.FC = () => {
     return typeMap[entry.itemType] || entry.itemType;
   };
 
-  useEffect(() => {
-    loadTransactions();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadTransactions();
+    }, [])
+  );
 
   const loadTransactions = async (refresh = false) => {
     try {

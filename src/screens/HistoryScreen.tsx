@@ -25,6 +25,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver, formatIndianNumber } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
@@ -67,6 +69,13 @@ export const HistoryScreen: React.FC = () => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertButtons, setAlertButtons] = useState<AlertButton[]>([]);
   
+  // Export state
+  const [showExportDatePicker, setShowExportDatePicker] = useState(false);
+  const [exportDate, setExportDate] = useState<Date>(new Date());
+  const [exportTransactions, setExportTransactions] = useState<Transaction[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportCardRefs = useRef<Array<View | null>>([]);
+
   // Helper function to check if transaction is settled and old (cannot be edited)
   const isSettledAndOld = (transaction: Transaction): boolean => {
     if (!transaction.lastUpdatedAt) return false;
@@ -148,7 +157,7 @@ export const HistoryScreen: React.FC = () => {
         format: 'png',
         quality: 1,
         result: 'tmpfile',
-        width: 400, // Fixed width matching shareableCardWrapper
+        width: 400,
       });
 
       // Check if sharing is available
@@ -177,6 +186,221 @@ export const HistoryScreen: React.FC = () => {
       setAlertButtons([{ text: 'OK' }]);
       setAlertVisible(true);
       setSharingTransactionId(null);
+    }
+  };
+
+  // Handle export date selection
+  const handleExportDateChange = (event: any, selectedDate?: Date) => {
+    const isConfirmed = event.type === 'set';
+    setShowExportDatePicker(Platform.OS === 'ios' && isConfirmed);
+    
+    if (isConfirmed && selectedDate) {
+      setExportDate(selectedDate);
+      performExport(selectedDate);
+    } else if (event.type === 'dismissed') {
+      setShowExportDatePicker(false);
+    }
+  };
+
+  const performExport = async (date: Date) => {
+    try {
+      setIsExporting(true);
+      
+      // Calculate date range for the selected date
+      const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const endOfSelectedDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+      const startDateStr = selectedDate.toISOString();
+      const endDateStr = endOfSelectedDay.toISOString();
+
+      // Fetch transactions for the date
+      const transactions = await TransactionService.getTransactionsByDateRange(startDateStr, endDateStr);
+      
+      // Filter out 'Adjust' transactions and reverse to show oldest first
+      const filtered = transactions
+        .filter(t => t.customerName.toLowerCase() !== 'adjust')
+        .reverse();
+      
+      if (filtered.length === 0) {
+        setAlertTitle('No Transactions');
+        setAlertMessage('No transactions found for the selected date.');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
+        setIsExporting(false);
+        return;
+      }
+
+      // Show loading alert
+      setAlertTitle('Exporting Transactions');
+      setAlertMessage('Preparing to export...');
+      setAlertButtons([]); // Non-dismissible
+      setAlertVisible(true);
+
+      // Set transactions to render hidden cards
+      setExportTransactions(filtered);
+      setAlertMessage(`Found ${filtered.length} transactions. Rendering...`);
+      
+      // Wait for render
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Capture images
+      const imageUris: string[] = [];
+      for (let i = 0; i < filtered.length; i++) {
+        setAlertMessage(`Exporting transactions ${i + 1}/${filtered.length}...`);
+        // Small delay to allow UI update
+        await new Promise(resolve => setTimeout(resolve, 10));
+        
+        const ref = exportCardRefs.current[i];
+        if (ref) {
+          try {
+            const uri = await captureRef(ref, {
+              format: 'jpg',
+              quality: 0.75,
+              result: 'base64',
+              width: 300,
+            });
+            imageUris.push(uri);
+          } catch (err) {
+            console.error(`Error capturing card ${i}:`, err);
+          }
+        }
+      }
+
+      if (imageUris.length === 0) {
+        // No images captured - inform the user via CustomAlert instead of throwing
+        setAlertTitle('No Transactions');
+        setAlertMessage('No transactions could be captured for the selected date.');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
+
+        // Cleanup and reset export state
+        setExportTransactions([]);
+        exportCardRefs.current = [];
+        setIsExporting(false);
+
+        return;
+      }
+
+      setAlertMessage('Generating PDF...');
+
+      date = new Date(date.toISOString());
+      let formattedDate = date.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+
+      // Generate HTML for PDF
+      let htmlContent = `
+        <html>
+          <head>
+            <style>
+              body { font-family: 'Helvetica', sans-serif; padding: 20px; }
+              h1 { text-align: center; color: #333; margin-bottom: 20px; }
+              table { width: 100%; border-collapse: collapse; }
+              td { width: 50%; padding: 10px; vertical-align: top; text-align: center; }
+              img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; }
+            </style>
+          </head>
+          <body>
+            <h1>Transactions - ${formattedDate}</h1>
+            <table>
+      `;
+
+      for (let i = 0; i < imageUris.length; i += 2) {
+        htmlContent += '<tr>';
+        
+        // First column
+        htmlContent += `<td><img src="data:image/png;base64,${imageUris[i]}" /></td>`;
+        
+        // Second column (if exists)
+        if (i + 1 < imageUris.length) {
+          htmlContent += `<td><img src="data:image/png;base64,${imageUris[i + 1]}" /></td>`;
+        } else {
+          htmlContent += '<td></td>';
+        }
+        
+        htmlContent += '</tr>';
+      }
+
+      htmlContent += `
+            </table>
+          </body>
+        </html>
+      `;
+
+      // Generate PDF
+      const { uri: pdfUri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false
+      });
+
+      setAlertMessage('Sharing PDF...');
+
+      const date_now = new Date();
+      const date_date = date_now.getDate();
+      const date_month = date_now.getMonth() + 1;
+      const date_year = date_now.getFullYear();
+
+      const provided_date = date.getDate();
+      const provided_month = date.getMonth() + 1;
+      const provided_year = date.getFullYear();
+
+      if (date_date === provided_date && date_month === provided_month && date_year === provided_year) {
+        formattedDate = date.toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } else{
+        formattedDate = date.toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+      const newFileName = `Transaction-${formattedDate}.pdf`;
+      const newUri = FileSystem.documentDirectory + newFileName;
+
+      await FileSystem.moveAsync({
+        from: pdfUri,
+        to: newUri
+      });
+
+      // Hide alert before sharing to allow interaction
+      setAlertVisible(false);
+      setIsExporting(false);
+
+      // Schedule cleanup (5 minutes from now)
+      setTimeout(async () => {
+        try {
+          const info = await FileSystem.getInfoAsync(newUri);
+          if (info.exists) {
+            await FileSystem.deleteAsync(newUri, { idempotent: true });
+            console.log('Cleaned up exported PDF:', newFileName);
+          }
+        } catch (error) {
+          console.error('Error cleaning up PDF:', error);
+        }
+      }, 5 * 60 * 1000);
+
+      await Sharing.shareAsync(newUri, {
+        mimeType: 'application/pdf',
+        dialogTitle: newFileName,
+        UTI: 'com.adobe.pdf'
+      });
+
+    } catch (error) {
+      console.error('Error exporting transactions:', error);
+      setAlertTitle('Export Error');
+      setAlertMessage('Failed to export transactions to PDF.');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+    } finally {
+      setExportTransactions([]);
+      setIsExporting(false);
+      exportCardRefs.current = [];
     }
   };
 
@@ -468,7 +692,7 @@ export const HistoryScreen: React.FC = () => {
   };
 
   // Enhanced Transaction Card Component (optimized - no hidden card)
-  const TransactionCard: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
+  const TransactionCard: React.FC<{ transaction: Transaction; hideActions?: boolean }> = ({ transaction, hideActions = false }) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
     
     // Calculate transaction-specific remaining balance
@@ -530,40 +754,42 @@ export const HistoryScreen: React.FC = () => {
       <Card style={styles.transactionCard}>
         <Card.Content>
           {/* Action Buttons Row */}
-          <View style={styles.editButtonRow}>
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.deleteButton]}
-              onPress={() => handleDeleteTransaction(transaction)}
-            >
-              <Icon name="delete" size={16} color={theme.colors.error} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.shareButton]}
-              onPress={() => handleShareTransaction(transaction)}
-            >
-              <Icon name="share-variant" size={16} color={theme.colors.success} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
-              onPress={() => {
-                if (isSettledAndOld(transaction)) {
-                  setAlertTitle('Cannot Edit Transaction');
-                  setAlertMessage('This transaction has been settled and is too old to edit.');
-                  setAlertButtons([{ text: 'OK' }]);
-                  setAlertVisible(true);
-                } else {
-                  loadTransactionForEdit(transaction.id);
-                }
-              }}
-              disabled={isSettledAndOld(transaction)}
-            >
-              <Icon 
-                name="pencil" 
-                size={16} 
-                color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
-              />
-            </TouchableOpacity>
-          </View>
+          {!hideActions && (
+            <View style={styles.editButtonRow}>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={() => handleDeleteTransaction(transaction)}
+              >
+                <Icon name="delete" size={16} color={theme.colors.error} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.shareButton]}
+                onPress={() => handleShareTransaction(transaction)}
+              >
+                <Icon name="share-variant" size={16} color={theme.colors.success} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
+                onPress={() => {
+                  if (isSettledAndOld(transaction)) {
+                    setAlertTitle('Cannot Edit Transaction');
+                    setAlertMessage('This transaction has been settled and is too old to edit.');
+                    setAlertButtons([{ text: 'OK' }]);
+                    setAlertVisible(true);
+                  } else {
+                    loadTransactionForEdit(transaction.id);
+                  }
+                }}
+                disabled={isSettledAndOld(transaction)}
+              >
+                <Icon 
+                  name="pencil" 
+                  size={16} 
+                  color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
+                />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Header Row */}
           <View style={styles.cardHeader}>
@@ -796,12 +1022,21 @@ export const HistoryScreen: React.FC = () => {
           <Text variant="titleLarge" style={styles.appTitle}>
             History
           </Text>
-          <IconButton
-            icon="cog-outline"
-            size={24}
-            onPress={navigateToSettings}
-            style={styles.settingsButton}
-          />
+          <View style={{ flexDirection: 'row' }}>
+            <IconButton
+              icon="tray-arrow-up"
+              size={24}
+              onPress={() => setShowExportDatePicker(true)}
+              disabled={isExporting}
+              style={styles.settingsButton}
+            />
+            <IconButton
+              icon="cog-outline"
+              size={24}
+              onPress={navigateToSettings}
+              style={styles.settingsButton}
+            />
+          </View>
         </View>
       </Surface>
 
@@ -936,6 +1171,33 @@ export const HistoryScreen: React.FC = () => {
         minimumDate={customStartDate}
         maximumDate={new Date()} // Allow selecting today
       />
+    )}
+
+    {/* Export Date Picker */}
+    {showExportDatePicker && (
+      <DateTimePicker
+        value={exportDate}
+        mode="date"
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        onChange={handleExportDateChange}
+        maximumDate={new Date()}
+      />
+    )}
+
+    {/* Hidden Container for Export Cards */}
+    {isExporting && exportTransactions.length > 0 && (
+      <View style={styles.hiddenCard}>
+        {exportTransactions.map((transaction, index) => (
+          <View 
+            key={transaction.id} 
+            ref={(el) => (exportCardRefs.current[index] = el)}
+            style={styles.shareableCardWrapper}
+            collapsable={false}
+          >
+            <TransactionCard transaction={transaction} hideActions={true} />
+          </View>
+        ))}
+      </View>
     )}
     
     {/* Conditionally render shareable card only when sharing */}
@@ -1505,20 +1767,19 @@ const styles = StyleSheet.create({
   },
   hiddenCard: {
     position: 'absolute',
-    left: -9999,
-    top: -9999,
     opacity: 0,
   },
   shareableCardWrapper: {
     backgroundColor: '#FAFAFA',
-    padding: 16,
-    width: 400, // Fixed width for consistent sharing
+    padding: -5,
+    width: 300,
   },
   shareableCard: {
     borderRadius: 12,
+    padding: -5,
     elevation: theme.elevation.level1,
   },
   shareableCardContent: {
-    padding: 16,
+    padding: -5,
   },
 });

@@ -892,7 +892,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v6.2.6
+        message={`BullionDesk v6.2.8
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 
@@ -918,7 +918,7 @@ Contact: For feedback, suggestions, or support, please reach out to the develope
             setTimeout(() => {
               showAlert(
                 'Support BullionDesk',
-                'Thank you for considering a donation!\n\nYou can support the development through:\n\n• UPI: imaaryan3563-1@okhdfcbank\n• UPI Mobile number: 7043414570\n\nEvery contribution, no matter the size, is greatly appreciated and helps keep the app free and improved!',
+                'Thank you for considering a donation!\n\nYou can support the development through:\n\n• UPI: imaaryan3563-2@okhdfcbank\n• UPI Mobile number: 7043414570\n\nEvery contribution, no matter the size, is greatly appreciated and helps keep the app free and improved!',
                 [{ text: 'Close' }]
               );
             }, 300);

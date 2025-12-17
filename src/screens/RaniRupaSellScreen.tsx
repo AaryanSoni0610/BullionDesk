@@ -136,7 +136,7 @@ export const RaniRupaSellScreen: React.FC = () => {
     }
   }, [customerModalVisible, isWaitingForCustomerSelection, currentCustomer, setCurrentCustomer]);
 
-  const loadInventoryItems = async () => {
+  const loadInventoryItems = async (preserveSelection = false) => {
     try {
       setIsLoading(true);
       const stockItems = await RaniRupaStockService.getStockByType(selectedType);
@@ -152,8 +152,25 @@ export const RaniRupaSellScreen: React.FC = () => {
       }));
 
       setInventoryItems(items);
-      setSelectedItems(new Set());
-      setSelectAll(false);
+      
+      if (!preserveSelection) {
+        setSelectedItems(new Set());
+        setSelectAll(false);
+      } else {
+        // Filter out selected items that no longer exist
+        const currentIds = new Set(items.map(i => i.id));
+        const validSelected = new Set(
+          Array.from(selectedItems).filter(id => currentIds.has(id))
+        );
+        setSelectedItems(validSelected);
+        
+        // Update selectAll state
+        if (items.length > 0 && validSelected.size === items.length) {
+          setSelectAll(true);
+        } else {
+          setSelectAll(false);
+        }
+      }
     } catch (error) {
       console.error('Error loading inventory items:', error);
       showAlert('Error', 'Failed to load inventory items');
@@ -386,7 +403,7 @@ export const RaniRupaSellScreen: React.FC = () => {
               await RaniRupaStockService.updateStock(editingItem.id, { weight: newWeight });
               setShowEditDialog(false);
               setEditingItem(null);
-              await loadInventoryItems();
+              await loadInventoryItems(true);
             }
           }
         ]
@@ -520,7 +537,7 @@ export const RaniRupaSellScreen: React.FC = () => {
         <View style={styles.navigationContent}>
           <View style={styles.summaryRow}>
             <Text style={styles.pureWeightLabel}>
-              Pure Weight: {selectedType === 'rani' ? calculateTotalPureWeight().toFixed(3) : calculateTotalPureWeight().toFixed(1)}g
+              {selectedType === 'rani' ? 'Gold 999: ' + calculateTotalPureWeight().toFixed(3) : 'Silver: '+ calculateTotalPureWeight().toFixed(1)}g
             </Text>
             <View style={styles.inputsRow}>
               {selectedType === 'rani' && (
@@ -615,7 +632,7 @@ const styles = StyleSheet.create({
   },
   segmentedContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingBottom: 16,
     backgroundColor: theme.colors.background,
   },
   segmentedButtons: {
@@ -638,7 +655,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   listContent: {
-    paddingBottom: 140, // Space for bottom navigation
+    paddingBottom: 150, // Space for bottom navigation
   },
   emptyList: {
     flex: 1,

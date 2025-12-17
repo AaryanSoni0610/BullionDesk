@@ -677,7 +677,8 @@ export class TransactionService {
           let ledgerTimestamp = transactionDate;
           // Only align ledger timestamp with entries for NEW transactions
           // For updates, we want the ledger entry to reflect the payment time (now)
-          if (!isUpdate && !isMoneyOnlyTransaction) {
+          // If saveDate is provided, we respect it and don't override with entry timestamps (which might be 'now' from UI creation)
+          if (!isUpdate && !isMoneyOnlyTransaction && !saveDate) {
             const entryTimestamps = entries
               .map(entry => entry.createdAt)
               .filter((timestamp): timestamp is string => timestamp !== undefined)

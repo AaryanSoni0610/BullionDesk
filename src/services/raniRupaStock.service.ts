@@ -2,7 +2,7 @@ import { RaniRupaStock } from '../types';
 import { DatabaseService } from './database.sqlite';
 
 export class RaniRupaStockService {
-  // Get all stock items
+  // Get all available (unsold) stock items
   static async getAllStock(): Promise<RaniRupaStock[]> {
     try {
       const db = DatabaseService.getDatabase();
@@ -14,7 +14,8 @@ export class RaniRupaStockService {
         touch: number;
         date: string;
         createdAt: string;
-      }>('SELECT * FROM rani_rupa_stock ORDER BY createdAt ASC');
+        isSold: number;
+      }>('SELECT * FROM rani_rupa_stock WHERE isSold = 0 ORDER BY createdAt ASC');
 
       return stock.map(item => ({
         stock_id: item.stock_id,
@@ -23,6 +24,7 @@ export class RaniRupaStockService {
         touch: item.touch,
         date: item.date,
         createdAt: item.createdAt,
+        isSold: item.isSold === 1,
       }));
     } catch (error) {
       console.error('Error getting Rani-Rupa stock:', error);
@@ -45,11 +47,34 @@ export class RaniRupaStockService {
       const createdAt = now.toISOString();
 
       await db.runAsync(
-        'INSERT INTO rani_rupa_stock (stock_id, itemtype, weight, touch, date, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO rani_rupa_stock (stock_id, itemtype, weight, touch, date, createdAt, isSold) VALUES (?, ?, ?, ?, ?, ?, 0)',
         [stock_id, itemtype, weight, touch, date, createdAt]
       );
 
       return { success: true, stock_id };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Mark stock as sold or unsold
+  static async markStockAsSold(
+    stock_id: string,
+    isSold: boolean
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const db = DatabaseService.getDatabase();
+      
+      const result = await db.runAsync(
+        'UPDATE rani_rupa_stock SET isSold = ? WHERE stock_id = ?',
+        [isSold ? 1 : 0, stock_id]
+      );
+
+      if (result.changes === 0) {
+        return { success: false, error: 'Stock item not found' };
+      }
+
+      return { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
@@ -80,7 +105,7 @@ export class RaniRupaStockService {
       const createdAt = now.toISOString();
 
       await db.runAsync(
-        'INSERT INTO rani_rupa_stock (stock_id, itemtype, weight, touch, date, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO rani_rupa_stock (stock_id, itemtype, weight, touch, date, createdAt, isSold) VALUES (?, ?, ?, ?, ?, ?, 0)',
         [stock_id, itemtype, weight, touch, date, createdAt]
       );
 
@@ -94,6 +119,20 @@ export class RaniRupaStockService {
   static async removeStock(stock_id: string): Promise<{ success: boolean; error?: string }> {
     try {
       const db = DatabaseService.getDatabase();
+      
+      // Check if stock is sold
+      const item = await db.getFirstAsync<{ isSold: number }>(
+        'SELECT isSold FROM rani_rupa_stock WHERE stock_id = ?',
+        [stock_id]
+      );
+
+      if (!item) {
+        return { success: false, error: 'Stock item not found' };
+      }
+
+      if (item.isSold === 1) {
+        return { success: false, error: 'Cannot delete sold stock. Please delete the sales transaction first.' };
+      }
       
       const result = await db.runAsync(
         'DELETE FROM rani_rupa_stock WHERE stock_id = ?',
@@ -119,14 +158,19 @@ export class RaniRupaStockService {
       const db = DatabaseService.getDatabase();
       
       // Check if stock exists
-      const existing = await db.getFirstAsync<{ stock_id: string }>(
-        'SELECT stock_id FROM rani_rupa_stock WHERE stock_id = ?',
+      const existing = await db.getFirstAsync<{ stock_id: string; isSold: number }>(
+        'SELECT stock_id, isSold FROM rani_rupa_stock WHERE stock_id = ?',
         [stock_id]
       );
 
       if (!existing) {
         return { success: false, error: 'Stock item not found' };
       }
+
+      // Allow updating sold stock to support transaction edits
+      // if (existing.isSold === 1) {
+      //   return { success: false, error: 'Cannot update sold stock' };
+      // }
 
       const updateFields: string[] = [];
       const params: any[] = [];
@@ -169,7 +213,8 @@ export class RaniRupaStockService {
         touch: number;
         date: string;
         createdAt: string;
-      }>('SELECT * FROM rani_rupa_stock WHERE itemtype = ? ORDER BY createdAt ASC', [itemtype]);
+        isSold: number;
+      }>('SELECT * FROM rani_rupa_stock WHERE itemtype = ? AND isSold = 0 ORDER BY createdAt ASC', [itemtype]);
 
       return stock.map(item => ({
         stock_id: item.stock_id,
@@ -178,6 +223,7 @@ export class RaniRupaStockService {
         touch: item.touch,
         date: item.date,
         createdAt: item.createdAt,
+        isSold: item.isSold === 1,
       }));
     } catch (error) {
       console.error('Error getting stock by type:', error);
@@ -197,6 +243,7 @@ export class RaniRupaStockService {
         touch: number;
         date: string;
         createdAt: string;
+        isSold: number;
       }>('SELECT * FROM rani_rupa_stock WHERE stock_id = ?', [stock_id]);
 
       if (!item) return null;
@@ -208,6 +255,7 @@ export class RaniRupaStockService {
         touch: item.touch,
         date: item.date,
         createdAt: item.createdAt,
+        isSold: item.isSold === 1,
       };
     } catch (error) {
       console.error('Error getting stock by ID:', error);

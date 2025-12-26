@@ -89,4 +89,5 @@ export interface RaniRupaStock {
   touch: number; // Touch percentage (purity)
   date: string; // Date when stock was added
   createdAt: string; // ISO datetime when stock was created
+  isSold?: boolean; // Whether the stock item has been sold
 }

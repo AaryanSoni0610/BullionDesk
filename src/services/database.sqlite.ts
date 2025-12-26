@@ -133,7 +133,8 @@ export class DatabaseService {
           weight REAL NOT NULL,
           touch REAL NOT NULL,
           date DATE NOT NULL,
-          createdAt DATETIME NOT NULL
+          createdAt DATETIME NOT NULL,
+          isSold INTEGER DEFAULT 0
         );
 
         -- Base Inventory Settings Table
@@ -177,6 +178,13 @@ export class DatabaseService {
       // Add note column to transactions table if it doesn't exist
       try {
         await db.execAsync('ALTER TABLE transactions ADD COLUMN note TEXT;');
+      } catch (e) {
+        // Column likely already exists, ignore error
+      }
+
+      // Add isSold column to rani_rupa_stock table if it doesn't exist
+      try {
+        await db.execAsync('ALTER TABLE rani_rupa_stock ADD COLUMN isSold INTEGER DEFAULT 0;');
       } catch (e) {
         // Column likely already exists, ignore error
       }

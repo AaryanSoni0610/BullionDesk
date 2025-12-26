@@ -77,9 +77,9 @@ export const RecycleBinScreen: React.FC = () => {
               setAlertVisible(true);
             }
           } catch (error) {
-            console.error('Error deleting transaction:', error);
+            console.warn('Error deleting transaction:', error);
             setAlertTitle('Error');
-            setAlertMessage('Failed to delete transaction');
+            setAlertMessage(error instanceof Error ? error.message : 'Failed to delete transaction');
             setAlertButtons([{ text: 'OK' }]);
             setAlertVisible(true);
           }

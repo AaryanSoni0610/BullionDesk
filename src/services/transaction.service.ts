@@ -498,10 +498,27 @@ export class TransactionService {
           for (const entry of existingTransaction.entries) {
             if (entry.stock_id) {
               if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-                await RaniRupaStockService.removeStock(entry.stock_id);
+                // Check if this stock_id is present in the NEW entries list (being updated)
+                const isBeingUpdated = entries.some(newEntry => newEntry.stock_id === entry.stock_id);
+                
+                if (!isBeingUpdated) {
+                  // It is being deleted. Try to remove stock.
+                  const result = await RaniRupaStockService.removeStock(entry.stock_id);
+                  if (!result.success) {
+                    await db.execAsync('ROLLBACK');
+                    return { success: false, error: `Failed to update transaction: ${result.error}` };
+                  }
+                }
+                // If updated, we do nothing here. We will update it in the insertion loop.
               } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-                const touch = entry.touch || 100;
-                await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
+                // Check if this entry is being preserved/updated
+                const isBeingUpdated = entries.some(newEntry => newEntry.stock_id === entry.stock_id);
+                
+                if (!isBeingUpdated) {
+                  // This sell entry is being removed. Mark stock as unsold.
+                  await RaniRupaStockService.markStockAsSold(entry.stock_id, false);
+                }
+                // If updated, we do nothing here. The stock remains sold.
               }
             }
           }
@@ -611,12 +628,23 @@ export class TransactionService {
           
           if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
             const touch = entry.touch || 100;
-            const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
-            if (result.success && result.stock_id) {
-              stockId = result.stock_id;
+            
+            if (stockId) {
+              // Update existing stock (even if sold)
+              const result = await RaniRupaStockService.updateStock(stockId, { weight: entry.weight || 0, touch });
+              if (!result.success) {
+                await db.execAsync('ROLLBACK');
+                return { success: false, error: `Failed to update stock: ${result.error}` };
+              }
             } else {
-              await db.execAsync('ROLLBACK');
-              return { success: false, error: `Failed to add stock: ${result.error}` };
+              // Create new stock
+              const result = await RaniRupaStockService.addStock(entry.itemType, entry.weight || 0, touch);
+              if (result.success && result.stock_id) {
+                stockId = result.stock_id;
+              } else {
+                await db.execAsync('ROLLBACK');
+                return { success: false, error: `Failed to add stock: ${result.error}` };
+              }
             }
           } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
             if (!stockId) {
@@ -631,10 +659,10 @@ export class TransactionService {
                 return { success: false, error: `No stock available for sale of ${entry.itemType}` };
               }
             }
-            const removeResult = await RaniRupaStockService.removeStock(stockId);
-            if (!removeResult.success) {
+            const markResult = await RaniRupaStockService.markStockAsSold(stockId, true);
+            if (!markResult.success) {
               await db.execAsync('ROLLBACK');
-              return { success: false, error: `Failed to remove stock: ${removeResult.error}` };
+              return { success: false, error: `Failed to sell stock: ${markResult.error}` };
             }
           }
 
@@ -829,10 +857,12 @@ export class TransactionService {
       for (const entry of transaction.entries) {
         if (entry.stock_id) {
           if (entry.type === 'purchase' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-            await RaniRupaStockService.removeStock(entry.stock_id);
+            const result = await RaniRupaStockService.removeStock(entry.stock_id);
+            if (!result.success) {
+              throw new Error(`Cannot delete transaction: ${result.error}`);
+            }
           } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-            const touch = entry.touch || 100;
-            await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
+            await RaniRupaStockService.markStockAsSold(entry.stock_id, false);
           }
         }
       }
@@ -859,8 +889,8 @@ export class TransactionService {
       
       return true;
     } catch (error) {
-      console.error('Error deleting transaction:', error);
-      return false;
+      console.warn('Error deleting transaction:', error);
+      throw error; // Re-throw to allow UI to handle specific error messages
     }
   }
 
@@ -1009,7 +1039,15 @@ export class TransactionService {
             const touch = entry.touch || 100;
             await RaniRupaStockService.restoreStock(entry.stock_id, entry.itemType, entry.weight || 0, touch);
           } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
-            await RaniRupaStockService.removeStock(entry.stock_id);
+            // Check if stock is available
+            const stock = await RaniRupaStockService.getStockById(entry.stock_id);
+            if (!stock) {
+               throw new Error(`Cannot restore transaction: Stock item ${entry.stock_id} not found`);
+            }
+            if (stock.isSold) {
+               throw new Error(`Cannot restore transaction: Stock item ${entry.stock_id} is already sold`);
+            }
+            await RaniRupaStockService.markStockAsSold(entry.stock_id, true);
           }
         }
       }

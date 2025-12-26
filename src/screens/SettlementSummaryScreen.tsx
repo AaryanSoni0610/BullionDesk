@@ -56,7 +56,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     if (pendingMoneyAmount !== 0) {
       return pendingMoneyAmount.toString();
     }
-    return lastGivenMoney > 0 ? lastGivenMoney.toString() : '';
+    return lastGivenMoney !== 0 ? lastGivenMoney.toString() : '';
   });
   
   // Clear pending money amount when component mounts
@@ -74,7 +74,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
   const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
   const [showSaveDatePicker, setShowSaveDatePicker] = useState(false);
-  const [showDateWarning, setShowDateWarning] = useState(false);
   const [pendingSaveDate, setPendingSaveDate] = useState<Date | null>(null);
   const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);
   const isEditing = !!editingTransactionId;

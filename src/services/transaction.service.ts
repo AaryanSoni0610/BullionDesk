@@ -478,12 +478,25 @@ export class TransactionService {
           if (existingTransaction.entries.some(entry => entry.metalOnly === true)) {
             for (const oldEntry of existingTransaction.entries) {
               if (oldEntry.metalOnly && oldEntry.type !== 'money') {
-                const itemType = oldEntry.itemType;
+                let itemType = oldEntry.itemType;
                 
                 // Get the weight to use
                 const weight = (oldEntry.itemType === 'rani' || oldEntry.itemType === 'rupu') 
                   ? (oldEntry.pureWeight || 0) 
                   : (oldEntry.weight || 0);
+
+                // Conversion logic for Rani/Rupu
+                if (oldEntry.itemType === 'rani') {
+                  // Rani with cut -> Gold 999, Rani without cut -> Gold 995
+                  if ((oldEntry.cut || 0) > 0) {
+                    itemType = 'gold999';
+                  } else {
+                    itemType = 'gold995';
+                  }
+                } else if (oldEntry.itemType === 'rupu') {
+                  // Rupu -> Silver
+                  itemType = 'silver';
+                }
 
                 // Calculate original effect then reverse it
                 const originalEffect = oldEntry.type === 'sell' ? weight : -weight;
@@ -739,12 +752,25 @@ export class TransactionService {
         if (isMetalOnly) {
           for (const entry of entries) {
             if (entry.metalOnly && entry.type !== 'money') {
-              const itemType = entry.itemType;
+              let itemType = entry.itemType;
 
               // Get the weight to use
               const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
                 ? (entry.pureWeight || 0) 
                 : (entry.weight || 0);
+
+              // Conversion logic for Rani/Rupu
+              if (entry.itemType === 'rani') {
+                // Rani with cut -> Gold 999, Rani without cut -> Gold 995
+                if ((entry.cut || 0) > 0) {
+                  itemType = 'gold999';
+                } else {
+                  itemType = 'gold995';
+                }
+              } else if (entry.itemType === 'rupu') {
+                // Rupu -> Silver
+                itemType = 'silver';
+              }
 
               // Sign convention: 
               // - Purchase (customer gives metal) = reduces their debt = negative (they owe less)
@@ -837,12 +863,25 @@ export class TransactionService {
       if (isMetalOnly) {
         for (const entry of transaction.entries) {
           if (entry.metalOnly && entry.type !== 'money') {
-            const itemType = entry.itemType;
+            let itemType = entry.itemType;
             
             // Get the weight to use
             const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
               ? (entry.pureWeight || 0) 
               : (entry.weight || 0);
+
+            // Conversion logic for Rani/Rupu
+            if (entry.itemType === 'rani') {
+              // Rani with cut -> Gold 999, Rani without cut -> Gold 995
+              if ((entry.cut || 0) > 0) {
+                itemType = 'gold999';
+              } else {
+                itemType = 'gold995';
+              }
+            } else if (entry.itemType === 'rupu') {
+              // Rupu -> Silver
+              itemType = 'silver';
+            }
 
             // Calculate original effect then reverse it
             const originalEffect = entry.type === 'sell' ? weight : -weight;
@@ -1015,12 +1054,26 @@ export class TransactionService {
       if (isMetalOnly) {
         for (const entry of transaction.entries) {
           if (entry.metalOnly && entry.type !== 'money') {
-            const itemType = entry.itemType;
+            let itemType = entry.itemType;
             
             // Get the weight to use
             const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
               ? (entry.pureWeight || 0) 
               : (entry.weight || 0);
+
+            // Conversion logic for Rani/Rupu
+            if (entry.itemType === 'rani') {
+              // Rani with cut -> Gold 999, Rani without cut -> Gold 995
+              if ((entry.cut || 0) > 0) {
+                itemType = 'gold999';
+              } else {
+                itemType = 'gold995';
+              }
+            } else if (entry.itemType === 'rupu') {
+              // Rupu -> Silver
+              itemType = 'silver';
+            }
+
             // Apply original effect
             console.log('weight:', weight);
             const effect = entry.type === 'sell' ? -weight : weight;
@@ -1076,9 +1129,7 @@ export class TransactionService {
       console.log('money:', freshCustomer?.balance ?? 0);
       console.log('gold 999:', freshCustomer?.metalBalances?.gold999 ?? 0);
       console.log('gold 995:', freshCustomer?.metalBalances?.gold995 ?? 0);
-      console.log('rani:', freshCustomer?.metalBalances?.rani ?? 0);
       console.log('silver:', freshCustomer?.metalBalances?.silver ?? 0);
-      console.log('rupu:', freshCustomer?.metalBalances?.rupu ?? 0);
       
       return true;
     } catch (error) {

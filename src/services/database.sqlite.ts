@@ -29,9 +29,7 @@ export class DatabaseService {
           balance REAL NOT NULL DEFAULT 0,
           gold999 REAL DEFAULT 0,
           gold995 REAL DEFAULT 0,
-          rani REAL DEFAULT 0,
           silver REAL DEFAULT 0,
-          rupu REAL DEFAULT 0,
           FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
         );
 

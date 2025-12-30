@@ -6,9 +6,7 @@ export interface Customer {
   metalBalances?: {
     gold999?: number; // Positive = merchant owes customer, Negative = customer owes merchant
     gold995?: number;
-    rani?: number; // Stores pure gold equivalent
     silver?: number;
-    rupu?: number; // Stores pure silver equivalent
   };
   avatar?: string;
 }

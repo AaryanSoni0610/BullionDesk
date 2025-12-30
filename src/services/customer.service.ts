@@ -23,10 +23,8 @@ export class CustomerService {
           balance: number;
           gold999: number | null;
           gold995: number | null;
-          rani: number | null;
           silver: number | null;
-          rupu: number | null;
-        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
         const customerObj: Customer = {
           id: customer.id,
@@ -37,9 +35,7 @@ export class CustomerService {
           metalBalances: {
             gold999: balanceRow?.gold999 || 0,
             gold995: balanceRow?.gold995 || 0,
-            rani: balanceRow?.rani || 0,
             silver: balanceRow?.silver || 0,
-            rupu: balanceRow?.rupu || 0,
           }
         };
 
@@ -74,10 +70,8 @@ export class CustomerService {
           balance: number;
           gold999: number | null;
           gold995: number | null;
-          rani: number | null;
           silver: number | null;
-          rupu: number | null;
-        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
         const customerObj: Customer = {
           id: customer.id,
@@ -88,9 +82,7 @@ export class CustomerService {
           metalBalances: {
             gold999: balanceRow?.gold999 || 0,
             gold995: balanceRow?.gold995 || 0,
-            rani: balanceRow?.rani || 0,
             silver: balanceRow?.silver || 0,
-            rupu: balanceRow?.rupu || 0,
           }
         };
 
@@ -128,15 +120,13 @@ export class CustomerService {
         // Update balances
         await db.runAsync(
           `UPDATE customer_balances 
-           SET balance = ?, gold999 = ?, gold995 = ?, rani = ?, silver = ?, rupu = ? 
+           SET balance = ?, gold999 = ?, gold995 = ?, silver = ? 
            WHERE customer_id = ?`,
           [
             customer.balance,
             customer.metalBalances?.gold999 || 0,
             customer.metalBalances?.gold995 || 0,
-            customer.metalBalances?.rani || 0,
             customer.metalBalances?.silver || 0,
-            customer.metalBalances?.rupu || 0,
             customer.id
           ]
         );
@@ -149,16 +139,14 @@ export class CustomerService {
 
         // Insert balances
         await db.runAsync(
-          `INSERT INTO customer_balances (customer_id, balance, gold999, gold995, rani, silver, rupu) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO customer_balances (customer_id, balance, gold999, gold995, silver) 
+           VALUES (?, ?, ?, ?, ?)`,
           [
             customer.id,
             customer.balance,
             customer.metalBalances?.gold999 || 0,
             customer.metalBalances?.gold995 || 0,
-            customer.metalBalances?.rani || 0,
-            customer.metalBalances?.silver || 0,
-            customer.metalBalances?.rupu || 0
+            customer.metalBalances?.silver || 0
           ]
         );
       }
@@ -202,9 +190,7 @@ export class CustomerService {
         metalBalances: {
           gold999: balanceRow?.gold999 || 0,
           gold995: balanceRow?.gold995 || 0,
-          rani: balanceRow?.rani || 0,
           silver: balanceRow?.silver || 0,
-          rupu: balanceRow?.rupu || 0,
         }
       };
     } catch (error) {
@@ -231,10 +217,8 @@ export class CustomerService {
         balance: number;
         gold999: number | null;
         gold995: number | null;
-        rani: number | null;
         silver: number | null;
-        rupu: number | null;
-      }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [id]);
+      }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [id]);
 
       return {
         id: customer.id,
@@ -245,9 +229,7 @@ export class CustomerService {
         metalBalances: {
           gold999: balanceRow?.gold999 || 0,
           gold995: balanceRow?.gold995 || 0,
-          rani: balanceRow?.rani || 0,
           silver: balanceRow?.silver || 0,
-          rupu: balanceRow?.rupu || 0,
         }
       };
     } catch (error) {
@@ -349,10 +331,8 @@ export class CustomerService {
           balance: number;
           gold999: number | null;
           gold995: number | null;
-          rani: number | null;
           silver: number | null;
-          rupu: number | null;
-        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
         const customerObj: Customer = {
           id: customer.id,
@@ -363,9 +343,7 @@ export class CustomerService {
           metalBalances: {
             gold999: balanceRow?.gold999 || 0,
             gold995: balanceRow?.gold995 || 0,
-            rani: balanceRow?.rani || 0,
             silver: balanceRow?.silver || 0,
-            rupu: balanceRow?.rupu || 0,
           }
         };
 
@@ -417,10 +395,8 @@ export class CustomerService {
           balance: number;
           gold999: number | null;
           gold995: number | null;
-          rani: number | null;
           silver: number | null;
-          rupu: number | null;
-        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
         const customerObj: Customer = {
           id: customer.id,
@@ -431,9 +407,7 @@ export class CustomerService {
           metalBalances: {
             gold999: balanceRow?.gold999 || 0,
             gold995: balanceRow?.gold995 || 0,
-            rani: balanceRow?.rani || 0,
             silver: balanceRow?.silver || 0,
-            rupu: balanceRow?.rupu || 0,
           }
         };
 
@@ -481,10 +455,8 @@ export class CustomerService {
           balance: number;
           gold999: number | null;
           gold995: number | null;
-          rani: number | null;
           silver: number | null;
-          rupu: number | null;
-        }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
         const customerObj: Customer = {
           id: customer.id,
@@ -495,9 +467,7 @@ export class CustomerService {
           metalBalances: {
             gold999: balanceRow?.gold999 || 0,
             gold995: balanceRow?.gold995 || 0,
-            rani: balanceRow?.rani || 0,
             silver: balanceRow?.silver || 0,
-            rupu: balanceRow?.rupu || 0,
           }
         };
 

@@ -29,6 +29,7 @@ import { CustomerListScreen } from './src/screens/CustomerListScreen';
 import { TradeScreen } from './src/screens/TradeScreen';
 import { RaniRupaSellScreen } from './src/screens/RaniRupaSellScreen';
 import { RecycleBinScreen } from './src/screens/RecycleBinScreen';
+import { RateCutScreen } from './src/screens/RateCutScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
 import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
@@ -38,7 +39,7 @@ import { DatabaseService } from './src/services/database.sqlite';
 import { TradeService } from './src/services/trade.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin';
+type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin' | 'rateCut';
 
 // Custom Tab Bar Button with Rectangular Touch Area and Ripple Effect
 const CustomTabBarButton = ({ children, onPress }: any) => {
@@ -121,6 +122,7 @@ interface AppContentProps {
   onNavigateToTrade: () => void;
   onNavigateToRaniRupaSell: () => void;
   onNavigateToRecycleBin: () => void;
+  onNavigateToRateCut: () => void;
 }
 
 const AppContent: React.FC<AppContentProps> = ({
@@ -218,6 +220,10 @@ const AppContent: React.FC<AppContentProps> = ({
             <RecycleBinScreen />
           )}
 
+          {appState === 'rateCut' && (
+            <RateCutScreen />
+          )}
+
           {/* Customer Selection Modal */}
           <CustomerSelectionModal
             visible={customerModalVisible}
@@ -310,6 +316,7 @@ export default function App() {
   const handleNavigateToTrade = () => setAppState('trade');
   const handleNavigateToRaniRupaSell = () => setAppState('raniRupaSell');
   const handleNavigateToRecycleBin = () => setAppState('recycleBin');
+  const handleNavigateToRateCut = () => setAppState('rateCut');
 
   if (!fontsLoaded) {
     return null; // or a loading screen
@@ -325,6 +332,7 @@ export default function App() {
       onNavigateToTrade={handleNavigateToTrade}
       onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
       onNavigateToRecycleBin={handleNavigateToRecycleBin}
+      onNavigateToRateCut={handleNavigateToRateCut}
     >
       <AppContent 
         appState={appState}
@@ -336,6 +344,7 @@ export default function App() {
         onNavigateToTrade={handleNavigateToTrade}
         onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
         onNavigateToRecycleBin={handleNavigateToRecycleBin}
+        onNavigateToRateCut={handleNavigateToRateCut}
       />
     </AppProvider>
   );

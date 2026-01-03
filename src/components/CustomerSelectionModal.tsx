@@ -30,6 +30,7 @@ interface CustomerSelectionModalProps {
   onSelectCustomer: (customer: Customer) => void;
   onCreateCustomer: (name: string) => void;
   allowCreateCustomer?: boolean;
+  filterFn?: (customer: Customer) => boolean;
 }
 
 export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
@@ -38,6 +39,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   onSelectCustomer,
   onCreateCustomer,
   allowCreateCustomer = true,
+  filterFn,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -84,10 +86,20 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       setFilteredCustomers(customers);
     } else {
       // Use database-level search instead of in-memory filtering
-      const filtered = await CustomerService.searchCustomers(query, ['adjust'], 50);
-      setFilteredCustomers(filtered);
+      const filtered = await CustomerService.searchCustomersByName(query);
+      
+      // Filter out system accounts (adjust)
+      const validFiltered = filtered.filter(c => 
+        c.name.toLowerCase() !== 'adjust'
+      );
+
+      if (filterFn) {
+        setFilteredCustomers(validFiltered.filter(filterFn));
+      } else {
+        setFilteredCustomers(validFiltered);
+      }
     }
-  }, [customers]);
+  }, [customers, filterFn]);
 
   // Debounced search function
   const debouncedSearch = useCallback(
@@ -125,18 +137,29 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
                 id: `expense_${Date.now()}`,
                 name: 'Expense(Kharch)',
                 balance: 0,
-                metalBalances: { gold999: 0, gold995: 0, rani: 0, silver: 0, rupu: 0 }
+                metalBalances: { gold999: 0, gold995: 0, silver: 0 }
              };
              await CustomerService.saveCustomer(expenseCustomer);
         }
 
         // Load all customers excluding 'adjust' at database level
-        const allCustomers = await CustomerService.getAllCustomersExcluding(['adjust']);
-        setCustomers(allCustomers);
+        // Note: getAllCustomersExcluding is not available in the current service, using getAllCustomers and filtering
+        const allCustomers = await CustomerService.getAllCustomers();
+        const validCustomers = allCustomers.filter(c => c.name.toLowerCase() !== 'adjust');
+        
+        if (filterFn) {
+            setCustomers(validCustomers.filter(filterFn));
+        } else {
+            setCustomers(validCustomers);
+        }
         
         // Get recent customers with database-level filtering and sorting
-        const recentCust = await CustomerService.getRecentCustomers(5, ['adjust']);
-        setRecentCustomers(recentCust);
+        const recentCust = await CustomerService.getRecentCustomers(10, ['adjust']);
+        if (filterFn) {
+            setRecentCustomers(recentCust.filter(filterFn));
+        } else {
+            setRecentCustomers(recentCust);
+        }
       } catch (error) {
         console.error('Error loading customers:', error);
         // Fallback to empty state

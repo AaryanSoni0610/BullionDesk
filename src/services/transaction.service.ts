@@ -27,7 +27,16 @@ export class TransactionService {
         note?: string;
         createdAt: string;
         lastUpdatedAt: string;
-      }>('SELECT * FROM transactions WHERE deleted_on IS NULL ORDER BY date DESC');
+        last_gold999_lock_date: number | null;
+        last_gold995_lock_date: number | null;
+        last_silver_lock_date: number | null;
+      }>(`
+        SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+        FROM transactions t
+        LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
+        WHERE t.deleted_on IS NULL 
+        ORDER BY t.date DESC
+      `);
 
       const result: Transaction[] = [];
 
@@ -73,6 +82,11 @@ export class TransactionService {
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
+          customerLockDates: {
+            gold999: trans.last_gold999_lock_date || 0,
+            gold995: trans.last_gold995_lock_date || 0,
+            silver: trans.last_silver_lock_date || 0,
+          }
         });
       }
 
@@ -89,7 +103,11 @@ export class TransactionService {
       const db = DatabaseService.getDatabase();
       
       const transactions = await DatabaseService.getAllAsyncBatch<any>(
-        'SELECT * FROM transactions WHERE customerId = ? AND deleted_on IS NULL ORDER BY date DESC',
+        `SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+         FROM transactions t
+         LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
+         WHERE t.customerId = ? AND t.deleted_on IS NULL 
+         ORDER BY t.date DESC`,
         [customerId]
       );
 
@@ -136,6 +154,11 @@ export class TransactionService {
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
+          customerLockDates: {
+            gold999: trans.last_gold999_lock_date || 0,
+            gold995: trans.last_gold995_lock_date || 0,
+            silver: trans.last_silver_lock_date || 0,
+          }
         });
       }
 
@@ -156,26 +179,31 @@ export class TransactionService {
     try {
       const db = DatabaseService.getDatabase();
 
-      let query = 'SELECT * FROM transactions WHERE date >= ? AND date <= ? AND deleted_on IS NULL';
+      let query = `
+        SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+        FROM transactions t
+        LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
+        WHERE t.date >= ? AND t.date <= ? AND t.deleted_on IS NULL
+      `;
       let params: any[] = [startDate, endDate];
 
       // Exclude specific customer
       if (excludeCustomerName) {
-        query += ' AND LOWER(customerName) != ?';
+        query += ' AND LOWER(t.customerName) != ?';
         params.push(excludeCustomerName.toLowerCase());
       }
 
       // If itemTypes are specified, filter transactions that have entries with those item types
       if (itemTypes && itemTypes.length > 0) {
         const placeholders = itemTypes.map(() => '?').join(',');
-        query += ` AND id IN (
+        query += ` AND t.id IN (
           SELECT DISTINCT transaction_id FROM transaction_entries
           WHERE itemType IN (${placeholders})
         )`;
         params.push(...itemTypes);
       }
 
-      query += ' ORDER BY date DESC';
+      query += ' ORDER BY t.date DESC';
 
       const transactions = await DatabaseService.getAllAsyncBatch<any>(query, params);
 
@@ -231,6 +259,11 @@ export class TransactionService {
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
+          customerLockDates: {
+            gold999: trans.last_gold999_lock_date || 0,
+            gold995: trans.last_gold995_lock_date || 0,
+            silver: trans.last_silver_lock_date || 0,
+          }
         });
       }
 

@@ -42,7 +42,7 @@ export const SettingsScreen: React.FC = () => {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
   const [showTermsOfService, setShowTermsOfService] = React.useState(false);
   const [showAbout, setShowAbout] = React.useState(false);
-  const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell, navigateToRecycleBin } = useAppContext();
+  const { navigateToTabs, showAlert, navigateToCustomers, navigateToRaniRupaSell, navigateToRecycleBin, navigateToRateCut } = useAppContext();
 
   // Check notification and backup status on focus
   useFocusEffect(
@@ -639,6 +639,17 @@ export const SettingsScreen: React.FC = () => {
           <Divider />
 
           <List.Item
+            title="Rate Cut"
+            description="Manage metal rate cuts"
+            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            left={props => <List.Icon {...props} icon="content-cut" />}
+            onPress={navigateToRateCut}
+          />
+
+          <Divider />
+
+          <List.Item
             title="Base Inventory"
             description={
               isLoadingInventory
@@ -894,7 +905,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v6.3.1
+        message={`BullionDesk v6.4.0
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

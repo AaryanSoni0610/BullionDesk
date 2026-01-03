@@ -323,9 +323,7 @@ export const LedgerScreen: React.FC = () => {
           metalBalances: {
             gold999: 0,
             gold995: 0,
-            rani: 0,
             silver: 0,
-            rupu: 0
           }
         };
         await CustomerService.saveCustomer(adjustCustomer);

@@ -7,42 +7,43 @@ export class CustomerService {
     try {
       const db = DatabaseService.getDatabase();
       
-      // Get all customers
-      const customers = await DatabaseService.getAllAsyncBatch<{
+      // Optimized query with JOIN
+      const rows = await DatabaseService.getAllAsyncBatch<{
         id: string;
         name: string;
         lastTransaction: string | null;
         avatar: string | null;
-      }>('SELECT id, name, lastTransaction, avatar FROM customers ORDER BY name ASC');
+        balance: number | null;
+        gold999: number | null;
+        gold995: number | null;
+        silver: number | null;
+        last_gold999_lock_date: number | null;
+        last_gold995_lock_date: number | null;
+        last_silver_lock_date: number | null;
+      }>(`
+        SELECT c.id, c.name, c.lastTransaction, c.avatar, 
+               cb.balance, cb.gold999, cb.gold995, cb.silver,
+               cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+        FROM customers c
+        LEFT JOIN customer_balances cb ON c.id = cb.customer_id
+        ORDER BY c.name ASC
+      `);
 
-      // Get balances for each customer
-      const customersWithBalances: Customer[] = [];
-      
-      for (const customer of customers) {
-        const balanceRow = await db.getFirstAsync<{
-          balance: number;
-          gold999: number | null;
-          gold995: number | null;
-          silver: number | null;
-        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
-
-        const customerObj: Customer = {
-          id: customer.id,
-          name: customer.name.trim(),
-          lastTransaction: customer.lastTransaction || undefined,
-          avatar: customer.avatar || undefined,
-          balance: balanceRow?.balance || 0,
-          metalBalances: {
-            gold999: balanceRow?.gold999 || 0,
-            gold995: balanceRow?.gold995 || 0,
-            silver: balanceRow?.silver || 0,
-          }
-        };
-
-        customersWithBalances.push(customerObj);
-      }
-
-      return customersWithBalances;
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name.trim(),
+        lastTransaction: row.lastTransaction || undefined,
+        avatar: row.avatar || undefined,
+        balance: row.balance || 0,
+        metalBalances: {
+          gold999: row.gold999 || 0,
+          gold995: row.gold995 || 0,
+          silver: row.silver || 0,
+        },
+        last_gold999_lock_date: row.last_gold999_lock_date || 0,
+        last_gold995_lock_date: row.last_gold995_lock_date || 0,
+        last_silver_lock_date: row.last_silver_lock_date || 0,
+      }));
     } catch (error) {
       console.error('Error getting customers:', error);
       return [];
@@ -56,40 +57,45 @@ export class CustomerService {
       
       // Use LIKE for case-insensitive search
       const searchPattern = `%${searchQuery}%`;
-      const customers = await DatabaseService.getAllAsyncBatch<{
+      
+      // Optimized query with JOIN
+      const rows = await DatabaseService.getAllAsyncBatch<{
         id: string;
         name: string;
         lastTransaction: string | null;
         avatar: string | null;
-      }>('SELECT id, name, lastTransaction, avatar FROM customers WHERE name LIKE ? ORDER BY name ASC', [searchPattern]);
+        balance: number | null;
+        gold999: number | null;
+        gold995: number | null;
+        silver: number | null;
+        last_gold999_lock_date: number | null;
+        last_gold995_lock_date: number | null;
+        last_silver_lock_date: number | null;
+      }>(`
+        SELECT c.id, c.name, c.lastTransaction, c.avatar, 
+               cb.balance, cb.gold999, cb.gold995, cb.silver,
+               cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+        FROM customers c
+        LEFT JOIN customer_balances cb ON c.id = cb.customer_id
+        WHERE c.name LIKE ?
+        ORDER BY c.name ASC
+      `, [searchPattern]);
 
-      const customersWithBalances: Customer[] = [];
-      
-      for (const customer of customers) {
-        const balanceRow = await db.getFirstAsync<{
-          balance: number;
-          gold999: number | null;
-          gold995: number | null;
-          silver: number | null;
-        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
-
-        const customerObj: Customer = {
-          id: customer.id,
-          name: customer.name.trim(),
-          lastTransaction: customer.lastTransaction || undefined,
-          avatar: customer.avatar || undefined,
-          balance: balanceRow?.balance || 0,
-          metalBalances: {
-            gold999: balanceRow?.gold999 || 0,
-            gold995: balanceRow?.gold995 || 0,
-            silver: balanceRow?.silver || 0,
-          }
-        };
-
-        customersWithBalances.push(customerObj);
-      }
-
-      return customersWithBalances;
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name.trim(),
+        lastTransaction: row.lastTransaction || undefined,
+        avatar: row.avatar || undefined,
+        balance: row.balance || 0,
+        metalBalances: {
+          gold999: row.gold999 || 0,
+          gold995: row.gold995 || 0,
+          silver: row.silver || 0,
+        },
+        last_gold999_lock_date: row.last_gold999_lock_date || 0,
+        last_gold995_lock_date: row.last_gold995_lock_date || 0,
+        last_silver_lock_date: row.last_silver_lock_date || 0,
+      }));
     } catch (error) {
       console.error('Error searching customers:', error);
       return [];
@@ -176,10 +182,8 @@ export class CustomerService {
         balance: number;
         gold999: number | null;
         gold995: number | null;
-        rani: number | null;
         silver: number | null;
-        rupu: number | null;
-      }>('SELECT balance, gold999, gold995, rani, silver, rupu FROM customer_balances WHERE customer_id = ?', [customer.id]);
+      }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
       return {
         id: customer.id,
@@ -218,7 +222,10 @@ export class CustomerService {
         gold999: number | null;
         gold995: number | null;
         silver: number | null;
-      }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [id]);
+        last_gold999_lock_date: number | null;
+        last_gold995_lock_date: number | null;
+        last_silver_lock_date: number | null;
+      }>('SELECT balance, gold999, gold995, silver, last_gold999_lock_date, last_gold995_lock_date, last_silver_lock_date FROM customer_balances WHERE customer_id = ?', [id]);
 
       return {
         id: customer.id,
@@ -230,7 +237,10 @@ export class CustomerService {
           gold999: balanceRow?.gold999 || 0,
           gold995: balanceRow?.gold995 || 0,
           silver: balanceRow?.silver || 0,
-        }
+        },
+        last_gold999_lock_date: balanceRow?.last_gold999_lock_date || 0,
+        last_gold995_lock_date: balanceRow?.last_gold995_lock_date || 0,
+        last_silver_lock_date: balanceRow?.last_silver_lock_date || 0,
       };
     } catch (error) {
       console.error('Error getting customer by ID:', error);
@@ -456,7 +466,10 @@ export class CustomerService {
           gold999: number | null;
           gold995: number | null;
           silver: number | null;
-        }>('SELECT balance, gold999, gold995, silver FROM customer_balances WHERE customer_id = ?', [customer.id]);
+          last_gold999_lock_date: number | null;
+          last_gold995_lock_date: number | null;
+          last_silver_lock_date: number | null;
+        }>('SELECT balance, gold999, gold995, silver, last_gold999_lock_date, last_gold995_lock_date, last_silver_lock_date FROM customer_balances WHERE customer_id = ?', [customer.id]);
 
         const customerObj: Customer = {
           id: customer.id,
@@ -468,7 +481,10 @@ export class CustomerService {
             gold999: balanceRow?.gold999 || 0,
             gold995: balanceRow?.gold995 || 0,
             silver: balanceRow?.silver || 0,
-          }
+          },
+          last_gold999_lock_date: balanceRow?.last_gold999_lock_date || 0,
+          last_gold995_lock_date: balanceRow?.last_gold995_lock_date || 0,
+          last_silver_lock_date: balanceRow?.last_silver_lock_date || 0,
         };
 
         customersWithBalances.push(customerObj);

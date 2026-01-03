@@ -8,6 +8,9 @@ export interface Customer {
     gold995?: number;
     silver?: number;
   };
+  last_gold999_lock_date?: number;
+  last_gold995_lock_date?: number;
+  last_silver_lock_date?: number;
   avatar?: string;
 }
 
@@ -28,6 +31,11 @@ export interface Transaction {
   note?: string; // Optional note for the transaction
   createdAt: string; // ISO datetime when transaction was created
   lastUpdatedAt: string; // ISO datetime when transaction was last updated
+  customerLockDates?: {
+    gold999?: number;
+    gold995?: number;
+    silver?: number;
+  };
 }
 
 export interface TransactionEntry {

@@ -76,8 +76,29 @@ export const HistoryScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const exportCardRefs = useRef<Array<View | null>>([]);
 
-  // Helper function to check if transaction is settled and old (cannot be edited)
-  const isSettledAndOld = (transaction: Transaction): boolean => {
+  // Helper function to check if transaction is locked (cannot be edited/deleted)
+  const isTransactionLocked = (transaction: Transaction): boolean => {
+    // 1. Check Rate Cut Lock (for metal-only transactions)
+    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
+    
+    if (isMetalOnly) {
+      const txDate = new Date(transaction.date).getTime();
+      const lockDates = transaction.customerLockDates;
+
+      if (lockDates) {
+        // Check if any entry in the transaction corresponds to a locked metal type
+        const isLockedByRateCut = transaction.entries.some(entry => {
+          if (entry.itemType === 'gold999' && txDate <= (lockDates.gold999 || 0)) return true;
+          if (entry.itemType === 'gold995' && txDate <= (lockDates.gold995 || 0)) return true;
+          if (entry.itemType === 'silver' && txDate <= (lockDates.silver || 0)) return true;
+          return false;
+        });
+        
+        if (isLockedByRateCut) return true;
+      }
+    }
+
+    // 2. Check Settled & Old Logic (for non-metal-only transactions)
     if (!transaction.lastUpdatedAt) return false;
     
     const timeSinceUpdate = Date.now() - new Date(transaction.lastUpdatedAt).getTime();
@@ -87,8 +108,7 @@ export const HistoryScreen: React.FC = () => {
     const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
     const isSettled = remainingBalance <= 0;
 
-    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
-
+    // The original logic excluded metalOnly from this check, preserving that behavior
     return isSettled && isOld && !isMetalOnly;
   };
 
@@ -783,10 +803,20 @@ export const HistoryScreen: React.FC = () => {
           {!hideActions && (
             <View style={styles.editButtonRow}>
               <TouchableOpacity 
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => handleDeleteTransaction(transaction)}
+                style={[styles.actionButton, styles.deleteButton, isTransactionLocked(transaction) && styles.disabledButton]}
+                onPress={() => {
+                  if (isTransactionLocked(transaction)) {
+                    setAlertTitle('Locked Transaction');
+                    setAlertMessage('This transaction is locked by a rate cut or settlement and cannot be deleted.');
+                    setAlertButtons([{ text: 'OK' }]);
+                    setAlertVisible(true);
+                  } else {
+                    handleDeleteTransaction(transaction);
+                  }
+                }}
+                disabled={isTransactionLocked(transaction)}
               >
-                <Icon name="delete" size={16} color={theme.colors.error} />
+                <Icon name={isTransactionLocked(transaction) ? "lock" : "delete"} size={16} color={isTransactionLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.actionButton, styles.shareButton]}
@@ -795,23 +825,23 @@ export const HistoryScreen: React.FC = () => {
                 <Icon name="share-variant" size={16} color={theme.colors.success} />
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.actionButton, styles.editButton, isSettledAndOld(transaction) && styles.disabledButton]}
+                style={[styles.actionButton, styles.editButton, isTransactionLocked(transaction) && styles.disabledButton]}
                 onPress={() => {
-                  if (isSettledAndOld(transaction)) {
-                    setAlertTitle('Cannot Edit Transaction');
-                    setAlertMessage('This transaction has been settled and is too old to edit.');
+                  if (isTransactionLocked(transaction)) {
+                    setAlertTitle('Locked Transaction');
+                    setAlertMessage('This transaction is locked by a rate cut or settlement and cannot be edited.');
                     setAlertButtons([{ text: 'OK' }]);
                     setAlertVisible(true);
                   } else {
                     loadTransactionForEdit(transaction.id);
                   }
                 }}
-                disabled={isSettledAndOld(transaction)}
+                disabled={isTransactionLocked(transaction)}
               >
                 <Icon 
-                  name="pencil" 
+                  name={isTransactionLocked(transaction) ? "lock" : "pencil"} 
                   size={16} 
-                  color={isSettledAndOld(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
+                  color={isTransactionLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} 
                 />
               </TouchableOpacity>
             </View>

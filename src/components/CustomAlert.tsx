@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   title: {
     marginBottom: 16,
     textAlign: 'left',
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   messageContainer: {
     marginBottom: 0,

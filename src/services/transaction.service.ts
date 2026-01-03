@@ -8,35 +8,61 @@ import * as Device from 'expo-device';
 
 export class TransactionService {
   // Get all transactions
-  static async getAllTransactions(): Promise<Transaction[]> {
+  static async getAllTransactions(limit?: number): Promise<Transaction[]> {
     try {
       const db = DatabaseService.getDatabase();
       
-      const transactions = await DatabaseService.getAllAsyncBatch<{
-        id: string;
-        deviceId: string | null;
-        customerId: string;
-        customerName: string;
-        date: string;
-        discountExtraAmount: number;
-        total: number;
-        amountPaid: number;
-        lastGivenMoney: number;
-        lastToLastGivenMoney: number;
-        settlementType: string;
-        note?: string;
-        createdAt: string;
-        lastUpdatedAt: string;
-        last_gold999_lock_date: number | null;
-        last_gold995_lock_date: number | null;
-        last_silver_lock_date: number | null;
-      }>(`
+      let query = `
         SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
         FROM transactions t
         LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
         WHERE t.deleted_on IS NULL 
         ORDER BY t.date DESC
-      `);
+      `;
+
+      let transactions;
+      if (limit) {
+        query += ` LIMIT ${limit}`;
+        transactions = await db.getAllAsync<{
+          id: string;
+          deviceId: string | null;
+          customerId: string;
+          customerName: string;
+          date: string;
+          discountExtraAmount: number;
+          total: number;
+          amountPaid: number;
+          lastGivenMoney: number;
+          lastToLastGivenMoney: number;
+          settlementType: string;
+          note?: string;
+          createdAt: string;
+          lastUpdatedAt: string;
+          last_gold999_lock_date: number | null;
+          last_gold995_lock_date: number | null;
+          last_silver_lock_date: number | null;
+        }>(query);
+      } else {
+        transactions = await DatabaseService.getAllAsyncBatch<{
+          id: string;
+          deviceId: string | null;
+          customerId: string;
+          customerName: string;
+          date: string;
+          discountExtraAmount: number;
+          total: number;
+          amountPaid: number;
+          lastGivenMoney: number;
+          lastToLastGivenMoney: number;
+          settlementType: string;
+          note?: string;
+          createdAt: string;
+          lastUpdatedAt: string;
+          last_gold999_lock_date: number | null;
+          last_gold995_lock_date: number | null;
+          last_silver_lock_date: number | null;
+        }>(query);
+      }
 
       const result: Transaction[] = [];
 

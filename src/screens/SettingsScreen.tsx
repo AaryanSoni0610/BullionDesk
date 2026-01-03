@@ -593,8 +593,8 @@ export const SettingsScreen: React.FC = () => {
             title="Enable Notifications"
             description="Receive daily reminders for customers with pending debt"
             style={styles.sectionListItem}
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="bell-outline" />}
             right={() => (
               <Switch
@@ -610,8 +610,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Auto Backup"
             description="Automatically backup data daily to external storage"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="cloud-upload-outline" />}
             right={() => (
               <Switch
@@ -630,8 +630,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Customers"
             description={isLoadingCustomers ? "Loading..." : `${customers.length} customers registered`}
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="account-group-outline" />}
             onPress={navigateToCustomers}
           />
@@ -641,8 +641,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Rate Cut"
             description="Manage metal rate cuts"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="content-cut" />}
             onPress={navigateToRateCut}
           />
@@ -656,8 +656,8 @@ export const SettingsScreen: React.FC = () => {
                 ? "Loading..."
                 : `Gold: ${formatPureGoldPrecise((baseInventory?.gold999 + baseInventory?.gold995 || 0))}g, Silver: ${formatPureSilver(baseInventory?.silver || 0)}g, Money: ₹${formatIndianNumber(Math.round(baseInventory?.money || 0))}`
             }
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="package-variant-closed" />}
             onPress={() => {
               if (baseInventory) {
@@ -688,8 +688,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Rani/Rupa Bulk Sell"
             description="Bulk sell Rani or Rupu items"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="swap-horizontal" />}
             onPress={() => navigateToRaniRupaSell()}
           />
@@ -702,8 +702,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Recycle Bin"
             description="View and restore deleted transactions"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="recycle" />}
             onPress={navigateToRecycleBin}
           />
@@ -713,8 +713,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Export Data"
             description="Export to external storage location"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="file-export-outline" />}
             onPress={handleExportData}
           />
@@ -724,8 +724,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Import Data"
             description="Import from backup file"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="file-import-outline" />}
             onPress={handleImportData}
           />
@@ -735,8 +735,8 @@ export const SettingsScreen: React.FC = () => {
           <List.Item
             title="Clear All Data"
             description={isClearing ? "Clearing data..." : "Delete all data, reset inventory to base"}
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
+            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="delete-forever-outline" color={theme.colors.error} />}
             disabled={isClearing}
             onPress={handleClearAllData}
@@ -749,7 +749,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Privacy Policy"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="shield-check-outline" />}
             onPress={() => setShowPrivacyPolicy(true)}
           />
@@ -758,7 +758,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="Terms of Service"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="file-document-outline" />}
             onPress={() => setShowTermsOfService(true)}
           />
@@ -767,7 +767,7 @@ export const SettingsScreen: React.FC = () => {
 
           <List.Item
             title="About"
-            titleStyle={{ fontFamily: 'Roboto_400Regular' }}
+            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
             left={props => <List.Icon {...props} icon="information-outline" />}
             onPress={() => setShowAbout(true)}
           />
@@ -905,7 +905,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
-        message={`BullionDesk v6.4.0
+        message={`BullionDesk v6.4.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 
@@ -960,7 +960,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   backButton: {
     marginRight: theme.spacing.sm,
@@ -971,7 +971,7 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     fontSize: 16,
   },
   sectionListItem: {

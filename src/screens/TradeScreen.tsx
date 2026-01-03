@@ -1,19 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
   FlatList,
+  TouchableOpacity,
 } from 'react-native';
-import {
-  Surface,
-  Text,
-  IconButton,
-  FAB,
-  List,
-  Avatar,
-  Divider,
-} from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Text,
+} from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { Trade } from '../types';
@@ -25,12 +20,10 @@ import { InventoryInputDialog } from '../components/InventoryInputDialog';
 
 export const TradeScreen: React.FC = () => {
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
-  const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradeInputs, setTradeInputs] = useState<any[]>([]);
   const [collectedTradeData, setCollectedTradeData] = useState<any>({});
 
-  const { showAlert, navigateToSettings } = useAppContext();
+  const { showAlert, navigateToSettings, tradeDialogVisible, setTradeDialogVisible } = useAppContext();
 
   // Load trades on focus
   useFocusEffect(
@@ -81,16 +74,6 @@ export const TradeScreen: React.FC = () => {
     );
   };
 
-  const toggleCardExpansion = (tradeId: string) => {
-    const newExpanded = new Set(expandedCards);
-    if (newExpanded.has(tradeId)) {
-      newExpanded.delete(tradeId);
-    } else {
-      newExpanded.add(tradeId);
-    }
-    setExpandedCards(newExpanded);
-  };
-
   const handleAddTrade = () => {
     // Start with customer name input
     setTradeInputs([
@@ -104,7 +87,7 @@ export const TradeScreen: React.FC = () => {
       }
     ]);
     setCollectedTradeData({});
-    setShowTradeDialog(true);
+    setTradeDialogVisible(true);
   };
 
   const handleTradeDialogSubmit = (values: Record<string, any>) => {
@@ -187,7 +170,7 @@ export const TradeScreen: React.FC = () => {
       ]);
     } else {
       // All data collected, save the trade
-      setShowTradeDialog(false);
+      setTradeDialogVisible(false);
 
       const tradeData = {
         customerName: updatedData.customerName,
@@ -210,7 +193,7 @@ export const TradeScreen: React.FC = () => {
   };
 
   const handleTradeDialogCancel = () => {
-    setShowTradeDialog(false);
+    setTradeDialogVisible(false);
     setCollectedTradeData({});
   };
 
@@ -244,15 +227,6 @@ export const TradeScreen: React.FC = () => {
     }
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(word => word.charAt(0))
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
   const formatItemType = (itemType: string) => {
     const typeMap: Record<string, string> = {
       gold999: 'Gold 999',
@@ -264,96 +238,57 @@ export const TradeScreen: React.FC = () => {
     return typeMap[itemType] || itemType;
   };
 
-  const formatPrice = (price: number, itemType: string) => {
+  const getCardVariant = (itemType: string) => {
     const isGold = itemType.includes('gold') || itemType === 'rani';
-    const unit = isGold ? '/10g' : '/kg';
-    return `₹${formatIndianNumber(price)}${unit}`;
+    return isGold ? 'gold' : 'silver';
   };
 
   const renderTradeItem = ({ item }: { item: Trade }) => {
-    const isExpanded = expandedCards.has(item.id);
+    const variant = getCardVariant(item.itemType);
+    const isGold = variant === 'gold';
+    
+    const cardStyle = isGold ? styles.cardGold : styles.cardSilver;
+    const textColor = isGold ? styles.textGold : styles.textSilver;
+    const labelColor = isGold ? styles.labelGold : styles.labelSilver;
+    const accentColor = isGold ? '#B08204' : '#455A64';
 
     return (
-      <View>
-        <List.Item
-          title={item.customerName}
-          titleStyle={styles.customerName}
-          descriptionStyle={styles.tradeDescription}
-          left={() => (
-            <Avatar.Text
-              size={36}
-              label={getInitials(item.customerName)}
-              style={styles.avatar}
-              labelStyle={[styles.avatarLabel, {fontFamily: 'Roboto_500Medium'}]}
-            />
-          )}
-          right={() => (
-            <View style={styles.rightActions}>
-              <IconButton
-                icon="delete-outline"
-                size={20}
-                onPress={() => handleDeleteTrade(item)}
-                style={styles.deleteButton}
-                iconColor={theme.colors.error}
-              />
-              <IconButton
-                icon={isExpanded ? "chevron-up" : "chevron-down"}
-                size={20}
-                onPress={() => toggleCardExpansion(item.id)}
-                style={styles.expandButton}
-              />
-            </View>
-          )}
-          onPress={() => toggleCardExpansion(item.id)}
-          style={styles.tradeItem}
-        />
-
-        {isExpanded && (
-          <View style={styles.expandedContent}>
-            <View style={styles.tradeDetails}>
-              <View style={styles.detailRow}>
-                <Text variant="bodyMedium" style={styles.detailLabel}>
-                  Date:
-                </Text>
-                <Text variant="bodyMedium" style={styles.detailValue}>
-                  {formatFullDate(item.date)}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text variant="bodyMedium" style={styles.detailLabel}>
-                  Type:
-                </Text>
-                <Text variant="bodyMedium" style={[styles.detailValue, { textTransform: 'capitalize' }]}>
-                  {item.type}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text variant="bodyMedium" style={styles.detailLabel}>
-                  Item:
-                </Text>
-                <Text variant="bodyMedium" style={styles.detailValue}>
-                  {formatItemType(item.itemType)}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text variant="bodyMedium" style={styles.detailLabel}>
-                  Price:
-                </Text>
-                <Text variant="bodyMedium" style={styles.detailValue}>
-                  {formatPrice(item.price, item.itemType)}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text variant="bodyMedium" style={styles.detailLabel}>
-                  Weight:
-                </Text>
-                <Text variant="bodyMedium" style={styles.detailValue}>
-                  {item.weight}g
-                </Text>
-              </View>
-            </View>
+      <View style={[styles.tradeCard, cardStyle]}>
+        <View style={styles.cardTop}>
+          <View style={styles.userBlock}>
+            <Text style={[styles.dateLabel, labelColor]}>{formatFullDate(item.date)}</Text>
+            <Text style={[styles.userName, textColor]}>{item.customerName}</Text>
           </View>
-        )}
+          <View style={styles.headerActions}>
+            <View style={styles.typeBadge}>
+              <Text style={[styles.typeText, { color: accentColor }]}>{item.type}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.deleteAction} 
+              onPress={() => handleDeleteTrade(item)}
+            >
+              <Icon name="delete-outline" size={20} color={theme.colors.error} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.dataRow}>
+          <View style={styles.dataPill}>
+            <Text style={[styles.pillLabel, labelColor]}>Item</Text>
+            <Text style={[styles.pillValue, textColor]}>{formatItemType(item.itemType)}</Text>
+          </View>
+          <View style={styles.dataPill}>
+            <Text style={[styles.pillLabel, labelColor]}>Weight</Text>
+            <Text style={[styles.pillValue, textColor]}>{item.itemType.includes('gold') ? `${item.weight.toFixed(3)}g` : `${item.weight.toFixed(1)}g`}</Text>
+          </View>
+          <View style={styles.dataPill}>
+            <Text style={[styles.pillLabel, labelColor]}>Price</Text>
+            <Text style={[styles.pillValue, textColor]}>
+                ₹{formatIndianNumber(item.price)}
+            </Text>
+          </View>
+        </View>
+
       </View>
     );
   };
@@ -372,21 +307,15 @@ export const TradeScreen: React.FC = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* App Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={1}>
-        <View style={styles.appTitleContent}>
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Trades
-          </Text>
-          <IconButton
-            icon="cog-outline"
-            size={24}
-            onPress={navigateToSettings}
-            style={styles.settingsButton}
-          />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.screenTitle}>Trades</Text>
         </View>
-      </Surface>
+        <TouchableOpacity style={styles.settingsBtn} onPress={navigateToSettings}>
+          <Icon name="cog" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.content}>
         {trades.length === 0 ? (
@@ -396,25 +325,15 @@ export const TradeScreen: React.FC = () => {
             data={trades}
             renderItem={renderTradeItem}
             keyExtractor={item => item.id}
-            style={styles.tradeList}
+            contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            ItemSeparatorComponent={() => <Divider />}
           />
         )}
       </View>
 
-      {/* FAB */}
-      {!showTradeDialog && (
-        <FAB
-          icon="swap-vertical"
-          style={styles.fab}
-          onPress={handleAddTrade}
-        />
-      )}
-
       {/* Trade Input Dialog */}
       <InventoryInputDialog
-        visible={showTradeDialog}
+        visible={tradeDialogVisible}
         title={
           !collectedTradeData.customerName ? 'Add Trade - Customer' :
           (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Add Trade - Details' :
@@ -440,92 +359,143 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.sm,
-  },
-  appTitleContent: {
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: theme.spacing.md,
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
   },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 32,
+    color: theme.colors.onPrimaryContainer,
+    letterSpacing: -1,
   },
-  settingsButton: {
-    margin: 0,
+  settingsBtn: {
+    width: 48,
+    height: 48,
+    marginRight: -7,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  screenSubtitle: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 14,
+    color: '#44474F',
+    marginTop: 4,
   },
   content: {
     flex: 1,
-    paddingHorizontal: theme.spacing.md,
   },
-  tradeList: {
-    flex: 1,
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 120, // Space for FAB and Nav
   },
-  tradeItem: {
-    backgroundColor: 'transparent',
-    paddingVertical: 8,
-    borderRadius: 50,
+  tradeCard: {
+    borderRadius: 32,
+    padding: 24,
+    marginBottom: 16,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  avatar: {
-    backgroundColor: theme.colors.primary,
-    marginRight: 0,
-    marginLeft: 10,
+  cardGold: {
+    backgroundColor: '#FFF8E1',
   },
-  avatarLabel: {
-    color: theme.colors.onPrimary,
-    fontSize: 16,
+  cardSilver: {
+    backgroundColor: '#F5F7FA',
   },
-  customerName: {
-    color: theme.colors.onSurface,
-    fontWeight: '500',
-    fontSize: 16,
-    fontFamily: 'Roboto_500Medium',
-    marginTop: -10,
-  },
-  tradeDescription: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 14,
-    marginTop: 2,
-    fontFamily: 'Roboto_400Regular',
-  },
-  expandButton: {
-    marginRight: -10,
-    marginTop: -5,
-  },
-  rightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  deleteButton: {
-    marginRight: -5,
-    marginTop: -5,
-  },
-  expandedContent: {
-    backgroundColor: theme.colors.surface,
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    borderRadius: 8,
-    elevation: theme.elevation.level1,
-  },
-  tradeDetails: {
-    padding: theme.spacing.md,
-  },
-  detailRow: {
+  textGold: { color: '#5C4300' },
+  textSilver: { color: '#191C1E' },
+  labelGold: { color: '#5C4300', opacity: 0.7 },
+  labelSilver: { color: '#191C1E', opacity: 0.7 },
+
+  cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  userBlock: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  userName: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 22,
+  },
+  headerActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
+    gap: 8,
   },
-  detailLabel: {
-    color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Roboto_500Medium',
+  typeBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.6)',
   },
-  detailValue: {
-    color: theme.colors.onSurface,
-    fontFamily: 'Roboto_400Regular',
+  deleteAction: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.errorContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeText: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  dataRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dataPill: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    padding: 12,
+    borderRadius: 16,
+    alignItems: 'flex-start',
+  },
+  pillLabel: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  pillValue: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 16,
+  },
+
+  extendedFab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    backgroundColor: 'lightseagreen',
+    shadowColor: 'lightseagreen',
+    borderRadius: 32,
+    elevation: 6,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyState: {
     flex: 1,
@@ -536,7 +506,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     textAlign: 'center',
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
     marginTop: theme.spacing.md,
     marginBottom: theme.spacing.sm,
     color: theme.colors.onSurface,
@@ -545,12 +515,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: theme.spacing.lg,
     color: theme.colors.onSurfaceVariant,
-  },
-  fab: {
-    position: 'absolute',
-    margin: theme.spacing.md,
-    right: 0,
-    bottom: theme.spacing.md,
-    borderRadius: 16,
+    fontFamily: 'Outfit_400Regular',
   },
 });

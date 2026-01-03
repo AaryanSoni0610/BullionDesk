@@ -874,7 +874,7 @@ export const CustomerListScreen: React.FC = () => {
               size={36}
               label={getInitials(item.name)}
               style={styles.avatar}
-              labelStyle={[styles.avatarLabel, {fontFamily: 'Roboto_500Medium'}]}
+              labelStyle={[styles.avatarLabel, {fontFamily: 'Outfit_500Medium'}]}
             />
           )}
           right={() => (
@@ -1052,7 +1052,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     flex: 1,
   },
   backButton: {
@@ -1101,14 +1101,14 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     fontWeight: '500',
     fontSize: 16,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     marginTop: -10,
   },
   customerBalance: {
     color: theme.colors.onSurfaceVariant,
     fontSize: 14,
     marginTop: 2,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
   },
   historyButton: {
     margin: 0,
@@ -1149,7 +1149,7 @@ const styles = StyleSheet.create({
   },
   transactionHeaderText: {
     flex: 1,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     color: theme.colors.onSurfaceVariant,
   },
   transactionRow: {
@@ -1173,7 +1173,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   transactionAmount: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     color: theme.colors.onSurface,
     fontSize: 14,
   },
@@ -1183,7 +1183,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 0,
     padding: theme.spacing.sm,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
 
   },
 });

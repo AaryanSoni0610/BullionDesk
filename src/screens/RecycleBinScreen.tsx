@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   backButton: {
     marginRight: theme.spacing.sm,
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
   },
   customerName: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   transactionDate: {
     color: theme.colors.onSurfaceVariant,
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xs,
   },
   amount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     textAlign: 'right',
   },
   expandedContent: {
@@ -654,10 +654,10 @@ const styles = StyleSheet.create({
   },
   totalLabel: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   totalValue: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     fontSize: 12,
   },
   paymentRow: {
@@ -671,10 +671,10 @@ const styles = StyleSheet.create({
   },
   paymentLabel: {
     color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   transactionBalance: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     fontSize: 11,
   },
   editButtonRow: {
@@ -722,6 +722,6 @@ const styles = StyleSheet.create({
   },
   warningText: {
     color: theme.colors.error,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
 });

@@ -833,7 +833,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   customerHeader: {
     backgroundColor: theme.colors.surface,
@@ -888,11 +888,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   entryTitle: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     marginBottom: theme.spacing.xs,
   },
   entryType: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   actionButtons: {
     flexDirection: 'row',
@@ -910,7 +910,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
   },
   entrySubtotal: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   summaryCard: {
     borderRadius: 12,
@@ -918,7 +918,7 @@ const styles = StyleSheet.create({
   summaryTitle: {
     textAlign: 'left',
     marginBottom: theme.spacing.sm,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   customerHeaderRow: {
     flexDirection: 'row',
@@ -947,7 +947,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   sectionTitle: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     marginLeft: theme.spacing.xs,
   },
   iconContainer: {
@@ -973,7 +973,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   totalAmount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   totalDivider: {
     marginVertical: theme.spacing.md,
@@ -991,7 +991,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   balanceAmount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     fontSize: 18,
   },
   saveButton: {
@@ -1036,12 +1036,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   dateLabel: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     flex: 1,
   },
   moneyOnlyText: {
     textAlign: 'center',
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     marginBottom: theme.spacing.xs,
   },
   moneyOnlyHint: {

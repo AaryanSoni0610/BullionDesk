@@ -39,6 +39,10 @@ interface AppContextType {
   // Modal Management
   customerModalVisible: boolean;
   setCustomerModalVisible: (visible: boolean) => void;
+  tradeDialogVisible: boolean;
+  setTradeDialogVisible: (visible: boolean) => void;
+  ledgerDialogVisible: boolean;
+  setLedgerDialogVisible: (visible: boolean) => void;
   allowCustomerCreation: boolean;
   setAllowCustomerCreation: (allow: boolean) => void;
   isCustomerSelectionForRaniRupa: boolean;
@@ -120,6 +124,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [transactionLastUpdatedAt, setTransactionLastUpdatedAt] = useState<string | null>(null);
   const [lastEntryState, setLastEntryState] = useState<LastEntryState | null>(null);
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
+  const [tradeDialogVisible, setTradeDialogVisible] = useState(false);
+  const [ledgerDialogVisible, setLedgerDialogVisible] = useState(false);
   const [allowCustomerCreation, setAllowCustomerCreation] = useState(true);
   const [isCustomerSelectionForRaniRupa, setIsCustomerSelectionForRaniRupa] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
@@ -377,6 +383,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     transactionLastUpdatedAt,
     lastEntryState,
     setLastEntryState,
+    tradeDialogVisible,
+    setTradeDialogVisible,
+    ledgerDialogVisible,
+    setLedgerDialogVisible,
     customerModalVisible,
     setCustomerModalVisible,
     allowCustomerCreation,

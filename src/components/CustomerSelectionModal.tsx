@@ -5,11 +5,12 @@ import {
   FlatList,
   Animated,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   Modal,
   Portal,
-  Surface,
   Searchbar,
   List,
   Button,
@@ -17,6 +18,8 @@ import {
   Avatar,
   Divider,
   IconButton,
+  Surface,
+  ActivityIndicator
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Customer } from '../types';
@@ -50,28 +53,16 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
   const [validationError, setValidationError] = useState<string>('');
 
-  // Enhanced validation functions
+  // Validation Logic
   const validateCustomerName = (name: string): string => {
-    if (!name.trim()) {
-      return 'Customer name is required';
-    }
-    if (name.trim().length < 2) {
-      return 'Customer name must be at least 2 characters';
-    }
-    if (name.length > 50) {
-      return 'Customer name cannot exceed 50 characters';
-    }
-    if (!/^[a-zA-Z0-9\s\-\.]+$/.test(name)) {
-      return 'Customer name contains invalid characters';
-    }
+    if (!name.trim()) return 'Customer name is required';
+    if (name.trim().length < 2) return 'Customer name must be at least 2 characters';
+    if (name.length > 50) return 'Customer name cannot exceed 50 characters';
+    if (!/^[a-zA-Z0-9\s\-\.]+$/.test(name)) return 'Customer name contains invalid characters';
     return '';
   };
 
-  // Debounce utility function
-  function debounce<T extends (...args: any[]) => any>(
-    func: T,
-    wait: number
-  ): (...args: Parameters<T>) => void {
+  function debounce<T extends (...args: any[]) => any>(func: T, wait: number) {
     let timeout: NodeJS.Timeout;
     return (...args: Parameters<T>) => {
       clearTimeout(timeout);
@@ -79,20 +70,12 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     };
   }
 
-  // Enhanced filter function with database search
   const filterCustomers = useCallback(async (query: string) => {
     if (query.trim() === '') {
-      // Show all customers when no search query
       setFilteredCustomers(customers);
     } else {
-      // Use database-level search instead of in-memory filtering
       const filtered = await CustomerService.searchCustomersByName(query);
-      
-      // Filter out system accounts (adjust)
-      const validFiltered = filtered.filter(c => 
-        c.name.toLowerCase() !== 'adjust'
-      );
-
+      const validFiltered = filtered.filter(c => c.name.toLowerCase() !== 'adjust');
       if (filterFn) {
         setFilteredCustomers(validFiltered.filter(filterFn));
       } else {
@@ -101,7 +84,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     }
   }, [customers, filterFn]);
 
-  // Debounced search function
   const debouncedSearch = useCallback(
     debounce(async (query: string) => {
       await filterCustomers(query);
@@ -109,28 +91,17 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     [filterCustomers]
   );
 
-  // Animation effect
   useEffect(() => {
     if (visible) {
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
     } else {
-      Animated.timing(slideAnim, {
-        toValue: Dimensions.get('window').height,
-        duration: 250,
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(slideAnim, { toValue: Dimensions.get('window').height, duration: 250, useNativeDriver: true }).start();
     }
   }, [visible, slideAnim]);
 
-  // Load customers from database
   useEffect(() => {
     const loadCustomers = async () => {
       try {
-        // Ensure 'Expense(Kharch)' customer exists
         let expenseCustomer = await CustomerService.getCustomerByName('Expense(Kharch)');
         if (!expenseCustomer) {
              expenseCustomer = {
@@ -142,8 +113,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
              await CustomerService.saveCustomer(expenseCustomer);
         }
 
-        // Load all customers excluding 'adjust' at database level
-        // Note: getAllCustomersExcluding is not available in the current service, using getAllCustomers and filtering
         const allCustomers = await CustomerService.getAllCustomers();
         const validCustomers = allCustomers.filter(c => c.name.toLowerCase() !== 'adjust');
         
@@ -153,7 +122,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
             setCustomers(validCustomers);
         }
         
-        // Get recent customers with database-level filtering and sorting
         const recentCust = await CustomerService.getRecentCustomers(10, ['adjust']);
         if (filterFn) {
             setRecentCustomers(recentCust.filter(filterFn));
@@ -162,7 +130,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
         }
       } catch (error) {
         console.error('Error loading customers:', error);
-        // Fallback to empty state
         setCustomers([]);
         setRecentCustomers([]);
       }
@@ -173,7 +140,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
     }
   }, [visible]);
 
-  // Update filtered customers when customers list changes and no search query
   useEffect(() => {
     if (searchQuery.trim() === '' && customers.length > 0) {
       setFilteredCustomers(customers);
@@ -199,7 +165,6 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       return;
     }
 
-    // Check if customer already exists
     const existingCustomer = customers.find(
       customer => customer.name.toLowerCase() === customerName.toLowerCase()
     );
@@ -238,117 +203,101 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       .slice(0, 2);
   };
 
-  const formatBalance = (balance: number) => {
-    if (balance === 0) return 'Settled';
-    if (balance < 0) return `Balance: ₹${formatIndianNumber(balance)}`; // Merchant owes customer
-    else return `Debt: ₹${formatIndianNumber(Math.abs(balance))}`; // Customer owes merchant
-  };
-
-  const formatMetalBalances = (customer: Customer) => {
-    const metalBalances = customer.metalBalances;
-    if (!metalBalances) {
-      return formatBalance(customer.balance);
-    }
-    
-    const balanceItems: string[] = []; // Merchant owes customer (positive)
-    const debtItems: string[] = []; // Customer owes merchant (negative)
-    
-    const metalTypeNames: Record<string, string> = {
-      gold999: 'Gold 999',
-      gold995: 'Gold 995',
-      rani: 'Rani',
-      silver: 'Silver',
-      silver98: 'Silver 98',
-      silver96: 'Silver 96',
-      rupu: 'Rupu',
-    };
-    
-    Object.entries(metalBalances).forEach(([type, balance]) => {
-      if (typeof balance !== 'number' || Math.abs(balance) <= 0.001) return;
-
-      const displayName = (metalTypeNames as any)[type] || type;
-      let formattedBalance = '';
-
-      if (type === 'rani') {
-        // Use pure gold formatter and show 3 decimal places
-        const pure = formatPureGold(Math.abs(balance));
-        formattedBalance = pure.toFixed(3);
-      } else if (type === 'rupu') {
-        // Use pure silver formatter and show 1 decimal place as requested
-        const pure = formatPureSilver(Math.abs(balance));
-        formattedBalance = pure.toFixed(1);
-      } else if (type.includes('gold')) {
-        formattedBalance = Math.abs(balance).toFixed(3);
-      } else {
-        // silver and other types
-        formattedBalance = Math.floor(Math.abs(balance)).toString();
-      }
-
-      if (balance > 0) {
-        balanceItems.push(`${displayName} ${formattedBalance}g`);
-      } else {
-        debtItems.push(`${displayName} ${formattedBalance}g`);
-      }
-    });
-    
-    // Check if both money and metal balances are zero
-    const hasMoneyBalance = customer.balance !== 0;
-    const hasMetalBalance = balanceItems.length > 0 || debtItems.length > 0;
-
-    if (!hasMoneyBalance && !hasMetalBalance) {
-      return 'Settled';
-    }
-    
-    const parts: string[] = [];
-    
-    // Add money balance/debt first
-    if (customer.balance > 0) {
-      parts.push(`Balance: ₹${formatIndianNumber(Math.abs(customer.balance))}`);
-    } else if (customer.balance < 0) {
-      parts.push(`Debt: ₹${formatIndianNumber(Math.abs(customer.balance))}`);
-    }
-    
-    // Add metal balance
-    if (balanceItems.length > 0) {
-      parts.push(`Balance: ${balanceItems.join(', ')}`);
-    }
-    
-    // Add metal debt
-    if (debtItems.length > 0) {
-      parts.push(`Debt: ${debtItems.join(', ')}`);
-    }
-    
-    return parts.join('; ');
-  };
-
   const formatLastTransaction = (date?: string) => {
     if (!date) return 'No transactions';
-    return `Last: ${new Date(date).toLocaleDateString()}`;
+    const d = new Date(date);
+    return `Last: ${d.getDate()} ${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear()}`;
+  };
+
+  // --- NEW: Custom Balance Renderer for "Expressive" List ---
+  const BalanceRow = ({ customer }: { customer: Customer }) => {
+    const parts: React.ReactNode[] = [];
+    let hasData = false;
+
+    // 1. Money
+    if (customer.balance > 0) {
+       parts.push(
+         <Text key="money" style={styles.balGreen}>Bal: ₹{formatIndianNumber(customer.balance)}</Text>
+       );
+       hasData = true;
+    } else if (customer.balance < 0) {
+       parts.push(
+         <Text key="money" style={styles.balRed}>Debt: ₹{formatIndianNumber(Math.abs(customer.balance))}</Text>
+       );
+       hasData = true;
+    }
+
+    // 2. Metal Balances - Separate positive and negative
+    if (customer.metalBalances) {
+      const metalTypeNames: Record<string, string> = {
+        gold999: 'Gold999', gold995: 'Gold995', rani: 'Rani', silver: 'Silver', rupu: 'Rupu',
+      };
+
+      const positiveMetals: Array<{type: string, balance: number, label: string}> = [];
+      const negativeMetals: Array<{type: string, balance: number, label: string}> = [];
+
+      Object.entries(customer.metalBalances).forEach(([type, balance]) => {
+        if (typeof balance !== 'number' || Math.abs(balance) <= 0.001) return;
+
+        const displayName = metalTypeNames[type] || type;
+        let formattedWeight = '';
+
+        if (type === 'rani') formattedWeight = formatPureGold(Math.abs(balance)).toFixed(3);
+        else if (type === 'rupu') formattedWeight = formatPureSilver(Math.abs(balance)).toFixed(1);
+        else if (type.includes('gold')) formattedWeight = Math.abs(balance).toFixed(3);
+        else formattedWeight = Math.floor(Math.abs(balance)).toString();
+
+        const label = `${displayName} ${formattedWeight}g`;
+
+        if (balance > 0) {
+          positiveMetals.push({ type, balance, label });
+        } else {
+          negativeMetals.push({ type, balance, label });
+        }
+      });
+
+      // Add positive metals first
+      positiveMetals.forEach(({ type, label }) => {
+        if (parts.length > 0) {
+          parts.push(<Text key={`sep-pos-${type}`} style={styles.balSeparator}> • </Text>);
+        }
+        parts.push(<Text key={`pos-${type}`} style={styles.balGreen}>Bal: {label}</Text>);
+        hasData = true;
+      });
+
+      // Add negative metals after
+      negativeMetals.forEach(({ type, label }) => {
+        if (parts.length > 0) {
+          parts.push(<Text key={`sep-neg-${type}`} style={styles.balSeparator}> • </Text>);
+        }
+        parts.push(<Text key={`neg-${type}`} style={styles.balRed}>Debt: {label}</Text>);
+        hasData = true;
+      });
+    }
+
+    if (!hasData) return <Text style={styles.balSettled}>Settled</Text>;
+
+    return (
+       <View style={styles.balanceContainer}>
+          {parts}
+       </View>
+    );
   };
 
   const showCreateButton = allowCreateCustomer && searchQuery.trim() !== '' && 
     !filteredCustomers.some(c => c.name.toLowerCase() === searchQuery.trim().toLowerCase()) &&
     searchQuery.trim().toLowerCase() !== 'adjust';
 
-  const showRecentCustomers = false; // Disabled since we now show all customers when no search query
-
   const renderCustomerItem = ({ item }: { item: Customer }) => {
-    const balanceText = formatMetalBalances(item);
-    
     return (
       <List.Item
         title={item.name}
         description={() => (
           <View>
-            <Text variant="bodySmall" style={styles.customerDescription}>
-              {formatLastTransaction(item.lastTransaction)}
-            </Text>
-            <Text 
-              variant="bodySmall" 
-              style={styles.customerDescription}
-            >
-              {balanceText}
-            </Text>
+             <Text style={styles.customerMeta}>
+                {formatLastTransaction(item.lastTransaction)}
+             </Text>
+             <BalanceRow customer={item} />
           </View>
         )}
         left={() => (
@@ -362,6 +311,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
         onPress={() => handleSelectCustomer(item)}
         style={styles.customerItem}
         titleStyle={styles.customerName}
+        rippleColor={theme.colors.primaryContainer}
       />
     );
   };
@@ -371,261 +321,257 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
       <Modal
         visible={visible}
         onDismiss={handleCancel}
-        contentContainerStyle={styles.modalContainer}
+        contentContainerStyle={styles.modalOverlay}
         dismissable={true}
       >
-        <Animated.View style={[styles.modalContent, { transform: [{ translateY: slideAnim }] }]}>
-          {/* Header Section */}
-          <View style={styles.headerSection}>
-            {/* Drag Handle */}
-            <View style={styles.dragHandle} />
-            
-            {/* Title */}
-            <Text variant="titleMedium" style={styles.title}>
-              Select Customer
-            </Text>
-            
-            <Divider style={styles.divider} />
-            
-            {/* Search Input */}
-            <Searchbar
-              placeholder="Search or create customer..."
-              onChangeText={(text) => {
-                setSearchQuery(text);
-                setValidationError('');
-                setError('');
-              }}
-              value={searchQuery}
-              style={[
-                styles.searchBar,
-                validationError ? styles.searchBarError : null
-              ]}
-              inputStyle={styles.searchInput}
-              autoFocus
-              right={() => searchQuery ? (
-                <IconButton
-                  icon="close"
-                  size={20}
-                  onPress={() => {
-                    setSearchQuery('');
+        <KeyboardAvoidingView 
+           behavior={Platform.OS === "ios" ? "padding" : "height"}
+           style={styles.keyboardAvoidingView}
+        >
+            <Animated.View style={[styles.modalContent, { transform: [{ translateY: slideAnim }] }]}>
+              {/* Header */}
+              <View style={styles.headerSection}>
+                <View style={styles.dragHandle} />
+                <Text variant="titleMedium" style={styles.title}>Select Customer</Text>
+                
+                <Searchbar
+                  placeholder="Search or create customer..."
+                  onChangeText={(text) => {
+                    setSearchQuery(text);
                     setValidationError('');
+                    setError('');
                   }}
+                  value={searchQuery}
+                  style={[styles.searchBar, validationError ? styles.searchBarError : null]}
+                  inputStyle={styles.searchInput}
+                  iconColor={theme.colors.onSurfaceVariant}
+                  placeholderTextColor={theme.colors.onSurfaceVariant}
+                  right={() => searchQuery ? (
+                    <IconButton
+                      icon="close-circle"
+                      size={20}
+                      onPress={() => { setSearchQuery(''); setValidationError(''); }}
+                    />
+                  ) : null}
                 />
-              ) : null}
-            />
-            
-            {/* Validation Error */}
-            {validationError ? (
-              <Text variant="bodySmall" style={styles.errorText}>
-                {validationError}
-              </Text>
-            ) : null}
-            
-            {/* Network Error */}
-            {error ? (
-              <Surface style={styles.errorBanner}>
-                <MaterialCommunityIcons name="alert-circle" size={20} color={theme.colors.error} />
-                <Text variant="bodySmall" style={[styles.errorText, { marginLeft: 8 }]}>
-                  {error}
-                </Text>
-              </Surface>
-            ) : null}
-          </View>
-          
-          {/* Scrollable Results */}
-          <View style={styles.resultsContainer}>
-            {showCreateButton && (
-              <Button
-                mode="contained-tonal"
-                icon={isCreatingCustomer ? undefined : "account-plus"}
-                onPress={handleCreateCustomer}
-                style={styles.createButton}
-                contentStyle={styles.createButtonContent}
-                disabled={isCreatingCustomer || !!validationError}
-                loading={isCreatingCustomer}
-              >
-                {isCreatingCustomer ? 'Creating...' : `Create "${searchQuery}"`}
-              </Button>
-            )}
-            
-            {showRecentCustomers && (
-              <>
-                <Text variant="labelMedium" style={styles.sectionLabel}>
-                  Recent Customers
-                </Text>
-                <FlatList
-                  data={recentCustomers}
-                  renderItem={renderCustomerItem}
-                  keyExtractor={item => item.id}
-                  style={styles.customerList}
-                  showsVerticalScrollIndicator={false}
-                />
-              </>
-            )}
-            
-            {filteredCustomers.length > 0 && (
-              <>
-                {searchQuery.trim() === '' && (
-                  <Text variant="labelMedium" style={styles.sectionLabel}>
-                    All Customers
-                  </Text>
+                
+                {validationError ? <Text style={styles.errorText}>{validationError}</Text> : null}
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              </View>
+              
+              {/* List */}
+              <View style={styles.resultsContainer}>
+                {showCreateButton && (
+                  <Button
+                    mode="contained-tonal"
+                    icon={isCreatingCustomer ? undefined : "account-plus"}
+                    onPress={handleCreateCustomer}
+                    style={styles.createButton}
+                    loading={isCreatingCustomer}
+                    disabled={isCreatingCustomer || !!validationError}
+                  >
+                    {isCreatingCustomer ? 'Creating...' : `Create "${searchQuery}"`}
+                  </Button>
                 )}
+                
                 <FlatList
-                  data={filteredCustomers}
-                  renderItem={renderCustomerItem}
-                  keyExtractor={item => item.id}
-                  style={styles.customerList}
-                  showsVerticalScrollIndicator={false}
+                    data={searchQuery.trim() === '' ? customers : filteredCustomers} // Show all if no search
+                    renderItem={renderCustomerItem}
+                    keyExtractor={item => item.id}
+                    style={styles.customerList}
+                    contentContainerStyle={{ paddingBottom: 16 }}
+                    showsVerticalScrollIndicator={false}
+                    ListHeaderComponent={
+                        searchQuery.trim() === '' ? 
+                        <Text style={styles.sectionLabel}>All Customers</Text> : null
+                    }
+                    ListEmptyComponent={
+                        !showCreateButton ? (
+                            <Text style={styles.noResults}>No customers found</Text>
+                        ) : null
+                    }
                 />
-              </>
-            )}
-            
-            {searchQuery.trim() !== '' && filteredCustomers.length === 0 && !showCreateButton && (
-              <Text variant="bodyMedium" style={styles.noResults}>
-                No customers found
-              </Text>
-            )}
-          </View>
-          
-          {/* Fixed Cancel Button at Bottom */}
-          <View style={styles.bottomSection}>
-            <Button
-              mode="contained-tonal"
-              onPress={handleCancel}
-              style={styles.cancelButton}
-              contentStyle={styles.cancelButtonContent}
-            >
-              Cancel
-            </Button>
-          </View>
-        </Animated.View>
+              </View>
+              
+              {/* Footer */}
+              <View style={styles.bottomSection}>
+                <Button
+                  mode="contained-tonal"
+                  onPress={handleCancel}
+                  style={styles.cancelButton}
+                  contentStyle={{ height: 48 }}
+                >
+                  Cancel
+                </Button>
+              </View>
+            </Animated.View>
+        </KeyboardAvoidingView>
       </Modal>
     </Portal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: {
+  modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)', // Dim background
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    height: '80%',
-    minHeight: 400,
+    height: '85%',
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+    overflow: 'hidden',
+    elevation: 24,
+  },
+  
+  // Header
+  headerSection: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
     backgroundColor: theme.colors.surface,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    paddingTop: theme.spacing.sm,
-    display: 'flex',
-    flexDirection: 'column',
   },
   dragHandle: {
     width: 32,
     height: 4,
-    backgroundColor: theme.colors.onSurfaceVariant,
+    backgroundColor: theme.colors.outline,
     borderRadius: 2,
     alignSelf: 'center',
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.md,
-  },
-  headerSection: {
-    paddingHorizontal: theme.spacing.md,
+    marginBottom: 16,
+    opacity: 0.5,
   },
   title: {
     textAlign: 'center',
-    marginBottom: theme.spacing.md,
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 16,
+    marginBottom: 20,
     color: theme.colors.onSurface,
   },
-  divider: {
-    marginBottom: theme.spacing.md,
-  },
   searchBar: {
-    borderRadius: 28,
-    marginBottom: theme.spacing.md,
+    borderRadius: 100, // Pill shape
+    backgroundColor: theme.colors.surfaceVariant, // Slightly darker than surface
+    elevation: 0,
+    height: 52,
   },
   searchInput: {
-    textAlign: 'left',
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 16,
+    alignSelf: 'center', // Center text vertically
   },
+  searchBarError: {
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+  },
+
+  // List Items
   resultsContainer: {
     flex: 1,
-    paddingHorizontal: theme.spacing.md,
-  },
-  createButton: {
-    borderRadius: 28,
-    marginBottom: theme.spacing.md,
-  },
-  createButtonContent: {
-    paddingVertical: theme.spacing.sm,
-  },
-  bottomSection: {
-    paddingHorizontal: theme.spacing.md,
-    paddingBottom: theme.spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.outline,
-    paddingTop: theme.spacing.md,
+    paddingHorizontal: 0, // List items handle their own padding
   },
   sectionLabel: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 12,
     color: theme.colors.onSurfaceVariant,
-    marginBottom: theme.spacing.sm,
-    marginLeft: theme.spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   customerList: {
     flex: 1,
   },
   customerItem: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: 20,
+    paddingVertical: 4,
   },
   customerName: {
+    fontFamily: 'Outfit_600SemiBold',
     fontSize: 16,
-    fontFamily: 'Roboto_500Medium',
+    color: theme.colors.onSurface,
   },
-  customerDescription: {
+  customerMeta: {
+    fontFamily: 'Outfit_400Regular',
     fontSize: 12,
-    lineHeight: 16,
-    fontFamily: 'Roboto_400Regular',
+    color: theme.colors.onSurfaceVariant,
+    opacity: 0.8,
+    marginBottom: 2,
   },
   avatar: {
-    marginRight: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    marginRight: 8,
   },
   avatarLabel: {
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 16,
+    color: theme.colors.onPrimary,
+  },
+
+  // Balance Row Styles
+  balanceContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  balGreen: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 12,
+    color: theme.colors.success,
+  },
+  balRed: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 12,
+    color: theme.colors.error,
+  },
+  balMetal: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 12,
+    color: '#44474F', // Dark Grey
+  },
+  balSettled: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 12,
+    color: theme.colors.primary,
+  },
+  balSeparator: {
+    fontSize: 12,
+    color: theme.colors.outline,
+  },
+
+  // Buttons & States
+  createButton: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 10,
   },
   noResults: {
     textAlign: 'center',
+    marginTop: 40,
+    fontFamily: 'Outfit_500Medium',
     color: theme.colors.onSurfaceVariant,
-    marginTop: theme.spacing.lg,
-  },
-  cancelButton: {
-    borderRadius: 28,
-  },
-  cancelButtonContent: {
-    paddingVertical: theme.spacing.sm,
-  },
-  
-  // Part 5 Enhanced Styles - Validation & Error Handling
-  searchBarError: {
-    borderColor: theme.colors.error,
-    borderWidth: 2,
   },
   errorText: {
     color: theme.colors.error,
-    marginTop: theme.spacing.xs,
-    marginLeft: theme.spacing.sm,
     fontSize: 12,
+    marginLeft: 16,
+    marginTop: 4,
+    fontFamily: 'Outfit_400Regular',
   },
-  errorBanner: {
-    backgroundColor: `${theme.colors.error}12`,
-    padding: theme.spacing.sm,
-    borderRadius: 8,
-    marginBottom: theme.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  // Footer
+  bottomSection: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.outline + '20', // Very faint border
+    backgroundColor: theme.colors.surface,
+  },
+  cancelButton: {
+    borderRadius: 100,
+    backgroundColor: theme.colors.surfaceVariant,
   },
 });

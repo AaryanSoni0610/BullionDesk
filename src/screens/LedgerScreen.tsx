@@ -84,6 +84,11 @@ interface EntryData {
   date: string; // Date for sorting
 }
 
+interface PairedEntryData {
+  inEntry: EntryData | null;
+  outEntry: EntryData | null;
+}
+
 interface InventoryCardProps {
   title: string;
   value: string;
@@ -109,10 +114,9 @@ export const LedgerScreen: React.FC = () => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showExportDatePicker, setShowExportDatePicker] = useState(false);
   const [exportDate, setExportDate] = useState<Date>(new Date());
-  const [showAdjustAlert, setShowAdjustAlert] = useState(false);
   const [raniStock, setRaniStock] = useState<any[]>([]);
   const [rupuStock, setRupuStock] = useState<any[]>([]);
-  const { navigateToSettings } = useAppContext();
+  const { navigateToSettings, ledgerDialogVisible, setLedgerDialogVisible } = useAppContext();
   const navigation = useNavigation();
 
   // Format date for display in DD/MM/YYYY format
@@ -426,7 +430,7 @@ export const LedgerScreen: React.FC = () => {
       }
 
       // Reset form and close alert
-      setShowAdjustAlert(false);
+      setLedgerDialogVisible(false);
 
       // Refresh data
       await loadInventoryData(true);
@@ -1053,15 +1057,16 @@ export const LedgerScreen: React.FC = () => {
     loadInventoryData(true);
   };
 
-  const getFilteredEntries = useMemo((): EntryData[] => {
-    const entries: EntryData[] = [];
+  const getFilteredEntries = useMemo((): PairedEntryData[] => {
+    const inEntries: EntryData[] = [];
+    const outEntries: EntryData[] = [];
     
     if (selectedInventory === 'money') {
       // For money subledger: use ledger entries (one row per payment/update or receivable/payable)
       filteredLedgerEntries.forEach(ledgerEntry => {
         // Only include if there's actual money movement or receivable/payable
         if (ledgerEntry.amountReceived > 0 || ledgerEntry.amountGiven > 0) {
-          entries.push({
+          const entryData: EntryData = {
             transactionId: ledgerEntry.transactionId,
             customerName: ledgerEntry.customerName,
             entry: {
@@ -1069,7 +1074,16 @@ export const LedgerScreen: React.FC = () => {
               _ledgerEntry: ledgerEntry, // Store full ledger entry for money display
             },
             date: ledgerEntry.date
-          });
+          };
+          
+          // Determine if it's in or out based on money flow
+          const receivedAmount = ledgerEntry.amountReceived || 0;
+          const givenAmount = ledgerEntry.amountGiven || 0;
+          if (receivedAmount > 0) {
+            inEntries.push(entryData);
+          } else if (givenAmount > 0) {
+            outEntries.push(entryData);
+          }
         }
       });
 
@@ -1140,7 +1154,7 @@ export const LedgerScreen: React.FC = () => {
         silverOpeningBalances.silver = formatPureSilver(silverOpeningBalances.silver);
 
         if (selectedInventory === 'gold') {
-          entries.push({
+          inEntries.push({
             transactionId: 'opening-stock',
             customerName: 'Opening Stock',
             entry: {
@@ -1156,7 +1170,7 @@ export const LedgerScreen: React.FC = () => {
             date: '1970-01-01T00:00:00.000Z' // Earliest date to appear first
           });
         } else if (selectedInventory === 'silver') {
-          entries.push({
+          inEntries.push({
             transactionId: 'opening-stock',
             customerName: 'Opening Stock',
             entry: {
@@ -1189,7 +1203,7 @@ export const LedgerScreen: React.FC = () => {
             
             // Add rani return (actualGoldGiven) as a separate sell entry
             if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
-              entries.push({
+              outEntries.push({
                 transactionId: transaction.id,
                 customerName,
                 entry: {
@@ -1209,7 +1223,7 @@ export const LedgerScreen: React.FC = () => {
             // Add rupu silver returns as separate sell entries
             if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
               if (extEntry.silverWeight && extEntry.silverWeight > 0) {
-                entries.push({
+                outEntries.push({
                   transactionId: transaction.id,
                   customerName,
                   entry: {
@@ -1228,22 +1242,61 @@ export const LedgerScreen: React.FC = () => {
           if (includeEntry) {
             // Filter out 0 weight entries
             if ((entry.weight || 0) > 0) {
-              entries.push({
+              const entryData: EntryData = {
                 transactionId: transaction.id,
                 customerName,
                 entry,
                 date: entry.createdAt || transaction.date
-              });
+              };
+              
+              // Separate into in and out based on type
+              if (entry.type === 'purchase') {
+                inEntries.push(entryData);
+              } else if (entry.type === 'sell') {
+                outEntries.push(entryData);
+              }
             }
           }
         });
       });
     }
     
-    // Sort by date ascending (oldest first)
-    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Sort both arrays by date ascending (oldest first)
+    inEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    outEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    return entries;
+    // Pair entries: create rows with both in and out where possible
+    const pairedEntries: PairedEntryData[] = [];
+    
+    // Handle opening stock separately - it should always be first and have no out entry
+    let openingStockEntry: EntryData | null = null;
+    let regularInEntries = inEntries;
+    let regularOutEntries = outEntries;
+    
+    if (selectedInventory !== 'money' && !showOnlyRaniRupu && inEntries.length > 0 && inEntries[0].transactionId === 'opening-stock') {
+      openingStockEntry = inEntries[0];
+      regularInEntries = inEntries.slice(1);
+    }
+    
+    // Add opening stock as first row with null out entry
+    if (openingStockEntry) {
+      pairedEntries.push({
+        inEntry: openingStockEntry,
+        outEntry: null, // Always null for opening stock
+      });
+    }
+    
+    // Pair remaining entries
+    const maxLength = Math.max(regularInEntries.length, regularOutEntries.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+      pairedEntries.push({
+        inEntry: i < regularInEntries.length ? regularInEntries[i] : null,
+        outEntry: i < regularOutEntries.length ? regularOutEntries[i] : null,
+      });
+    }
+    
+    return pairedEntries;
   }, [selectedInventory, filteredLedgerEntries, filteredTransactions, customers]);
 
   const getItemTypeDisplay = (itemType: string) => {
@@ -1258,145 +1311,121 @@ export const LedgerScreen: React.FC = () => {
   };
 
   // Entry Row Component
-  const EntryRow: React.FC<{ entryData: EntryData }> = ({ entryData }) => {
-    const { customerName, entry } = entryData;
-    
-    if (selectedInventory === 'money') {
-      // For money subledger: use ledger entry data
-      const ledgerEntry = entry._ledgerEntry;
-      const receivedAmount = ledgerEntry?.amountReceived || 0;
-      const givenAmount = ledgerEntry?.amountGiven || 0;
+  const EntryRow: React.FC<{ pairedEntry: PairedEntryData; isFirst: boolean; isLast: boolean }> = ({ pairedEntry, isFirst, isLast }) => {
+    const { inEntry, outEntry } = pairedEntry;
+
+    // Helper function to get display data for an entry
+    const getEntryDisplayData = (entryData: EntryData | null) => {
+      if (!entryData) return { customerName: '', displayValue: '', displayMeta: '', isActive: false };
+
+      const { customerName, entry } = entryData;
       
-      return (
-        <View style={styles.transactionRow}>
-          <View style={styles.transactionCell}>
-            <Text variant="bodyMedium" style={styles.customerName}>
-              {customerName}
-            </Text>
-            <Text variant="bodySmall" style={styles.transactionDate}>
-              {formatFullTime(entryData.date)}
-            </Text>
-          </View>
-          <View style={styles.transactionCell}>
-            <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
-              {receivedAmount > 0 ? formatCurrency(receivedAmount) : '-'}
-            </Text>
-          </View>
-          <View style={styles.transactionCell}>
-            <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
-              {givenAmount > 0 ? formatCurrency(givenAmount) : '-'}
-            </Text>
-          </View>
-        </View>
-      );
-    } else {
-      // For gold/silver: Customer, Purchase, Sell
-      
-      // Handle opening stock entry specially
-      if (entry._isOpeningStock) {
-        const isGold = selectedInventory === 'gold';
-        const gold999Opening = isGold ? (entry.weight || 0) : 0;
-        const gold995Opening = isGold ? (entry._openingGold995 || 0) : 0;
-        const silverOpening = !isGold ? (entry.weight || 0) : 0;
+      let displayValue = "";
+      let displayMeta = "";
+      let isActive = true;
+
+      if (selectedInventory === 'money') {
+        const ledgerEntry = entry._ledgerEntry;
+        const receivedAmount = ledgerEntry?.amountReceived || 0;
+        const givenAmount = ledgerEntry?.amountGiven || 0;
         
-        return (
-          <View style={styles.transactionRow}>
-            <View style={styles.transactionCell}>
-              <Text variant="bodyMedium" style={styles.customerName}>
-                {customerName}
-              </Text>
-            </View>
-            <View style={styles.transactionCell}>
-              <View>
-                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center', color: theme.colors.sellColor }]}>
-                  {isGold ? formatWeight(gold999Opening) : formatWeight(silverOpening, true)}
-                </Text>
-                <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'center' }]}>
-                  {isGold ? 'Gold 999' : 'Silver'}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.transactionCell}>
-              {isGold ? (
-                <View>
-                  <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right', color: theme.colors.sellColor }]}>
-                    {formatWeight(gold995Opening)}
-                  </Text>
-                  <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'right' }]}>
-                    Gold 995
-                  </Text>
-                </View>
-              ) : (
-                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>-</Text>
-              )}
-            </View>
-          </View>
-        );
+        if (receivedAmount > 0) {
+          displayValue = formatCurrency(receivedAmount);
+        } else if (givenAmount > 0) {
+          displayValue = formatCurrency(givenAmount);
+        }
+        displayMeta = formatFullTime(entryData.date);
+      } else {
+        // Metal
+        if (entry._isOpeningStock) {
+          const isGold = selectedInventory === 'gold';
+          const gold999Opening = isGold ? (entry.weight || 0) : 0;
+          const gold995Opening = isGold ? (entry._openingGold995 || 0) : 0;
+          const silverOpening = !isGold ? (entry.weight || 0) : 0;
+          
+          if (isGold) {
+               displayValue = `${formatWeight(gold999Opening)} (999)\n${formatWeight(gold995Opening)} (995)`;
+               displayMeta = "Opening Stock";
+          } else {
+               displayValue = `${formatWeight(silverOpening, true)}`;
+               displayMeta = "Opening Stock";
+          }
+        } else {
+            const isPurchase = entry.type === 'purchase';
+            
+            let weight = entry.pureWeight || entry.weight || 0;
+            if (entry.itemType === 'rani' && selectedInventory === 'gold') {
+              const touchNum = entry.touch || 0;
+              const weightNum = entry.weight || 0;
+              const pureGoldPrecise = (weightNum * touchNum) / 100;
+              weight = formatPureGoldPrecise(pureGoldPrecise);
+            }
+            if (entry.itemType === 'rupu' && selectedInventory === 'silver') {
+              const touchNum = entry.touch || 0;
+              const weightNum = entry.weight || 0;
+              weight = customFormatPureSilver(weightNum, touchNum);
+            }
+
+            const isSilverItem = entry.itemType?.includes('silver') || entry.itemType === 'rupu';
+            displayValue = formatWeight(weight, isSilverItem);
+            displayMeta = `${getItemTypeDisplay(entry.itemType)} • ${formatFullTime(entryData.date)}`;
+        }
       }
-      
-      const isPurchase = entry.type === 'purchase';
-      
-      // For Rani entries in gold subledger, recalculate pure weight with precise formatting
-      let weight = entry.pureWeight || entry.weight || 0;
-      if (entry.itemType === 'rani' && selectedInventory === 'gold') {
-        // Recalculate pure weight for Rani using precise formatting (without cut subtraction for subledger)
-        const touchNum = entry.touch || 0;
-        const weightNum = entry.weight || 0;
-        const pureGoldPrecise = (weightNum * touchNum) / 100;
-        weight = formatPureGoldPrecise(pureGoldPrecise);
-      }
-      if (entry.itemType === 'rupu' && selectedInventory === 'silver') {
-        // Recalculate pure weight for Rupu using custom formatting
-        const touchNum = entry.touch || 0;
-        const weightNum = entry.weight || 0;
-        weight = customFormatPureSilver(weightNum, touchNum);
-      }
-      
-      const purchaseWeight = isPurchase ? weight : 0;
-      const sellWeight = isPurchase ? 0 : weight;
-      const isSilverItem = entry.itemType?.includes('silver') || entry.itemType === 'rupu';
-      
+
+      return { customerName, displayValue, displayMeta, isActive };
+    };
+
+    const inData = getEntryDisplayData(inEntry);
+    const outData = getEntryDisplayData(outEntry);
+
+    // Check if this is the opening stock row
+    const isOpeningStockRow = isFirst && inEntry && inEntry.transactionId === 'opening-stock';
+
+    if (isOpeningStockRow) {
+      // Special rendering for opening stock row - single centered column
       return (
-        <View style={styles.transactionRow}>
-          <View style={styles.transactionCell}>
-            <Text variant="bodyMedium" style={styles.customerName}>
-              {customerName}
-            </Text>
-            <Text variant="bodySmall" style={styles.transactionDate}>
-              {formatFullTime(entryData.date)}
-            </Text>
-          </View>
-          <View style={styles.transactionCell}>
-            {purchaseWeight > 0 ? (
-              <View>
-                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>
-                  {formatWeight(purchaseWeight, isSilverItem)}
-                </Text>
-                <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'center' }]}>
-                  {getItemTypeDisplay(entry.itemType)}
-                </Text>
-              </View>
-            ) : (
-              <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'center' }]}>-</Text>
-            )}
-          </View>
-          <View style={styles.transactionCell}>
-            {sellWeight > 0 ? (
-              <View>
-                <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>
-                  {formatWeight(sellWeight, isSilverItem)}
-                </Text>
-                <Text variant="bodySmall" style={[styles.itemTypeText, { textAlign: 'right' }]}>
-                  {getItemTypeDisplay(entry.itemType)}
-                </Text>
-              </View>
-            ) : (
-              <Text variant="bodyMedium" style={[styles.transactionAmount, { textAlign: 'right' }]}>-</Text>
-            )}
+        <View style={[styles.ledgerRow, styles.firstRow, isLast && styles.lastRow, !isLast && styles.rowBorder]}>
+          <View style={styles.openingStockCol}>
+            <Text style={styles.entryCustomer} numberOfLines={1}>{inData.customerName}</Text>
+            <Text style={[styles.entryValue, styles.textNeutral]}>{inData.displayValue}</Text>
+            <Text style={styles.entryMeta}>{inData.displayMeta}</Text>
           </View>
         </View>
       );
     }
+
+    return (
+      <View style={[styles.ledgerRow, isFirst && styles.firstRow, isLast && styles.lastRow, !isLast && styles.rowBorder]}>
+        {/* Left Column (Purchase/In) */}
+        <View style={[styles.ledgerCol, inData.isActive ? styles.colInActive : styles.colIn]}>
+          {inData.isActive ? (
+            <>
+              <Text style={styles.entryCustomer} numberOfLines={1}>{inData.customerName}</Text>
+              <Text style={[styles.entryValue, styles.textIn]}>{inData.displayValue}</Text>
+              <Text style={styles.entryMeta}>{inData.displayMeta}</Text>
+            </>
+          ) : (
+            <Text style={styles.emptyDash}>-</Text>
+          )}
+        </View>
+
+        {/* Central Spine */}
+        <View style={styles.spine} />
+
+        {/* Right Column (Sell/Out) */}
+        <View style={[styles.ledgerCol, outData.isActive ? styles.colOutActive : styles.colOut]}>
+          {outData.isActive ? (
+            <>
+              <Text style={styles.entryCustomer} numberOfLines={1}>{outData.customerName}</Text>
+              <Text style={[styles.entryValue, styles.textOut]}>{outData.displayValue}</Text>
+              <Text style={styles.entryMeta}>{outData.displayMeta}</Text>
+            </>
+          ) : (
+            <Text style={styles.emptyDash}>-</Text>
+          )}
+        </View>
+      </View>
+    );
   };
 
   // Enhanced Inventory Card Component
@@ -1414,10 +1443,10 @@ export const LedgerScreen: React.FC = () => {
       style={[
         styles.inventoryCard, 
         { backgroundColor },
-        isSelected && styles.inventoryCardSelected
+        isSelected && { borderColor: iconColor, borderWidth: 2, elevation: 0 } 
       ]} 
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
     >
       <View style={styles.cardHeader}>
         <MaterialCommunityIcons 
@@ -1439,20 +1468,20 @@ export const LedgerScreen: React.FC = () => {
           </Text>
         )}
       </View>
-      {isSelected && <View style={[styles.selectionIndicator, { borderColor: iconColor }]} />}
     </TouchableOpacity>
   );
 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <Surface style={styles.appTitleBar} elevation={1}>
-          <View style={styles.appTitleContent}>
-            <Text variant="titleLarge" style={styles.appTitle}>
-              Ledger
-            </Text>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.screenTitle}>Ledger</Text>
           </View>
-        </Surface>
+          <TouchableOpacity style={styles.settingsBtn} onPress={navigateToSettings}>
+            <Icon name="cog" size={24} color={theme.colors.onSurface} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text variant="bodyLarge" style={styles.loadingText}>
@@ -1466,13 +1495,14 @@ export const LedgerScreen: React.FC = () => {
   if (!inventoryData) {
     return (
       <SafeAreaView style={styles.container}>
-        <Surface style={styles.appTitleBar} elevation={1}>
-          <View style={styles.appTitleContent}>
-            <Text variant="titleLarge" style={styles.appTitle}>
-              Ledger
-            </Text>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.screenTitle}>Ledger</Text>
           </View>
-        </Surface>
+          <TouchableOpacity style={styles.settingsBtn} onPress={navigateToSettings}>
+            <Icon name="cog" size={24} color={theme.colors.onSurface} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.errorContainer}>
           <Text variant="titleLarge" style={styles.errorTitle}>
             Error loading data
@@ -1486,91 +1516,66 @@ export const LedgerScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Surface style={styles.appTitleBar} elevation={1}>
-        <View style={styles.appTitleContent}>
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Ledger
-          </Text>
-          {/* add both icons into single row*/}
-          <View style={styles.appBarButtons}>
-            <IconButton
-              icon="tray-arrow-up"
-              size={24}
-              onPress={() => setShowExportDatePicker(true)}
-              style={styles.exportButton}
-            />
-
-            <IconButton
-              icon="cog-outline"
-              size={24}
-              onPress={navigateToSettings}
-              style={styles.settingsButton}
-            />
-          </View>
-
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* 1. Header Island */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.screenTitle}>Ledger</Text>
         </View>
-      </Surface>
+        <TouchableOpacity style={styles.settingsBtn} onPress={navigateToSettings}>
+          <Icon name="cog" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
+      </View>
+
+      {/* 2. Toolbar Island (Date + Export) */}
+      <View style={styles.toolbarIsland}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateChipsContainer}>
+          <TouchableOpacity 
+            style={[styles.dateChip, selectedPeriod === 'today' && styles.dateChipActive]} 
+            onPress={() => setSelectedPeriod('today')}
+          >
+            <Text style={[styles.dateChipText, selectedPeriod === 'today' && styles.dateChipTextActive]}>Today</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.dateChip, selectedPeriod === 'yesterday' && styles.dateChipActive]} 
+            onPress={() => setSelectedPeriod('yesterday')}
+          >
+            <Text style={[styles.dateChipText, selectedPeriod === 'yesterday' && styles.dateChipTextActive]}>Yesterday</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.dateChip, selectedPeriod === 'custom' && styles.dateChipActive]} 
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Icon 
+              name="calendar-month" 
+              size={20} 
+              color={selectedPeriod === 'custom' ? theme.colors.onPrimary : theme.colors.primary} 
+              style={styles.dateChipIcon} 
+            />
+            <Text style={[styles.dateChipText, selectedPeriod === 'custom' && styles.dateChipTextActive]}>
+              {selectedPeriod === 'custom' ? formatDateDisplay(customDate) : 'Select Date'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+        
+        <TouchableOpacity 
+          style={styles.exportBtn} 
+          onPress={() => setShowExportDatePicker(true)}
+        >
+          <Icon name="export-variant" size={24} color={theme.colors.onSurfaceVariant} />
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.content}>
-        {/* Period Filter - Fixed at top */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
-          <Chip
-            mode={selectedPeriod === 'today' ? 'flat' : 'outlined'}
-            selected={selectedPeriod === 'today'}
-            onPress={() => setSelectedPeriod('today')}
-            style={styles.filterChip}
-          >
-            Today
-          </Chip>
-          <Chip
-            mode={selectedPeriod === 'yesterday' ? 'flat' : 'outlined'}
-            selected={selectedPeriod === 'yesterday'}
-            onPress={() => setSelectedPeriod('yesterday')}
-            style={styles.filterChip}
-          >
-            Yesterday
-          </Chip>
-          <Chip
-            mode={selectedPeriod === 'custom' ? 'flat' : 'outlined'}
-            selected={selectedPeriod === 'custom'}
-            onPress={handleSelectDatePress}
-            style={styles.filterChip}
-          >
-            {selectedPeriod === 'custom' ? formatDateDisplay(customDate) : 'Select Date'}
-          </Chip>
-        </ScrollView>
-
-        {/* Date Picker */}
-        {showDatePicker && (
-          <DateTimePicker
-            value={customDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleDateChange}
-            maximumDate={new Date()}
-          />
-        )}
-
-        {/* Export Date Picker */}
-        {showExportDatePicker && (
-          <DateTimePicker
-            value={exportDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleExportDateChange}
-            maximumDate={new Date()}
-          />
-        )}
-
-        {/* Inventory Dashboard - Fixed at top */}
+        {/* 3. Inventory Cards (Carousel) - UPDATED SPACING */}
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false} 
           style={styles.inventoryScrollContainer}
           contentContainerStyle={styles.inventoryScrollContent}
         >
-          {/* Gold Inventory Card */}
           <InventoryCard
             title="Gold"
             value={formatWeight(inventoryData.goldInventory.gold999 + inventoryData.goldInventory.gold995)}
@@ -1581,7 +1586,6 @@ export const LedgerScreen: React.FC = () => {
             isSelected={selectedInventory === 'gold'}
           />
           
-          {/* Silver Inventory Card */}
           <InventoryCard
             title="Silver"
             value={formatWeight(inventoryData.silverInventory.silver, true)}
@@ -1592,7 +1596,6 @@ export const LedgerScreen: React.FC = () => {
             isSelected={selectedInventory === 'silver'}
           />
           
-          {/* Money Inventory Card */}
           <InventoryCard
             title="Money"
             value={formatCurrency(inventoryData.cashFlow.moneyIn)}
@@ -1604,128 +1607,117 @@ export const LedgerScreen: React.FC = () => {
           />
         </ScrollView>
 
-
-        {/* Metal Inventory Chips - Show for all subledgers */}
+        {/* 4. Stats Grid (Subledger Chips) */}
         {inventoryData && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.inventoryChipsContainer}>
+          <View style={styles.statsGrid}>
             {selectedInventory === 'gold' ? (
               <>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
-                  textStyle={{ color: '#E65100' }}
-                >
-                  Gold 999: {formatWeight(inventoryData.goldInventory.gold999)}
-                </Chip>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#FFF8E1' }]}
-                  textStyle={{ color: '#E65100' }}
-                >
-                  Gold 995: {formatWeight(inventoryData.goldInventory.gold995)}
-                </Chip>
-                <Chip 
-                  mode={showOnlyRaniRupu ? "outlined" : "flat"}
-                  selected={showOnlyRaniRupu}
+                <View style={[styles.statItem, { backgroundColor: '#FFF8E1', borderColor: '#FFE0B2' }]}>
+                  <Text style={[styles.statLabel, { color: '#E65100' }]}>Gold 999</Text>
+                  <Text style={styles.statVal}>{formatWeight(inventoryData.goldInventory.gold999)}</Text>
+                </View>
+                <View style={[styles.statItem, { backgroundColor: '#FFF8E1', borderColor: '#FFE0B2' }]}>
+                  <Text style={[styles.statLabel, { color: '#E65100' }]}>Gold 995</Text>
+                  <Text style={styles.statVal}>{formatWeight(inventoryData.goldInventory.gold995)}</Text>
+                </View>
+                <TouchableOpacity 
+                  style={[
+                    styles.statItem, 
+                    { backgroundColor: showOnlyRaniRupu ? '#FFE0B2' : '#FFF8E1', borderColor: '#E65100' }
+                  ]}
                   onPress={() => setShowOnlyRaniRupu(!showOnlyRaniRupu)}
-                  style={[styles.inventoryChip, { backgroundColor: showOnlyRaniRupu ? '#FFF3E0' : '#FFF8E1' }]}
-                  textStyle={{ color: '#E65100' }}
                 >
-                  Rani: {calculateTotalStockWeight(raniStock, 'rani').toFixed(3)}g
-                </Chip>
+                  <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
+                    {showOnlyRaniRupu && <Icon name="check" size={14} color="#E65100" />}
+                    <Text style={[styles.statLabel, { color: '#E65100' }]}>Rani</Text>
+                  </View>
+                  <Text style={styles.statVal}>{calculateTotalStockWeight(raniStock, 'rani').toFixed(3)}g</Text>
+                </TouchableOpacity>
               </>
             ) : selectedInventory === 'silver' ? (
               <>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#ECEFF1' }]}
-                  textStyle={{ color: '#455A64' }}
-                >
-                  Silver: {formatWeight(inventoryData.silverInventory.silver, true)}
-                </Chip>
-                <Chip 
-                  mode={showOnlyRaniRupu ? "outlined" : "flat"}
-                  selected={showOnlyRaniRupu}
+                <View style={[styles.statItem, { backgroundColor: '#ECEFF1', borderColor: '#CFD8DC' }]}>
+                  <Text style={[styles.statLabel, { color: '#455A64' }]}>Silver</Text>
+                  <Text style={styles.statVal}>{formatWeight(inventoryData.silverInventory.silver, true)}</Text>
+                </View>
+                <TouchableOpacity 
+                  style={[
+                    styles.statItem, 
+                    { backgroundColor: showOnlyRaniRupu ? '#CFD8DC' : '#ECEFF1', borderColor: '#455A64' }
+                  ]}
                   onPress={() => setShowOnlyRaniRupu(!showOnlyRaniRupu)}
-                  style={[styles.inventoryChip, { backgroundColor: showOnlyRaniRupu ? '#F1F8E9' : '#ECEFF1' }]}
-                  textStyle={{ color: '#455A64' }}
                 >
-                  Rupu: {calculateTotalStockWeight(rupuStock, 'rupu').toFixed(1)}g
-                </Chip>
+                  <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
+                    {showOnlyRaniRupu && <Icon name="check" size={14} color="#455A64" />}
+                    <Text style={[styles.statLabel, { color: '#455A64' }]}>Rupu</Text>
+                  </View>
+                  <Text style={styles.statVal}>{calculateTotalStockWeight(rupuStock, 'rupu').toFixed(1)}g</Text>
+                </TouchableOpacity>
               </>
             ) : selectedInventory === 'money' ? (
               <>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#E8F5E8' }]}
-                  textStyle={{ color: '#2E7D32' }}
-                >
-                  Opening: {formatCurrency(inventoryData.cashFlow.moneyIn + inventoryData.cashFlow.totalOut - inventoryData.cashFlow.totalIn)}
-                </Chip>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#E8F5E8' }]}
-                  textStyle={{ color: '#2E7D32' }}
-                >
-                  In: {formatCurrency(inventoryData.cashFlow.totalIn)}
-                </Chip>
-                <Chip 
-                  mode="flat" 
-                  style={[styles.inventoryChip, { backgroundColor: '#E8F5E8' }]}
-                  textStyle={{ color: '#2E7D32' }}
-                >
-                  Out: {formatCurrency(inventoryData.cashFlow.totalOut)}
-                </Chip>
+                <View style={[styles.statItem, { backgroundColor: '#E8F5E8', borderColor: '#C8E6C9' }]}>
+                  <Text style={[styles.statLabel, { color: '#2E7D32' }]}>Opening</Text>
+                  <Text style={styles.statVal}>{formatCurrency(inventoryData.cashFlow.moneyIn + inventoryData.cashFlow.totalOut - inventoryData.cashFlow.totalIn)}</Text>
+                </View>
+                <View style={[styles.statItem, { backgroundColor: '#E8F5E8', borderColor: '#C8E6C9' }]}>
+                  <Text style={[styles.statLabel, { color: '#2E7D32' }]}>In</Text>
+                  <Text style={styles.statVal}>{formatCurrency(inventoryData.cashFlow.totalIn)}</Text>
+                </View>
+                <View style={[styles.statItem, { backgroundColor: '#E8F5E8', borderColor: '#C8E6C9' }]}>
+                  <Text style={[styles.statLabel, { color: '#2E7D32' }]}>Out</Text>
+                  <Text style={styles.statVal}>{formatCurrency(inventoryData.cashFlow.totalOut)}</Text>
+                </View>
               </>
             ) : null}
-          </ScrollView>
+          </View>
         )}
 
+        {/* Date Pickers (Hidden) */}
+        {showDatePicker && (
+          <DateTimePicker
+            value={customDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+            maximumDate={new Date()}
+          />
+        )}
+        {showExportDatePicker && (
+          <DateTimePicker
+            value={exportDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleExportDateChange}
+            maximumDate={new Date()}
+          />
+        )}
 
-        {/* Transaction Table Header - Fixed */}
-        <View style={styles.transactionHeader}>
-          <Text variant="bodyMedium" style={styles.transactionHeaderText}>
-            Customer
+        {/* Transaction Table Header */}
+        <View style={styles.ledgerHeader}>
+          <Text style={styles.colHeader}>
+            {selectedInventory === 'money' ? 'Received' : 'Purchase'}
           </Text>
-          {selectedInventory === 'money' ? (
-            <>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-                Received
-              </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
-                Given
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center' }]}>
-                Purchase
-              </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'right' }]}>
-                Sell
-              </Text>
-            </>
-          )}
+          <Text style={styles.colHeader}>
+            {selectedInventory === 'money' ? 'Given' : 'Sell'}
+          </Text>
         </View>
 
-        {/* Transaction Table - Scrollable Content - Takes remaining space */}
+        {/* Transaction Table */}
         <ScrollView 
           style={styles.transactionTable}
-          contentContainerStyle={getFilteredEntries.length === 0 ? styles.emptyStateContainer : undefined}
+          contentContainerStyle={getFilteredEntries.length === 0 ? styles.emptyStateContainer : styles.tableContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+            <RefreshControl refreshing={isRefreshing} onRefresh={() => loadInventoryData(true)} />
           }
         >
-          {/* Transaction Rows */}
           {getFilteredEntries.length > 0 ? (
-            getFilteredEntries.map((entryData, index) => {
-              // For money subledger, use ledger entry ID for unique key
-              const uniqueKey = selectedInventory === 'money' && entryData.entry._ledgerEntry
-                ? entryData.entry._ledgerEntry.id
-                : `${entryData.transactionId}-${entryData.entry.id}-${index}`;
-              
-              return <EntryRow key={uniqueKey} entryData={entryData} />;
+            getFilteredEntries.map((pairedEntry, index) => {
+              const inKey = pairedEntry.inEntry ? `${pairedEntry.inEntry.transactionId}-${pairedEntry.inEntry.entry.id}` : 'null-in';
+              const outKey = pairedEntry.outEntry ? `${pairedEntry.outEntry.transactionId}-${pairedEntry.outEntry.entry.id}` : 'null-out';
+              const uniqueKey = `${inKey}-${outKey}-${index}`;
+              return <EntryRow key={uniqueKey} pairedEntry={pairedEntry} isFirst={index === 0} isLast={index === getFilteredEntries.length - 1} />;
             })
           ) : (
             <View style={styles.emptyState}>
@@ -1741,49 +1733,17 @@ export const LedgerScreen: React.FC = () => {
         </ScrollView>
       </View>
 
-      {/* Floating Action Button for Inventory Adjustment */}
-      <FAB
-        icon="delta"
-        style={styles.fab}
-        onPress={() => setShowAdjustAlert(true)}
-      />
-
-      {/* Custom Alert for Inventory Adjustment */}
       <InventoryInputDialog
-        visible={showAdjustAlert}
+        visible={ledgerDialogVisible}
         title="Inventory Adjustment"
         message="Enter the weight adjustments for inventory reconciliation:"
         inputs={[
-          {
-            key: "gold999",
-            label: "Gold 999 (g)",
-            value: "",
-            keyboardType: "numeric",
-            placeholder: "0.000"
-          },
-          {
-            key: "gold995",
-            label: "Gold 995 (g)",
-            value: "",
-            keyboardType: "numeric",
-            placeholder: "0.000"
-          },
-          {
-            key: "silver",
-            label: "Silver (g)",
-            value: "",
-            keyboardType: "numeric",
-            placeholder: "0.0"
-          },
-          {
-            key: "money",
-            label: "Money (₹)",
-            value: "",
-            keyboardType: "numeric",
-            placeholder: "0"
-          }
+          { key: "gold999", label: "Gold 999 (g)", value: "", keyboardType: "numeric", placeholder: "0.000" },
+          { key: "gold995", label: "Gold 995 (g)", value: "", keyboardType: "numeric", placeholder: "0.000" },
+          { key: "silver", label: "Silver (g)", value: "", keyboardType: "numeric", placeholder: "0.0" },
+          { key: "money", label: "Money (₹)", value: "", keyboardType: "numeric", placeholder: "0" }
         ]}
-        onCancel={() => setShowAdjustAlert(false)}
+        onCancel={() => setLedgerDialogVisible(false)}
         onSubmit={handleInventoryAdjustment}
         requireAtLeastOneNumeric={true}
         disableRequiredValidation={true}
@@ -1809,7 +1769,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   settingsButton: {
     margin: 0,
@@ -1822,15 +1782,10 @@ const styles = StyleSheet.create({
     margin: 0,
     marginRight: 0,
   },
-  header: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: theme.colors.surface,
-    elevation: theme.elevation.level1,
-  },
+
   title: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   content: {
     flex: 1,
@@ -1849,27 +1804,7 @@ const styles = StyleSheet.create({
   filterChip: {
     marginRight: theme.spacing.sm,
   },
-  inventoryScrollContainer: {
-    flexGrow: 0,
-    flexShrink: 0,
-    marginVertical: theme.spacing.md,
-  },
-  inventoryScrollContent: {
-    paddingHorizontal: theme.spacing.sm,
-    gap: 8,
-  },
-  inventoryCardSelected: {
-    // Remove excess shadow - keep base shadow only
-  },
-  selectionIndicator: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderWidth: 3,
-    borderRadius: 12,
-  },
+
   inventorySelector: {
     marginVertical: theme.spacing.md,
   },
@@ -1880,6 +1815,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginBottom: theme.spacing.md,
     borderRadius: 8,
+  },
+  tableContent: {
+    paddingBottom: 100, // Space for FAB and navbar
   },
   transactionHeader: {
     flexGrow: 0,
@@ -1893,7 +1831,7 @@ const styles = StyleSheet.create({
   },
   transactionHeaderText: {
     flex: 1,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     color: theme.colors.onSurfaceVariant,
   },
   transactionRow: {
@@ -1908,24 +1846,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   customerName: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     color: theme.colors.onSurface,
   },
   transactionDate: {
     color: theme.colors.onSurfaceVariant,
     marginTop: 2,
+    fontFamily: 'Outfit_400Regular',
   },
   transactionAmount: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     color: theme.colors.onSurface,
   },
   itemTypeText: {
     color: theme.colors.onSurfaceVariant,
     marginTop: 2,
+    fontFamily: 'Outfit_400Regular',
   },
   transactionType: {
     textAlign: 'center',
     color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Outfit_400Regular',
   },
   emptyState: {
     padding: theme.spacing.lg,
@@ -1939,7 +1880,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
     textAlign: 'center',
   },
   emptyStateSubtext: {
@@ -1955,6 +1896,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: theme.spacing.md,
     color: theme.colors.onBackground,
+    fontFamily: 'Outfit_400Regular',
   },
   errorContainer: {
     flex: 1,
@@ -1965,6 +1907,7 @@ const styles = StyleSheet.create({
   errorTitle: {
     color: theme.colors.onBackground,
     marginBottom: theme.spacing.md,
+    fontFamily: 'Outfit_500Medium',
   },
   summaryCard: {
     marginBottom: theme.spacing.md,
@@ -1976,7 +1919,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
     marginBottom: theme.spacing.md,
   },
   summaryGrid: {
@@ -1987,11 +1930,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryNumber: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   summaryLabel: {
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+    fontFamily: 'Outfit_400Regular',
   },
   cashFlowRow: {
     flexDirection: 'row',
@@ -2002,11 +1946,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cashAmount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   cashLabel: {
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+    fontFamily: 'Outfit_400Regular',
   },
   salesPurchaseRow: {
     flexDirection: 'row',
@@ -2016,22 +1961,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   amount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   salesPurchaseLabel: {
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+    fontFamily: 'Outfit_400Regular',
   },
   balanceContainer: {
     alignItems: 'center',
   },
   balanceAmount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   balanceLabel: {
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
     textAlign: 'center',
+    fontFamily: 'Outfit_400Regular',
   },
   inventoryGrid: {
     flexDirection: 'row',
@@ -2045,11 +1992,12 @@ const styles = StyleSheet.create({
   },
   inventoryWeight: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   inventoryLabel: {
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+    fontFamily: 'Outfit_400Regular',
   },
 
   // Part 4 Enhanced Styles - Inventory Dashboard
@@ -2063,7 +2011,7 @@ const styles = StyleSheet.create({
   dateText: {
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   dashboardGrid: {
     marginBottom: theme.spacing.lg,
@@ -2084,44 +2032,296 @@ const styles = StyleSheet.create({
   },
   inventoryCard: {
     height: 90,
-    borderRadius: 12,
-    padding: theme.spacing.md,
-    marginBottom: 8,
-    elevation: theme.elevation.level2,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 0,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    flex: 1,
-    marginHorizontal: 2,
-    minWidth: 140,
+    width: 130,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  inventoryCardSelected: {
+    borderColor: 'rgba(0,0,0,0.05)',
+    transform: [{ scale: 0.98 }],
+    elevation: 0, // Remove shadow for selected state
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 4,
   },
   cardContent: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
   },
   inventoryCardTitle: {
-    fontFamily: 'Roboto_700Bold',
-    marginLeft: theme.spacing.xs,
-    fontSize: 18,
+    fontFamily: 'Outfit_700Bold',
+    marginLeft: 6,
+    fontSize: 16,
   },
   cardValue: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 20,
     textAlign: 'center',
-    marginBottom: -14,
   },
   fab: {
     position: 'absolute',
-    margin: theme.spacing.md,
-    right: 0,
-    bottom: theme.spacing.md,
+    right: 24,
+    bottom: 24,
+    borderRadius: 32,
+    elevation: 6,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'lightseagreen',
+    shadowColor: 'lightseagreen',
+  },
+  // New Ledger Styles
+  ledgerHeader: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  colHeader: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    textTransform: 'uppercase',
+    color: theme.colors.onSurfaceVariant,
+    opacity: 0.7,
+    letterSpacing: 0.5,
+  },
+  ledgerRow: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    overflow: 'hidden',
+    elevation: 1,
+    position: 'relative',
+  },
+  firstRow: {
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  lastRow: {
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  rowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  spine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 1,
+    backgroundColor: theme.colors.outlineVariant,
+    transform: [{ translateX: -0.5 }],
+    zIndex: 10,
+  },
+  ledgerCol: {
+    flex: 1,
+    padding: 12,
+    justifyContent: 'center',
+  },
+  openingStockCol: {
+    flex: 1,
+    padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
+  },
+  colIn: {
+    backgroundColor: 'rgba(241, 248, 233, 0.5)',
+  },
+  colInActive: {
+    backgroundColor: '#F1F8E9',
+  },
+  colOut: {
+    backgroundColor: 'rgba(255, 235, 238, 0.3)',
+    alignItems: 'flex-end',
+  },
+  colOutActive: {
+    backgroundColor: '#FFEBEE',
+    alignItems: 'flex-end',
+  },
+  entryCustomer: {
+    fontSize: 12,
+    fontFamily: 'Outfit_500Medium',
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: 2,
+  },
+  entryValue: {
+    fontSize: 16,
+  },
+  textIn: {
+    color: '#1B5E20',
+    fontFamily: 'Outfit_500Medium',
+  },
+  textOut: {
+    color: '#B71C1C',
+    fontFamily: 'Outfit_500Medium',
+  },
+  textNeutral: {
+    color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Outfit_500Medium',
+  },
+  entryMeta: {
+    fontSize: 10,
+    color: theme.colors.onSurfaceVariant,
+    opacity: 0.7,
+    fontFamily: 'Outfit_400Regular',
+  },
+  emptyDash: {
+    fontSize: 18,
+    color: theme.colors.outlineVariant,
+    fontFamily: 'Outfit_400Regular',
+    alignSelf: 'center',
+  },
+  // New Header & Toolbar Styles
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+  },
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 32,
+    color: theme.colors.onPrimaryContainer,
+    letterSpacing: -1,
+    lineHeight: 32,
+  },
+  headerSubtitle: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    opacity: 0.8,
+    marginTop: 4,
+  },
+  settingsBtn: {
+    width: 48,
+    height: 48,
+    marginRight: -7,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  toolbarIsland: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+    alignItems: 'center',
+  },
+  dateChipsContainer: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  dateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  dateChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  dateChipText: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 14,
+    color: theme.colors.onSurfaceVariant,
+  },
+  dateChipTextActive: {
+    color: theme.colors.onPrimary,
+  },
+  dateChipIcon: {
+    marginRight: 6,
+  },
+  exportBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  // Stats Grid Styles
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  statItem: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+    padding: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  statLabel: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    marginBottom: 0,
+  },
+  statVal: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 10,
+    color: theme.colors.onSurface,
+  },
+  inventoryScrollContainer: {
+    flexGrow: 0,
+  },
+  inventoryScrollContent: {
+    gap: 12,
+    paddingHorizontal: 2,
+    paddingTop: 2,
+    paddingBottom: 14,
+  },
+  selectionIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'transparent',
   },
 });

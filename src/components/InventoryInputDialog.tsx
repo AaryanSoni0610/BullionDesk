@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
   },
   radioLabel: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     marginBottom: theme.spacing.sm,
   },
   radioOption: {
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
   },
   radioText: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
     marginLeft: theme.spacing.sm,
   },
   selectButton: {
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
   },
   selectButtonText: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
     fontSize: 16,
   },
   selectModalOverlay: {
@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: theme.spacing.md,
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   selectOptionsContainer: {
     maxHeight: 250,
@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
   },
   selectOptionText: {
     color: theme.colors.onSurface,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
     fontSize: 16,
   },
   selectModalButtons: {

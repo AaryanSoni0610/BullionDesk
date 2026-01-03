@@ -806,7 +806,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   customerHeader: {
     backgroundColor: theme.colors.surface,
@@ -871,7 +871,7 @@ const styles = StyleSheet.create({
   restrictionText: {
     color: theme.colors.onPrimaryContainer,
     textAlign: 'center',
-    fontFamily: 'Roboto_400Regular_Italic',
+    fontFamily: 'Outfit_400Regular_Italic',
   },
   metalOnlyContainer: {
     flexDirection: 'row',
@@ -897,7 +897,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
   },
   subtotalAmount: {
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   actionButtons: {
     backgroundColor: theme.colors.surface,

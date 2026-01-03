@@ -442,8 +442,8 @@ export const RaniRupaSellScreen: React.FC = () => {
       )}
       onPress={() => toggleItemSelection(item.id)}
       style={[styles.listItem]}
-      titleStyle={[{ fontFamily: 'Roboto_500Medium' }]}
-      descriptionStyle={[{ fontFamily: 'Roboto_400Regular' }]}
+      titleStyle={[{ fontFamily: 'Outfit_500Medium' }]}
+      descriptionStyle={[{ fontFamily: 'Outfit_400Regular' }]}
     />
   );
 
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     color: theme.colors.primary,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: 'Outfit_700Bold',
   },
   backButton: {
     marginRight: theme.spacing.sm,
@@ -649,7 +649,7 @@ const styles = StyleSheet.create({
   },
   selectAllText: {
     marginLeft: 8,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   itemsList: {
     flex: 1,
@@ -674,12 +674,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
   },
   emptyText: {
     textAlign: 'center',
     color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: 'Outfit_400Regular',
   },
   bottomNavigation: {
     position: 'absolute',
@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
   pureWeightLabel: {
     fontSize: 16,
     color: theme.colors.primary,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
   },
   cutInput: {
     width: 80,
@@ -726,7 +726,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   dateLabel: {
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: 'Outfit_500Medium',
     flex: 1,
     paddingHorizontal: 16,
   },

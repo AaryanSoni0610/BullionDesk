@@ -132,10 +132,7 @@ const styles = StyleSheet.create({
   },
   alertContainer: {
     width: '100%',
-    // Fixed width constraint ensures it looks like a card on tablets too
-    maxWidth: 340, 
-    // Default max height if prop not provided (allows scrolling)
-    maxHeight: 500, 
+    maxWidth: 400,
     backgroundColor: '#FDFBFF',
     borderRadius: 28,
     padding: 24,
@@ -147,8 +144,8 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
     marginBottom: 16,
   },
   iconBadge: {
@@ -158,14 +155,14 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   title: {
+    marginTop: 8,
     textAlign: 'left',
     fontFamily: 'Outfit_700Bold',
     color: theme.colors.onSurface,
     flexShrink: 1,
   },
   messageContainer: {
-    marginBottom: 24,
-    flexGrow: 0, // Allows ScrollView to shrink if content is small
+    flexGrow: 0,
   },
   message: {
     textAlign: 'left',
@@ -178,9 +175,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     width: '100%',
+    marginTop: 6,
+    marginBottom: -6,
   },
   buttonContainerStacked: {
-    flexDirection: 'column',
     alignItems: 'stretch',
   },
   button: {

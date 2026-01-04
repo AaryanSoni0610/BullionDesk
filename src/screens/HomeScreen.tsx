@@ -12,7 +12,7 @@ import { formatIndianNumber, formatRelativeDate, formatPureGoldPrecise, formatPu
 export const HomeScreen = ({ navigation }: any) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const { navigateToSettings } = useAppContext();
+  const { navigateToSettings, setCustomerModalVisible } = useAppContext();
 
   const loadTransactions = async () => {
     try {
@@ -41,6 +41,26 @@ export const HomeScreen = ({ navigation }: any) => {
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   };
+
+  // Empty State Component
+  const EmptyState = () => (
+    <View style={styles.emptyState}>
+      <Icon name="text-box-search-outline" size={72} color={theme.colors.onSurfaceVariant} />
+      <Text style={styles.emptyTitle}>
+        No Transactions Yet
+      </Text>
+      <Text style={styles.emptyDescription}>
+        Start by adding your first transaction record
+      </Text>
+      <TouchableOpacity 
+        style={styles.addButton}
+        onPress={() => setCustomerModalVisible(true)}
+      >
+        <Icon name="plus" size={20} color="#FFFFFF" />
+        <Text style={styles.addButtonText}>Add New Transaction</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const getItemDisplayName = (entry: TransactionEntry & { _isAggregated?: boolean, _count?: number }): string => {
     if (entry.type === 'money') return 'Money';
@@ -353,16 +373,20 @@ export const HomeScreen = ({ navigation }: any) => {
       </View>
 
       {/* List */}
-      <FlatList
-        data={transactions}
-        renderItem={renderTransactionCard}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />
-        }
-        showsVerticalScrollIndicator={false}
-      />
+      {transactions.length === 0 && !refreshing ? (
+        <EmptyState />
+      ) : (
+        <FlatList
+          data={transactions}
+          renderItem={renderTransactionCard}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -555,5 +579,46 @@ const styles = StyleSheet.create({
   },
   textRed: {
     color: theme.colors.error,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    marginTop: -80,
+  },
+  emptyTitle: {
+    textAlign: 'center',
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 20,
+    marginTop: 16,
+    marginBottom: 8,
+    color: theme.colors.onSurface,
+  },
+  emptyDescription: {
+    textAlign: 'center',
+    marginBottom: 24,
+    color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 14,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 100,
+    gap: 8,
+    elevation: 2,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 14,
   },
 });

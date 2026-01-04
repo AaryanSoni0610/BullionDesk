@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Text, Switch } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -151,7 +151,8 @@ export const SettingsScreen: React.FC = () => {
           style: 'destructive',
           onPress: handleSetBaseInventory,
         },
-      ]
+      ],
+      'alert-decagram-outline'
     );
   };
 
@@ -375,7 +376,8 @@ export const SettingsScreen: React.FC = () => {
           showAlert(
             'Auto Backup Enabled',
             'Your data will be automatically backed up daily.',
-            [{ text: 'OK' }]
+            [{ text: 'OK' }],
+            'cloud-upload-outline'
           );
         } else {
           console.error('🔴 Auto backup was not saved properly!');
@@ -405,7 +407,8 @@ export const SettingsScreen: React.FC = () => {
               }
             },
           },
-        ]
+        ],
+        'cloud-upload-outline'
       );
     }
   };
@@ -442,7 +445,8 @@ export const SettingsScreen: React.FC = () => {
             text: 'Cancel',
             style: 'cancel',
           },
-        ]
+        ],
+        'file-export-outline'
       );
     } catch (error) {
       console.error('Error preparing export:', error);
@@ -469,7 +473,8 @@ export const SettingsScreen: React.FC = () => {
             {
               text: 'OK',
             },
-          ]
+          ],
+          'check-circle-outline'
         );
       }
     } catch (error) {
@@ -522,8 +527,6 @@ export const SettingsScreen: React.FC = () => {
         {
           text: 'No',
           style: 'cancel',
-          onPress: () => {
-          },
         },
         {
           text: 'Yes, Delete All',
@@ -564,7 +567,8 @@ export const SettingsScreen: React.FC = () => {
             }
           },
         },
-      ]
+      ],
+      'delete-forever-outline'
     );
   };
 
@@ -575,14 +579,15 @@ export const SettingsScreen: React.FC = () => {
     onPress, 
     rightElement, 
     isDestructive = false,
-    isLast = false 
+    isLast = false,
+    disabled = false
   }: any) => (
     <>
       <TouchableOpacity 
         style={[styles.itemContainer, isDestructive && styles.destructiveItem]} 
         onPress={onPress}
         activeOpacity={0.7}
-        disabled={!onPress}
+        disabled={disabled || !onPress}
       >
         <View style={styles.iconBox}>
           <Icon 
@@ -694,7 +699,8 @@ export const SettingsScreen: React.FC = () => {
                           }, 100);
                         }
                       }
-                    ]
+                    ],
+                    'package-variant-closed'
                   );
                 }
               }}
@@ -727,7 +733,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="delete-forever-outline"
               title="Clear All Data"
-              description={isClearing ? "Clearing data..." : "Reset app to factory state"}
+              description={isClearing ? "Clearing data..." : "Reset app to empty state"}
               isDestructive
               isLast
               onPress={handleClearAllData}
@@ -754,7 +760,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v6.4.5"
+              description="v6.5.5"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -896,7 +902,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v6.4.5
+        message={`BullionDesk v6.5.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

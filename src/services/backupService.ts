@@ -559,8 +559,12 @@ export class BackupService {
       const currentDeviceId = await this.getDeviceId();
 
       // Perform conflict-free merge
-      this.updateImportProgressAlert('Merging data... 90%');
+      this.updateImportProgressAlert('Merging data... 80%');
       await this.mergeData(decryptedData, currentDeviceId);
+
+      // Recalculate Inventory Chain (Full Rebuild)
+      this.updateImportProgressAlert('Recalculating inventory... 90%');
+      await InventoryService.recalculateBalancesFrom();
 
       this.updateImportProgressAlert('Import complete! 100%');
 
@@ -633,8 +637,12 @@ export class BackupService {
       const currentDeviceId = await this.getDeviceId();
 
       // Perform conflict-free merge
-      this.updateImportProgressAlert('Merging data... 90%');
+      this.updateImportProgressAlert('Merging data... 80%');
       await this.mergeData(decryptedData, currentDeviceId);
+
+      // Recalculate Inventory Chain (Full Rebuild)
+      this.updateImportProgressAlert('Recalculating inventory... 90%');
+      await InventoryService.recalculateBalancesFrom();
 
       this.updateImportProgressAlert('Import complete! 100%');
 
@@ -728,14 +736,60 @@ export class BackupService {
     // Merge ledger entries (by ID) - only add if doesn't exist
     const existingLedger = await LedgerService.getAllLedgerEntries();
     const ledgerMap = new Map(existingLedger.map((l) => [l.id, l]));
+    const db = DatabaseService.getDatabase();
 
-    // Save ledger entries that don't exist
     for (const ledgerEntry of records.ledger) {
       if (!ledgerMap.has(ledgerEntry.id)) {
-        // Import ledger entry directly - requires the full transaction
-        const transaction = records.transactions.find(t => t.id === ledgerEntry.transactionId);
-        if (transaction) {
-          await LedgerService.createLedgerEntry(transaction, 0, ledgerEntry.date);
+        try {
+          // 1. Insert the Ledger Entry Header directly using backup values
+          await db.runAsync(
+            `INSERT INTO ledger_entries 
+             (id, transactionId, customerId, customerName, date, amountReceived, amountGiven, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              ledgerEntry.id,
+              ledgerEntry.transactionId,
+              ledgerEntry.customerId,
+              ledgerEntry.customerName,
+              ledgerEntry.date,
+              ledgerEntry.amountReceived || 0, // USE VALUE FROM BACKUP
+              ledgerEntry.amountGiven || 0,    // USE VALUE FROM BACKUP
+              ledgerEntry.createdAt
+            ]
+          );
+
+          // 2. Insert the Ledger Items directly
+          if (ledgerEntry.entries && Array.isArray(ledgerEntry.entries)) {
+            for (const item of ledgerEntry.entries) {
+              await db.runAsync(
+                `INSERT INTO ledger_entry_items 
+                 (id, ledger_entry_id, type, itemType, weight, price, touch, cut, extraPerKg, 
+                  pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  item.id,
+                  ledgerEntry.id, // Link to parent ID
+                  item.type,
+                  item.itemType,
+                  item.weight || null,
+                  item.price || null,
+                  item.touch || null,
+                  item.cut || null,
+                  item.extraPerKg || null,
+                  item.pureWeight || null,
+                  item.moneyType || null,
+                  item.amount || null,
+                  item.metalOnly ? 1 : 0,
+                  item.stock_id || null,
+                  item.subtotal,
+                  item.createdAt || ledgerEntry.createdAt,
+                  item.lastUpdatedAt || ledgerEntry.createdAt
+                ]
+              );
+            }
+          }
+        } catch (error) {
+          console.error(`Error importing ledger entry ${ledgerEntry.id}:`, error);
         }
       }
     }

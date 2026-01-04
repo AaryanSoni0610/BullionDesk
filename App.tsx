@@ -332,6 +332,7 @@ const AppContent: React.FC<AppContentProps> = ({
     setAlertVisible,
     alertTitle,
     alertMessage,
+    alertIcon,
     alertButtons,
     handleSelectCustomer,
     handleCreateCustomer,
@@ -435,6 +436,7 @@ const AppContent: React.FC<AppContentProps> = ({
             title={alertTitle}
             message={alertMessage}
             buttons={alertButtons}
+            icon={alertIcon}
             onDismiss={() => setAlertVisible(false)}
           />
 
@@ -458,10 +460,6 @@ export default function App() {
     const initializeServices = async () => {
       // Initialize SQLite database first
       await DatabaseService.initDatabase();
-      
-      // Ensure initial snapshot for today exists (Migration)
-      const today = new Date().toISOString().split('T')[0];
-      await InventoryService.ensureSnapshotForDate(today);
 
       // Initialize notifications
       await NotificationService.initialize();

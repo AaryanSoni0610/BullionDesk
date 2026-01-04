@@ -61,9 +61,11 @@ interface AppContextType {
   setAlertTitle: (title: string) => void;
   alertMessage: string;
   setAlertMessage: (message: string) => void;
+  alertIcon?: string;
+  setAlertIcon: (icon?: string) => void;
   alertButtons: AlertButton[];
   setAlertButtons: (buttons: AlertButton[]) => void;
-  showAlert: (title: string, message: string, buttons?: AlertButton[]) => void;
+  showAlert: (title: string, message: string, buttons?: AlertButton[], icon?: string) => void;
   
   // Navigation
   navigateToEntry: (customer: Customer) => void;
@@ -133,6 +135,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [alertIcon, setAlertIcon] = useState<string | undefined>(undefined);
   const [alertButtons, setAlertButtons] = useState<AlertButton[]>([{ text: 'OK' }]);
   const [isSavingTransaction, setIsSavingTransaction] = useState(false);
 
@@ -310,10 +313,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   };
 
-  const showAlert = (title: string, message: string, buttons: AlertButton[] = [{ text: 'OK' }]) => {
+  const showAlert = (title: string, message: string, buttons: AlertButton[] = [{ text: 'OK' }], icon?: string) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertButtons(buttons);
+    setAlertIcon(icon);
     setAlertVisible(true);
   };
 
@@ -403,6 +407,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setAlertTitle,
     alertMessage,
     setAlertMessage,
+    alertIcon,
+    setAlertIcon,
     alertButtons,
     setAlertButtons,
     showAlert,

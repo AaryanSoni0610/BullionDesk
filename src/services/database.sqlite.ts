@@ -152,18 +152,18 @@ export class DatabaseService {
           value TEXT NOT NULL
         );
 
-        -- Daily Inventory Snapshots Table (O(1) Ledger Optimization)
-        CREATE TABLE IF NOT EXISTS daily_inventory_snapshots (
-          date DATE PRIMARY KEY NOT NULL, -- Format: YYYY-MM-DD
+        -- Daily Opening Balances Table (The Chain)
+        CREATE TABLE IF NOT EXISTS daily_opening_balances (
+          date TEXT PRIMARY KEY NOT NULL, -- Format: YYYY-MM-DD
           gold999 REAL DEFAULT 0,
           gold995 REAL DEFAULT 0,
           silver REAL DEFAULT 0,
-          rani REAL DEFAULT 0,    -- Pure weight
-          rupu REAL DEFAULT 0,    -- Pure weight
+          rani REAL DEFAULT 0,    -- Total Pure Weight
+          rupu REAL DEFAULT 0,    -- Total Pure Weight
           money REAL DEFAULT 0,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
-        CREATE INDEX IF NOT EXISTS idx_snapshots_date ON daily_inventory_snapshots(date);
+        CREATE INDEX IF NOT EXISTS idx_opening_balances_date ON daily_opening_balances(date);
 
         -- Indexes for better query performance
         CREATE INDEX IF NOT EXISTS idx_transactions_customerId ON transactions(customerId);
@@ -548,6 +548,7 @@ export class DatabaseService {
       await db.runAsync('DELETE FROM customers');
       await db.runAsync('DELETE FROM rani_rupa_stock');
       await db.runAsync('DELETE FROM trades');
+      await db.runAsync('DELETE FROM daily_opening_balances');
       
       // Clear device_id and last_transaction_id from settings
       await db.runAsync('DELETE FROM settings WHERE key IN (?, ?)', ['device_id', 'last_transaction_id']);

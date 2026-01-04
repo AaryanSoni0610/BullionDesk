@@ -21,7 +21,7 @@ export class TransactionService {
     };
 
     entries.forEach(entry => {
-      if (entry.metalOnly) {
+      if (entry.itemType !== 'money') {
         const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
           ? (entry.pureWeight || 0) 
           : (entry.weight || 0);
@@ -47,7 +47,7 @@ export class TransactionService {
       const db = DatabaseService.getDatabase();
       
       let query = `
-        SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+        SELECT t.*
         FROM transactions t
         LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
         WHERE t.deleted_on IS NULL 
@@ -536,6 +536,7 @@ export class TransactionService {
       let previousAmountPaid = 0;
       let oldBalanceEffect = 0;
       let existingTransaction: Transaction | null | undefined;
+      let earliestAffectedDate = transactionDate; // Default to new date
 
       // Begin transaction
       await db.execAsync('BEGIN TRANSACTION');
@@ -548,6 +549,11 @@ export class TransactionService {
           if (!existingTransaction) {
             await db.execAsync('ROLLBACK');
             return { success: false, error: 'Transaction not found' };
+          }
+
+          // Capture the old date to determine the earliest affected date
+          if (existingTransaction.date < earliestAffectedDate) {
+            earliestAffectedDate = existingTransaction.date;
           }
 
           transactionId = existingTransactionId!;
@@ -896,70 +902,8 @@ export class TransactionService {
           ['last_transaction_id', transactionId]
         );
 
-        // --- Inventory Ripple Update ---
-        const finalTransactionDate = saveDate ? transactionDate : (existingTransaction ? existingTransaction.date : transactionDate);
-
-        if (isUpdate && existingTransaction) {
-          const oldDate = existingTransaction.date;
-          const newDate = finalTransactionDate;
-
-          // Calculate old effects
-          const oldMetalDelta = this.calculateInventoryDeltaFromEntries(existingTransaction.entries);
-          const oldMoneyDelta = previousAmountPaid;
-
-          // Calculate new effects
-          const newMetalDelta = this.calculateInventoryDeltaFromEntries(entries);
-          const newMoneyDelta = receivedAmount;
-
-          if (oldDate !== newDate) {
-            // Date changed: Reverse old, Apply new
-            const reverseOldChanges: InventoryDelta = {
-              gold999: -oldMetalDelta.gold999,
-              gold995: -oldMetalDelta.gold995,
-              silver: -oldMetalDelta.silver,
-              rani: -oldMetalDelta.rani,
-              rupu: -oldMetalDelta.rupu,
-              money: -oldMoneyDelta
-            };
-            await InventoryService.propagateInventoryChange(oldDate, reverseOldChanges);
-
-            const applyNewChanges: InventoryDelta = {
-              gold999: newMetalDelta.gold999,
-              gold995: newMetalDelta.gold995,
-              silver: newMetalDelta.silver,
-              rani: newMetalDelta.rani,
-              rupu: newMetalDelta.rupu,
-              money: newMoneyDelta
-            };
-            await InventoryService.propagateInventoryChange(newDate, applyNewChanges);
-          } else {
-            // Date same: Apply net difference
-            const netChanges: InventoryDelta = {
-              gold999: newMetalDelta.gold999 - oldMetalDelta.gold999,
-              gold995: newMetalDelta.gold995 - oldMetalDelta.gold995,
-              silver: newMetalDelta.silver - oldMetalDelta.silver,
-              rani: newMetalDelta.rani - oldMetalDelta.rani,
-              rupu: newMetalDelta.rupu - oldMetalDelta.rupu,
-              money: newMoneyDelta - oldMoneyDelta
-            };
-            await InventoryService.propagateInventoryChange(newDate, netChanges);
-          }
-        } else {
-          // New transaction
-          const newMetalDelta = this.calculateInventoryDeltaFromEntries(entries);
-          const newMoneyDelta = receivedAmount;
-
-          const changes: InventoryDelta = {
-            gold999: newMetalDelta.gold999,
-            gold995: newMetalDelta.gold995,
-            silver: newMetalDelta.silver,
-            rani: newMetalDelta.rani,
-            rupu: newMetalDelta.rupu,
-            money: newMoneyDelta
-          };
-          await InventoryService.propagateInventoryChange(finalTransactionDate, changes);
-        }
-        // -------------------------------
+        // Trigger Inventory Recalculation from the earliest affected date
+        await InventoryService.recalculateBalancesFrom(earliestAffectedDate);
 
         // Commit transaction
         await db.execAsync('COMMIT');
@@ -1080,26 +1024,13 @@ export class TransactionService {
       // Delete ledger entries
       await LedgerService.deleteLedgerEntryByTransactionId(transactionId);
 
-      // --- Inventory Ripple Update (Reverse) ---
-      const metalDelta = this.calculateInventoryDeltaFromEntries(transaction.entries);
-      const moneyDelta = transaction.amountPaid;
-
-      const reverseChanges: InventoryDelta = {
-        gold999: -metalDelta.gold999,
-        gold995: -metalDelta.gold995,
-        silver: -metalDelta.silver,
-        rani: -metalDelta.rani,
-        rupu: -metalDelta.rupu,
-        money: -moneyDelta
-      };
-      
-      await InventoryService.propagateInventoryChange(transaction.date, reverseChanges);
-      // -----------------------------------------
-
       // Soft delete the transaction by setting deleted_on to current date
       await db.runAsync('UPDATE transactions SET deleted_on = ? WHERE id = ?', [new Date().toISOString().split('T')[0], transactionId]);
       await db.runAsync('UPDATE ledger_entries SET deleted_on = ? WHERE transactionId = ?', [new Date().toISOString().split('T')[0], transactionId]);
       
+      // Trigger Inventory Recalculation from the transaction date
+      await InventoryService.recalculateBalancesFrom(transaction.date);
+
       return true;
     } catch (error) {
       console.warn('Error deleting transaction:', error);

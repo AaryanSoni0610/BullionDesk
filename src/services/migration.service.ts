@@ -133,7 +133,11 @@ export class MigrationService {
       if (!settingsResult.success) {
         return { success: false, error: `Settings migration failed: ${settingsResult.error}` };
       }
-      this.reportProgress('settings', 95, 100, 'Settings migrated');
+      this.reportProgress('settings', 90, 100, 'Settings migrated');
+
+      // Recalculate Inventory Chain (Full Rebuild)
+      this.reportProgress('inventory_history', 95, 100, 'Building inventory history...');
+      await InventoryService.recalculateBalancesFrom();
 
       // Mark migration as completed
       await SettingsService.setSetting('migration_completed', 'true');

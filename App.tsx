@@ -40,6 +40,7 @@ import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
 import { DatabaseService } from './src/services/database.sqlite';
 import { TradeService } from './src/services/trade.service';
+import { InventoryService } from './src/services/inventory.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin' | 'rateCut';
@@ -458,6 +459,10 @@ export default function App() {
       // Initialize SQLite database first
       await DatabaseService.initDatabase();
       
+      // Ensure initial snapshot for today exists (Migration)
+      const today = new Date().toISOString().split('T')[0];
+      await InventoryService.ensureSnapshotForDate(today);
+
       // Initialize notifications
       await NotificationService.initialize();
 

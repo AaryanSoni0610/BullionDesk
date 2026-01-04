@@ -2,11 +2,45 @@ import { Transaction, TransactionEntry, Customer } from '../types';
 import { DatabaseService } from './database.sqlite';
 import { CustomerService } from './customer.service';
 import { LedgerService } from './ledger.service';
+import { InventoryService, InventoryDelta } from './inventory.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
 import * as SecureStore from 'expo-secure-store';
 import * as Device from 'expo-device';
 
 export class TransactionService {
+  
+  // Helper to calculate inventory delta from entries
+  private static calculateInventoryDeltaFromEntries(entries: TransactionEntry[]): InventoryDelta {
+    const delta: InventoryDelta = {
+      gold999: 0,
+      gold995: 0,
+      silver: 0,
+      rani: 0,
+      rupu: 0,
+      money: 0
+    };
+
+    entries.forEach(entry => {
+      if (entry.metalOnly) {
+        const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
+          ? (entry.pureWeight || 0) 
+          : (entry.weight || 0);
+        
+        // Sell = merchant gives metal = negative inventory effect
+        // Purchase = merchant receives metal = positive inventory effect
+        const metalFlow = entry.type === 'sell' ? -weight : weight;
+        
+        if (entry.itemType === 'gold999') delta.gold999 += metalFlow;
+        else if (entry.itemType === 'gold995') delta.gold995 += metalFlow;
+        else if (entry.itemType === 'silver') delta.silver += metalFlow;
+        else if (entry.itemType === 'rani') delta.rani += metalFlow;
+        else if (entry.itemType === 'rupu') delta.rupu += metalFlow;
+      }
+    });
+
+    return delta;
+  }
+
   // Get all transactions
   static async getAllTransactions(limit?: number): Promise<Transaction[]> {
     try {
@@ -862,6 +896,71 @@ export class TransactionService {
           ['last_transaction_id', transactionId]
         );
 
+        // --- Inventory Ripple Update ---
+        const finalTransactionDate = saveDate ? transactionDate : (existingTransaction ? existingTransaction.date : transactionDate);
+
+        if (isUpdate && existingTransaction) {
+          const oldDate = existingTransaction.date;
+          const newDate = finalTransactionDate;
+
+          // Calculate old effects
+          const oldMetalDelta = this.calculateInventoryDeltaFromEntries(existingTransaction.entries);
+          const oldMoneyDelta = previousAmountPaid;
+
+          // Calculate new effects
+          const newMetalDelta = this.calculateInventoryDeltaFromEntries(entries);
+          const newMoneyDelta = receivedAmount;
+
+          if (oldDate !== newDate) {
+            // Date changed: Reverse old, Apply new
+            const reverseOldChanges: InventoryDelta = {
+              gold999: -oldMetalDelta.gold999,
+              gold995: -oldMetalDelta.gold995,
+              silver: -oldMetalDelta.silver,
+              rani: -oldMetalDelta.rani,
+              rupu: -oldMetalDelta.rupu,
+              money: -oldMoneyDelta
+            };
+            await InventoryService.propagateInventoryChange(oldDate, reverseOldChanges);
+
+            const applyNewChanges: InventoryDelta = {
+              gold999: newMetalDelta.gold999,
+              gold995: newMetalDelta.gold995,
+              silver: newMetalDelta.silver,
+              rani: newMetalDelta.rani,
+              rupu: newMetalDelta.rupu,
+              money: newMoneyDelta
+            };
+            await InventoryService.propagateInventoryChange(newDate, applyNewChanges);
+          } else {
+            // Date same: Apply net difference
+            const netChanges: InventoryDelta = {
+              gold999: newMetalDelta.gold999 - oldMetalDelta.gold999,
+              gold995: newMetalDelta.gold995 - oldMetalDelta.gold995,
+              silver: newMetalDelta.silver - oldMetalDelta.silver,
+              rani: newMetalDelta.rani - oldMetalDelta.rani,
+              rupu: newMetalDelta.rupu - oldMetalDelta.rupu,
+              money: newMoneyDelta - oldMoneyDelta
+            };
+            await InventoryService.propagateInventoryChange(newDate, netChanges);
+          }
+        } else {
+          // New transaction
+          const newMetalDelta = this.calculateInventoryDeltaFromEntries(entries);
+          const newMoneyDelta = receivedAmount;
+
+          const changes: InventoryDelta = {
+            gold999: newMetalDelta.gold999,
+            gold995: newMetalDelta.gold995,
+            silver: newMetalDelta.silver,
+            rani: newMetalDelta.rani,
+            rupu: newMetalDelta.rupu,
+            money: newMoneyDelta
+          };
+          await InventoryService.propagateInventoryChange(finalTransactionDate, changes);
+        }
+        // -------------------------------
+
         // Commit transaction
         await db.execAsync('COMMIT');
 
@@ -980,6 +1079,22 @@ export class TransactionService {
 
       // Delete ledger entries
       await LedgerService.deleteLedgerEntryByTransactionId(transactionId);
+
+      // --- Inventory Ripple Update (Reverse) ---
+      const metalDelta = this.calculateInventoryDeltaFromEntries(transaction.entries);
+      const moneyDelta = transaction.amountPaid;
+
+      const reverseChanges: InventoryDelta = {
+        gold999: -metalDelta.gold999,
+        gold995: -metalDelta.gold995,
+        silver: -metalDelta.silver,
+        rani: -metalDelta.rani,
+        rupu: -metalDelta.rupu,
+        money: -moneyDelta
+      };
+      
+      await InventoryService.propagateInventoryChange(transaction.date, reverseChanges);
+      // -----------------------------------------
 
       // Soft delete the transaction by setting deleted_on to current date
       await db.runAsync('UPDATE transactions SET deleted_on = ? WHERE id = ?', [new Date().toISOString().split('T')[0], transactionId]);

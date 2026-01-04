@@ -228,8 +228,9 @@ export const LedgerScreen: React.FC = () => {
         TransactionService.getTransactionsByDateRange(startDate, endDate),
         CustomerService.getAllCustomers(),
         LedgerService.getLedgerEntriesByDateRange(startDate, endDate),
-        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All transactions up to end date
-        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', upToEndDate), // All ledger entries up to end date
+        // Removed expensive O(N) calls:
+        // TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', upToEndDate),
+        // LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', upToEndDate),
       ];
       
       // Add itemType-filtered queries for gold and silver subledgers
@@ -258,26 +259,27 @@ export const LedgerScreen: React.FC = () => {
       const filteredTrans = results[0];
       const customers = results[1];
       const filteredLedger = results[2];
-      const transactionsUpToDate = results[3];
-      const ledgerEntriesUpToDate = results[4];
+      const transactionsUpToDate: Transaction[] = []; // Empty, not used anymore
+      const ledgerEntriesUpToDate: LedgerEntry[] = []; // Empty, not used anymore
       
       // Extract itemType-filtered transactions and stock data based on selected inventory
       let raniStockData: any[] = [];
       let rupuStockData: any[] = [];
       let itemFilteredTransactions: Transaction[] = [];
       
+      // Indices shifted by 2 because we removed 2 promises
       if (selectedInventory === 'gold') {
-        itemFilteredTransactions = results[5];
-        raniStockData = results[6];
+        itemFilteredTransactions = results[3];
+        raniStockData = results[4];
       } else if (selectedInventory === 'silver') {
-        itemFilteredTransactions = results[5];
-        rupuStockData = results[6];
+        itemFilteredTransactions = results[3];
+        rupuStockData = results[4];
       } else {
-        raniStockData = results[5];
-        rupuStockData = results[6];
+        raniStockData = results[3];
+        rupuStockData = results[4];
       }
 
-      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
+      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger, startDate);
       setInventoryData(data);
       setFilteredTransactions(itemFilteredTransactions.length > 0 ? itemFilteredTransactions : filteredTrans);
       setFilteredLedgerEntries(filteredLedger);
@@ -441,7 +443,8 @@ export const LedgerScreen: React.FC = () => {
     customers: Customer[], 
     ledgerEntriesUpToDate: LedgerEntry[],
     dayTransactions: Transaction[],
-    dayLedgerEntries: LedgerEntry[]
+    dayLedgerEntries: LedgerEntry[],
+    dateStr?: string
   ): Promise<InventoryData> => {
     let totalSales = 0;
     let totalPurchases = 0;
@@ -449,18 +452,26 @@ export const LedgerScreen: React.FC = () => {
     const goldInventory = { gold999: 0, gold995: 0, rani: 0, total: 0 };
     const silverInventory = { silver: 0, rupu: 0, total: 0 };
 
-    // Get base inventory
-    const baseInventory = await InventoryService.getBaseInventory();
+    // Get Opening Balance for the selected date (O(1) from Snapshot)
+    // If dateStr is not provided, fallback to base inventory (should not happen in new flow)
+    let openingBalance;
+    if (dateStr) {
+        // Ensure snapshot exists (lazy load)
+        await InventoryService.ensureSnapshotForDate(dateStr.split('T')[0]);
+        openingBalance = await InventoryService.getInventoryForDate(dateStr.split('T')[0]);
+    } else {
+        openingBalance = await InventoryService.getBaseInventory();
+    }
     
-    // Initialize with base values
-    goldInventory.gold999 = baseInventory.gold999;
-    goldInventory.gold995 = baseInventory.gold995;
-    goldInventory.rani = baseInventory.rani;
-    silverInventory.silver = baseInventory.silver;
-    silverInventory.rupu = baseInventory.rupu;
+    // Initialize with Opening Balance
+    goldInventory.gold999 = openingBalance.gold999;
+    goldInventory.gold995 = openingBalance.gold995;
+    goldInventory.rani = openingBalance.rani;
+    silverInventory.silver = openingBalance.silver;
+    silverInventory.rupu = openingBalance.rupu;
 
-    // Calculate cumulative inventory using all transactions up to the selected date
-    transactionsUpToDate.forEach(transaction => {
+    // Add effects of DAY's transactions only (O(D))
+    dayTransactions.forEach(transaction => {
 
       transaction.entries.forEach(entry => {
         const extEntry = entry as ExtendedTransactionEntry; // Cast to access extended properties
@@ -554,14 +565,12 @@ export const LedgerScreen: React.FC = () => {
     silverInventory.rupu = formatPureSilver(silverInventory.rupu);
     silverInventory.total = formatPureSilver(silverInventory.total); // Use silver precision for total
 
-    // Calculate actual money inventory from all ledger entries up to date: base money + sum(amountReceived) - sum(amountGiven)
-    const totalMoneyReceived = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountReceived, 0);
-    const totalMoneyGiven = ledgerEntriesUpToDate.reduce((sum, entry) => sum + entry.amountGiven, 0);
-    const actualMoneyInventory = Math.round(baseInventory.money + totalMoneyReceived - totalMoneyGiven);
-
-    // Calculate day's cash flow from day's ledger entries only
+    // Calculate actual money inventory
+    // Opening Balance Money + Day's In - Day's Out
     const dayMoneyReceived = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
     const dayMoneyGiven = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountGiven, 0);
+    
+    const actualMoneyInventory = Math.round(openingBalance.money + dayMoneyReceived - dayMoneyGiven);
 
     return {
       totalTransactions: dayTransactions.length,

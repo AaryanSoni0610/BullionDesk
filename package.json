@@ -1,6 +1,6 @@
 {
   "name": "bulliondesk",
-  "version": "6.4.5",
+  "version": "6.5.0",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {

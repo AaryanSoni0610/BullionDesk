@@ -152,6 +152,19 @@ export class DatabaseService {
           value TEXT NOT NULL
         );
 
+        -- Daily Inventory Snapshots Table (O(1) Ledger Optimization)
+        CREATE TABLE IF NOT EXISTS daily_inventory_snapshots (
+          date DATE PRIMARY KEY NOT NULL, -- Format: YYYY-MM-DD
+          gold999 REAL DEFAULT 0,
+          gold995 REAL DEFAULT 0,
+          silver REAL DEFAULT 0,
+          rani REAL DEFAULT 0,    -- Pure weight
+          rupu REAL DEFAULT 0,    -- Pure weight
+          money REAL DEFAULT 0,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_snapshots_date ON daily_inventory_snapshots(date);
+
         -- Indexes for better query performance
         CREATE INDEX IF NOT EXISTS idx_transactions_customerId ON transactions(customerId);
         CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);

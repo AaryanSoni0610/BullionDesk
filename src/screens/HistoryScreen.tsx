@@ -8,7 +8,8 @@ import {
   BackHandler,
   TextInput,
   RefreshControl,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
@@ -27,7 +28,7 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureSilver, formatIndianNumber } from '../utils/formatting';
+import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, formatIndianNumber, formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -64,9 +65,17 @@ export const HistoryScreen: React.FC = () => {
   // Export State
   const [showExportDatePicker, setShowExportDatePicker] = useState(false);
   const [exportDate, setExportDate] = useState<Date>(new Date());
-  const [exportTransactions, setExportTransactions] = useState<Transaction[]>([]);
+  
+  // Enhanced Export State
   const [isExporting, setIsExporting] = useState(false);
-  const exportCardRefs = useRef<Array<View | null>>([]);
+  const [exportStatus, setExportStatus] = useState<'idle' | 'capturing' | 'generating' | 'cleaning'>('idle');
+  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
+  const [exportTransactions, setExportTransactions] = useState<Transaction[]>([]);
+  // Removed unused refs for direct HTML generation
+  // const [currentExportIndex, setCurrentExportIndex] = useState(-1);
+  // const capturedImagesRef = useRef<{uri: string, height: number}[]>([]);
+  // const exportViewRef = useRef<View>(null);
+  // const currentContentHeight = useRef(0);
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-IN', {
@@ -76,27 +85,35 @@ export const HistoryScreen: React.FC = () => {
     });
   };
 
-  const isTransactionLocked = (transaction: Transaction): boolean => {
+  const isRateCutLocked = (transaction: Transaction): boolean => {
     const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
     if (isMetalOnly) {
       const txDate = new Date(transaction.date).getTime();
       const lockDates = transaction.customerLockDates;
       if (lockDates) {
-        const isLockedByRateCut = transaction.entries.some(entry => {
+        return transaction.entries.some(entry => {
           if (entry.itemType === 'gold999' && txDate <= (lockDates.gold999 || 0)) return true;
           if (entry.itemType === 'gold995' && txDate <= (lockDates.gold995 || 0)) return true;
           if (entry.itemType === 'silver' && txDate <= (lockDates.silver || 0)) return true;
           return false;
         });
-        if (isLockedByRateCut) return true;
       }
     }
+    return false;
+  };
+
+  const isEditLocked = (transaction: Transaction): boolean => {
+    if (isRateCutLocked(transaction)) return true;
+    
+    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
+    if (isMetalOnly) return false;
+
     if (!transaction.lastUpdatedAt) return false;
     const timeSinceUpdate = Date.now() - new Date(transaction.lastUpdatedAt).getTime();
     const isOld = timeSinceUpdate > (24 * 60 * 60 * 1000);
     const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
     const isSettled = remainingBalance <= 0;
-    return isSettled && isOld && !isMetalOnly;
+    return isSettled && isOld;
   };
 
   const handleDeleteTransaction = async (transaction: Transaction) => {
@@ -159,20 +176,283 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
-  // --- EXPORT LOGIC (Kept exactly as provided) ---
+  // --- EXPORT LOGIC ---
   const handleExportDateChange = (event: any, selectedDate?: Date) => {
+    setShowExportDatePicker(false);
     if (event.type === 'set' && selectedDate) {
       setExportDate(selectedDate);
       performExport(selectedDate);
-    } else {
-      setShowExportDatePicker(false);
     }
   };
 
   const performExport = async (date: Date) => {
-    // ... (Keep existing export logic - omitted for brevity but assumed present in implementation)
-    // For the sake of this file response, assume standard export logic or copy from previous file
-    setShowExportDatePicker(false);
+    setIsExporting(true);
+    setExportStatus('generating');
+    try {
+      const start = new Date(date); start.setHours(0,0,0,0);
+      const end = new Date(date); end.setHours(23,59,59,999);
+      
+      const txs = await TransactionService.getTransactionsByDateRange(start.toISOString(), end.toISOString());
+      const validTxs = txs.filter(t => t.customerName.toLowerCase() !== 'adjust');
+      
+      if (validTxs.length === 0) {
+        setIsExporting(false);
+        setAlertTitle('No Data');
+        setAlertMessage('No transactions found for this date.');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
+        return;
+      }
+      
+      generatePDFDirectly(validTxs);
+    } catch (e) {
+      setIsExporting(false);
+      console.error(e);
+      setAlertTitle('Error');
+      setAlertMessage('Failed to prepare export.');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+    }
+  };
+
+  const generateTransactionCardHTML = (transaction: Transaction) => {
+    const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+    
+    // Preprocess entries
+    const processedEntries = transaction.entries.map((entry, index) => {
+      let displayName = getItemDisplayName(entry);
+      if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+        const type = entry.itemType;
+        const count = transaction.entries.filter(e => e.itemType === type).length;
+        if (count > 1) {
+          const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
+          displayName = `${displayName} ${itemIndex}`;
+        }
+      }
+      return { ...entry, displayName };
+    });
+
+    // Balance Logic
+    let transactionBalanceLabel = 'Settled';
+    let transactionBalanceColor = theme.colors.primary;
+    
+    if (isMetalOnly) {
+      const metalItems: string[] = [];
+      processedEntries.forEach(entry => {
+        if (entry.metalOnly) {
+          const itemName = entry.displayName;
+          const weight = entry.weight || 0;
+          const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+          const formattedWeight = isGold ? weight.toFixed(3) : Math.floor(weight);
+          const label = entry.type === 'sell' ? 'Debt' : 'Balance';
+          metalItems.push(`${label}: ${itemName} ${formattedWeight}g`);
+        }
+      });
+      if (metalItems.length > 0) {
+        transactionBalanceLabel = metalItems.join(', ');
+        const isDebt = metalItems.some(item => item.startsWith('Debt'));
+        const isBalance = metalItems.some(item => item.startsWith('Balance'));
+        if (isDebt) transactionBalanceColor = theme.colors.debtColor;
+        else if (isBalance) transactionBalanceColor = theme.colors.success;
+      }
+    } else {
+      const transactionRemaining = transaction.amountPaid - transaction.total + transaction.discountExtraAmount;
+      const hasRemainingBalance = Math.abs(transactionRemaining) >= 1;
+      const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+
+      if (hasRemainingBalance) {
+        if (!isMoneyOnly) {
+          const isDebt = transactionRemaining < 0;
+          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+          transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+        } else {
+          const isBalance = transaction.amountPaid > 0;
+          transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+          transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
+        }
+      } else {
+        transactionBalanceColor = theme.colors.primary;
+      }
+    }
+
+    const amountColor = getAmountColor(transaction);
+    const formattedDate = formatFullDate(transaction.date);
+    const formattedAmount = !isMetalOnly ? formatTransactionAmount(transaction) : '';
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="customer-name">${transaction.customerName}</div>
+            <div class="date">${formattedDate}</div>
+          </div>
+          <div class="amount" style="color: ${amountColor}">${formattedAmount}</div>
+        </div>
+        
+        <div class="receipt-section">
+          ${processedEntries.map(entry => {
+             const isSell = entry.type === 'sell';
+             const isPurchase = entry.type === 'purchase';
+             const iconChar = isSell ? '↗' : isPurchase ? '↙' : '₹';
+             const iconBg = isSell ? '#E8F5E9' : isPurchase ? '#E3F2FD' : '#FFF8E1';
+             const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
+             
+             const { line1, line2 } = getEntryDisplayData(entry, transaction);
+
+             return `
+               <div class="entry-row">
+                 <div class="item-name-row">
+                   <div class="icon-box" style="background-color: ${iconBg}; color: ${iconColor}">${iconChar}</div>
+                   <span class="item-name">${entry.displayName}</span>
+                 </div>
+                 <span class="item-val">${line1}</span>
+               </div>
+               ${(line2 !== '') ? `
+                 <div class="entry-row" style="margin-top: -2px;">
+                   <div></div>
+                   <span class="item-val" style="font-size: 11px; opacity: 0.8;">${line2}</span>
+                 </div>
+               ` : ''}
+             `;
+          }).join('')}
+          
+          ${(!isMetalOnly && processedEntries.length > 0) ? '<div class="divider"></div>' : ''}
+          
+          ${(!isMetalOnly) ? (
+              processedEntries.length === 0 ? `
+                <div class="total-row">
+                  <span class="total-label">Money-Only</span>
+                </div>
+              ` : `
+                <div class="total-row">
+                  <span class="total-label">Total</span>
+                  <span class="total-amount">₹${formatIndianNumber(Math.abs(transaction.total))}</span>
+                </div>
+              `
+          ) : ''}
+          
+          ${(!isMetalOnly) ? '<div class="divider"></div>' : ''}
+          
+          ${(!isMetalOnly) ? `
+             <div class="footer-row">
+               <span class="footer-label">${transaction.amountPaid > 0 ? 'Received' : 'Given'}:</span>
+               <span class="footer-amount" style="color: ${transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary}">
+                 ${transaction.amountPaid >= 0 ? '+' : '-'}₹${formatIndianNumber(Math.abs(transaction.amountPaid))}
+               </span>
+               <div style="flex:1"></div>
+               <span class="balance-label" style="color: ${transactionBalanceColor}">${transactionBalanceLabel}</span>
+             </div>
+          ` : ''}
+        </div>
+        
+        ${(transaction.note && transaction.note.trim() !== '') ? `
+          <div class="note-row">
+            <span class="note-label">NOTE</span>
+            <span class="note-text">${transaction.note}</span>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  };
+
+  const generatePDFDirectly = async (transactions: Transaction[]) => {
+    // setIsExporting(true); // Already set in performExport
+    // setExportStatus('generating'); // Already set in performExport
+    setExportProgress({ current: 0, total: transactions.length });
+
+    try {
+      let htmlBody = '';
+      const chunkSize = 20;
+      
+      for (let i = 0; i < transactions.length; i += chunkSize) {
+          const chunk = transactions.slice(i, i + chunkSize);
+          
+          // Allow UI to update
+          await new Promise(resolve => setTimeout(resolve, 0));
+          
+          chunk.forEach(tx => {
+              htmlBody += generateTransactionCardHTML(tx);
+          });
+          
+          setExportProgress({ current: Math.min(i + chunkSize, transactions.length), total: transactions.length });
+      }
+
+      const html = `
+        <html>
+          <head>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <style>
+              body { font-family: 'Outfit', sans-serif; padding: 20px; background: #fff; }
+              h1 { text-align: center; color: #333; margin-bottom: 20px; font-size: 24px; font-weight: 700; }
+              .container { column-count: 2; column-gap: 15px; }
+              .card { break-inside: avoid; margin-bottom: 15px; background-color: #F0F2F5; border-radius: 12px; padding: 12px; }
+              .card-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+              .customer-name { font-weight: 600; font-size: 14px; color: #1A1C1E; }
+              .date { font-size: 10px; color: #444746; font-weight: 400; }
+              .amount { font-weight: 700; font-size: 14px; text-align: right; }
+              .receipt-section { background-color: #FFFFFF; border-radius: 8px; padding: 8px; }
+              .entry-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+              .item-name-row { display: flex; align-items: center; }
+              .icon-box { width: 20px; height: 20px; border-radius: 4px; margin-right: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+              .item-name { font-size: 12px; font-weight: 500; color: #1A1C1E; }
+              .item-val { font-size: 12px; color: #444746; font-weight: 400; }
+              .divider { height: 1px; background-color: rgba(0,0,0,0.05); margin: 6px 0; }
+              .total-row { display: flex; justify-content: space-between; align-items: center; }
+              .total-label { font-size: 11px; font-weight: 500; color: #1A1C1E; }
+              .total-amount { font-size: 12px; font-weight: 600; color: #1A1C1E; }
+              .footer-row { display: flex; justify-content: space-between; align-items: center; }
+              .footer-label { font-size: 11px; font-weight: 500; color: #1A1C1E; margin-right: 4px; }
+              .footer-amount { font-size: 12px; font-weight: 600; }
+              .balance-label { font-size: 10px; font-weight: 600; text-transform: uppercase; }
+              .note-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.05); }
+              .note-label { font-size: 11px; font-weight: 500; color: #444746; }
+              .note-text { font-size: 11px; color: #1A1C1E; text-align: right; flex: 1; margin-left: 8px; }
+            </style>
+          </head>
+          <body>
+            <h1>Transaction History - ${formatDate(exportDate)}</h1>
+            <div class="container">
+              ${htmlBody}
+            </div>
+          </body>
+        </html>
+      `;
+      
+      const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
+      
+      // Rename PDF
+      const dateStr = exportDate.toLocaleDateString('en-GB').replace(/\//g, '-');
+      const timeStr = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}).replace(':', '-');
+      const fileName = `HistoryExport-${dateStr}-${timeStr}.pdf`;
+      const finalPdfUri = `${FileSystem.documentDirectory}${fileName}`;
+      
+      await FileSystem.moveAsync({ from: pdfUri, to: finalPdfUri });
+      
+      // Share
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(finalPdfUri, { mimeType: 'application/pdf', dialogTitle: 'Export History' });
+      } else {
+        setAlertTitle('Error');
+        setAlertMessage('Sharing is not available on this device');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
+      }
+      
+      // Schedule delete
+      setTimeout(async () => {
+        try { await FileSystem.deleteAsync(finalPdfUri, { idempotent: true }); } catch (e) {}
+      }, 5 * 60 * 1000);
+      
+    } catch (error) {
+      console.error('PDF Generation failed:', error);
+      setAlertTitle('Export Failed');
+      setAlertMessage('Could not generate PDF.');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+    } finally {
+      setIsExporting(false);
+      setExportStatus('idle');
+    }
   };
   // ------------------------------------------------
 
@@ -301,6 +581,91 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
+  const getEntryDisplayData = (entry: any, transaction: Transaction) => {
+    const isMetalOnly = entry.metalOnly;
+    const isRaniRupa = ['rani', 'rupu'].includes(entry.itemType);
+    const isGoldSilver = !isRaniRupa && entry.type !== 'money';
+    
+    // Exception Check: Rani Sell + Gold Purchase -> Keep "Same as is"
+    const hasRaniSell = transaction.entries.some(e => e.itemType === 'rani' && e.type === 'sell');
+    const hasGoldPurchase = transaction.entries.some(e => e.itemType.includes('gold') && e.type === 'purchase');
+    const isExceptionCase = hasRaniSell && hasGoldPurchase;
+
+    if (isExceptionCase) {
+        let line1 = '';
+        if (isRaniRupa) {
+             const weight = entry.weight || 0;
+             const touch = entry.touch || 100;
+             const cut = entry.cut || 0;
+             const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+             const pureWeight = (weight * effectiveTouch) / 100;
+             const formattedPure = entry.itemType === 'rani' 
+                ? formatPureGoldPrecise(pureWeight) 
+                : formatPureSilver(pureWeight);
+             const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+             line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+        } else if (isGoldSilver) {
+             const isGold = entry.itemType.includes('gold');
+             line1 = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
+        }
+        
+        let line2 = '';
+        if (!isMetalOnly && entry.price && entry.price > 0) {
+            line2 = formatCurrency(entry.price);
+        }
+        return { line1, line2 };
+    }
+
+    // New Logic
+    let line1 = '';
+    let line2 = '';
+
+    if (isRaniRupa) {
+         const weight = entry.weight || 0;
+         const touch = entry.touch || 100;
+         const cut = entry.cut || 0;
+         const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+         const pureWeight = (weight * effectiveTouch) / 100;
+         
+         // Pure Weight Formatting Logic
+         let formattedPure = 0;
+         if (entry.itemType === 'rani') {
+             if (entry.type === 'sell') formattedPure = formatPureGoldPrecise(pureWeight);
+             else formattedPure = formatPureGold(pureWeight); // Purchase -> Normal
+         } else {
+             formattedPure = formatPureSilver(pureWeight);
+         }
+         
+         const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+         line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+         
+         if (!isMetalOnly && entry.price && entry.price > 0) {
+             line2 = `${formatCurrency(entry.price)} : ${formatCurrency(entry.subtotal || 0)}`;
+         }
+    } else if (isGoldSilver) {
+         const isGold = entry.itemType.includes('gold');
+         const weightStr = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
+         
+         if (!isMetalOnly && entry.price && entry.price > 0) {
+             line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
+             
+             // Subtotal Logic
+             const hasRaniRupaEntry = transaction.entries.some(e => ['rani', 'rupu'].includes(e.itemType));
+             if (!hasRaniRupaEntry) {
+                 // Normal Gold/Silver only
+                 line2 = `(${formatCurrency(entry.subtotal || 0)})`;
+             } else {
+                 // Mixed case -> No subtotal
+                 line2 = '';
+             }
+         } else {
+             line1 = weightStr;
+         }
+    }
+
+    return { line1, line2 };
+  };
+
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction; hideActions?: boolean; allowFontScaling?: boolean }> = ({ transaction, hideActions = false, allowFontScaling = true }) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
@@ -370,11 +735,11 @@ export const HistoryScreen: React.FC = () => {
           <View style={styles.cardTopActions}>
             <View style={styles.actionPill}>
               <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnDelete, isTransactionLocked(transaction) && styles.disabledButton]}
-                onPress={() => !isTransactionLocked(transaction) && handleDeleteTransaction(transaction)}
-                disabled={isTransactionLocked(transaction)}
+                style={[styles.iconBtn, styles.btnDelete, isRateCutLocked(transaction) && styles.disabledButton]}
+                onPress={() => !isRateCutLocked(transaction) && handleDeleteTransaction(transaction)}
+                disabled={isRateCutLocked(transaction)}
               >
-                <Icon name={isTransactionLocked(transaction) ? "lock" : "delete"} size={20} color={isTransactionLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
+                <Icon name="delete" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
               </TouchableOpacity>
               
               <TouchableOpacity 
@@ -385,11 +750,11 @@ export const HistoryScreen: React.FC = () => {
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnEdit, isTransactionLocked(transaction) && styles.disabledButton]}
-                onPress={() => !isTransactionLocked(transaction) && loadTransactionForEdit(transaction.id)}
-                disabled={isTransactionLocked(transaction)}
+                style={[styles.iconBtn, styles.btnEdit, isEditLocked(transaction) && styles.disabledButton]}
+                onPress={() => !isEditLocked(transaction) && loadTransactionForEdit(transaction.id)}
+                disabled={isEditLocked(transaction)}
               >
-                <Icon name="pencil" size={20} color={theme.colors.primary} />
+                <Icon name="pencil" size={20} color={isEditLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -427,6 +792,8 @@ export const HistoryScreen: React.FC = () => {
                     const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
                     const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
                     const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;
+                    
+                    const { line1, line2 } = getEntryDisplayData(entry, transaction);
 
                     return (
                       <>
@@ -441,42 +808,21 @@ export const HistoryScreen: React.FC = () => {
                             </Text>
                           </View>
                     
-                    {/* Weight / Pure Weight Logic */}
-                    <Text allowFontScaling={allowFontScaling} style={styles.itemVal}>
-                        {(() => {
-                           if (entry.type === 'money') return '';
-                           
-                           // Rani/Rupa Complex Logic
-                           if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-                              const weight = entry.weight || 0;
-                              const touch = entry.touch || 100;
-                              const cut = entry.cut || 0;
-                              const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                              const pureWeight = (weight * effectiveTouch) / 100;
-                              const formattedPure = entry.itemType === 'rani' 
-                                ? formatPureGoldPrecise(pureWeight) 
-                                : formatPureSilver(pureWeight);
-                              
-                              const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-                              return `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
-                           } else {
-                              // Standard Gold/Silver
-                              const isGold = entry.itemType.includes('gold');
-                              return `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
-                           }
-                        })()}
-                    </Text>
-                  </View>
+                          {/* Line 1: Weight / Details */}
+                          <Text allowFontScaling={allowFontScaling} style={styles.itemVal}>
+                              {line1}
+                          </Text>
+                        </View>
 
-                  {/* Price Row (if applicable) */}
-                  {!entry.metalOnly && entry.price && entry.price > 0 && (
-                     <View style={[styles.receiptRow, { marginTop: -4 }]}>
-                        <View /> 
-                        <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, { fontSize: 13, opacity: 0.8 }]}>
-                           ₹{formatIndianNumber(entry.price)}
-                        </Text>
-                     </View>
-                  )}
+                        {/* Line 2: Price / Subtotal (if applicable) */}
+                        {line2 !== '' && (
+                           <View style={[styles.receiptRow, { marginTop: -4 }]}>
+                              <View /> 
+                              <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, { fontSize: 13, opacity: 0.8 }]}>
+                                 {line2}
+                              </Text>
+                           </View>
+                        )}
                       </>
                     );
                   })()}
@@ -584,7 +930,21 @@ export const HistoryScreen: React.FC = () => {
       <View style={styles.filterCarouselContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterCarousel}>
           {['today', 'last7days', 'last30days', 'custom'].map((f) => {
-            const label = f === 'today' ? 'Today' : f === 'last7days' ? 'Last 7 Days' : f === 'last30days' ? 'Last 30 Days' : 'Custom Range';
+            let label = '';
+            if (f === 'today') label = 'Today';
+            else if (f === 'last7days') label = 'Last 7 Days';
+            else if (f === 'last30days') label = 'Last 30 Days';
+            else {
+                if (customStartDate && customEndDate) {
+                    const startStr = formatDate(customStartDate);
+                    const endStr = formatDate(customEndDate);
+                    if (startStr === endStr) label = startStr;
+                    else label = `${startStr} - ${endStr}`;
+                } else {
+                    label = 'Custom Range';
+                }
+            }
+            
             return (
               <TouchableOpacity
                 key={f}
@@ -624,14 +984,34 @@ export const HistoryScreen: React.FC = () => {
     {showEndDatePicker && <DateTimePicker value={customEndDate || customStartDate || new Date()} mode="date" onChange={handleEndDateChange} />}
     {showExportDatePicker && <DateTimePicker value={exportDate} mode="date" onChange={handleExportDateChange} maximumDate={new Date()} />}
     
-    {/* Hidden Export Views */}
-    {isExporting && exportTransactions.length > 0 && (
+    {/* Export Progress Modal */}
+    <Modal visible={isExporting} transparent animationType="fade" onRequestClose={() => {}}>
+      <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center'}}>
+        <Surface style={{padding: 24, borderRadius: 16, width: 300, alignItems: 'center', backgroundColor: theme.colors.surface, elevation: 4}}>
+          <ActivityIndicator size="large" color={theme.colors.primary} style={{marginBottom: 16}} />
+          <Text variant="titleMedium" style={{marginBottom: 8, fontFamily: 'Outfit_600SemiBold', color: theme.colors.onSurface}}>
+            {exportStatus === 'capturing' ? 'Capturing Transactions...' : 
+             exportStatus === 'generating' ? 'Generating PDF...' : 
+             exportStatus === 'cleaning' ? 'Cleaning up...' : 'Preparing...'}
+          </Text>
+          {exportStatus === 'capturing' && (
+            <Text variant="bodyMedium" style={{color: theme.colors.onSurfaceVariant}}>
+              {exportProgress.current} / {exportProgress.total}
+            </Text>
+          )}
+        </Surface>
+      </View>
+    </Modal>
+
+    {/* Hidden Share View */}
+    {sharingTransactionId && (
       <View style={styles.hiddenCard}>
-        {exportTransactions.map((transaction, index) => (
-          <View key={transaction.id} ref={(el) => (exportCardRefs.current[index] = el)} style={styles.shareableCardWrapper} collapsable={false}>
-            <TransactionCard transaction={transaction} hideActions={true} allowFontScaling={false} />
-          </View>
-        ))}
+         <View ref={shareableCardRef} style={styles.shareableCardWrapper} collapsable={false}>
+            {(() => {
+               const tx = transactions.find(t => t.id === sharingTransactionId);
+               return tx ? <TransactionCard transaction={tx} hideActions={true} allowFontScaling={false} /> : null;
+            })()}
+         </View>
       </View>
     )}
     </>
@@ -747,7 +1127,7 @@ const styles = StyleSheet.create({
   // 4. Transaction Card
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 120, // Space for Navbar
+    paddingBottom: 100,
   },
   historyCard: {
     backgroundColor: theme.colors.surfaceContainerHigh || '#F0F2F5', 

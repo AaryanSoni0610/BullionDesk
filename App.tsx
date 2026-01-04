@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', // This aligns Navbar and FAB horizontally
     alignItems: 'center',
     backgroundColor: 'transparent',
-    elevation: 0, // No shadow on container itself
+    elevation: 0,
     zIndex: 100,
   },
   
@@ -269,6 +269,8 @@ const styles = StyleSheet.create({
     elevation: 6,
     width: 64,
     height: 64,
+    shadowColor: '#00BCD4',
+    shadowRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
   },

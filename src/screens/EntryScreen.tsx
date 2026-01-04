@@ -1,19 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity } from 'react-native';
 import {
-  Surface,
   Text,
-  SegmentedButtons,
-  Menu,
-  Button,
   TextInput,
-  Divider,
-  IconButton,
   Snackbar,
-  RadioButton,
+  ActivityIndicator,
+  Portal,
+  Modal,
+  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { formatMoney, formatPureGold, formatPureSilver, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry, ItemType } from '../types';
@@ -44,7 +42,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   
   // Check what types of entries already exist (excluding the one being edited)
   const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
-  const hasSellPurchaseEntries = otherEntries.some(entry => entry.type === 'sell' || entry.type === 'purchase');
   const hasMetalOnlyEntries = otherEntries.some(entry => entry.metalOnly === true);
   const hasPricedEntries = otherEntries.some(entry => entry.type !== 'money' && entry.metalOnly === false);
   
@@ -117,7 +114,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     if (lastEntryState && !editingEntry) return lastEntryState.itemType;
     return 'gold999';
   });
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [bottomSheetVisible, setBottomSheetVisible] = useState(false);
   const [metalOnly, setMetalOnly] = useState(() => {
     if (hasMetalOnlyEntries) return true;
     if (hasPricedEntries) return false;
@@ -401,6 +398,11 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   };
 
   const renderDynamicFields = () => {
+    const inputTheme = { 
+      roundness: 12,
+      fonts: { regular: { fontFamily: 'Outfit_400Regular' } }
+    };
+    
     // Money transaction fields
     if (transactionType === 'money') {
       return (
@@ -411,6 +413,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           mode="outlined"
           keyboardType="numeric"
           style={styles.input}
+          theme={inputTheme}
         />
       );
     }
@@ -431,6 +434,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               mode="outlined"
               keyboardType="numeric"
               style={styles.input}
+              theme={inputTheme}
             />
           </View>
           <View>
@@ -441,6 +445,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               mode="outlined"
               keyboardType="numeric"
               style={styles.input}
+              theme={inputTheme}
             />
           </View>
           <View>
@@ -459,6 +464,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               mode="outlined"
               keyboardType="numeric"
               style={styles.input}
+              theme={inputTheme}
             />
           </View>
           <TextInput
@@ -467,18 +473,22 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             mode="outlined"
             editable={false}
             style={styles.input}
+            theme={inputTheme}
           />
           
           {/* Metal Only Toggle */}
-          <View style={styles.metalOnlyContainer}>
-            <RadioButton
-              value="metal-only"
-              status={metalOnly ? 'checked' : 'unchecked'}
-              onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
-              disabled={hasMetalOnlyEntries || hasPricedEntries}
-            />
-            <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
-          </View>
+          <TouchableOpacity 
+            style={styles.checkboxRow} 
+            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
+            disabled={hasMetalOnlyEntries || hasPricedEntries}
+          >
+            <View style={[styles.radioCircle, metalOnly && styles.radioCircleActive]}>
+              {metalOnly && <View style={styles.radioInner} />}
+            </View>
+            <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}>
+              Metal Only
+            </Text>
+          </TouchableOpacity>
           
           {!metalOnly && (
             <View>
@@ -489,6 +499,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                 mode="outlined"
                 keyboardType="numeric"
                 style={styles.input}
+                theme={inputTheme}
               />
             </View>
           )}
@@ -512,6 +523,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             mode="outlined"
             keyboardType="numeric"
             style={styles.input}
+            theme={inputTheme}
           />
           <TextInput
             label="Touch % (0-99.99)"
@@ -520,6 +532,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             mode="outlined"
             keyboardType="numeric"
             style={styles.input}
+            theme={inputTheme}
           />
           <TextInput
             label="Extra per Kg (g) - Optional"
@@ -528,6 +541,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             mode="outlined"
             keyboardType="numeric"
             style={styles.input}
+            theme={inputTheme}
           />
 
           <TextInput
@@ -536,18 +550,22 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             mode="outlined"
             editable={false}
             style={styles.input}
+            theme={inputTheme}
           />
           
           {/* Metal Only Toggle */}
-          <View style={styles.metalOnlyContainer}>
-            <RadioButton
-              value="metal-only"
-              status={metalOnly ? 'checked' : 'unchecked'}
-              onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
-              disabled={hasMetalOnlyEntries || hasPricedEntries}
-            />
-            <Text variant="bodyLarge" onPress={() => setMetalOnly(!metalOnly)} style={styles.metalOnlyText}>Metal Only</Text>
-          </View>
+          <TouchableOpacity 
+            style={styles.checkboxRow} 
+            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
+            disabled={hasMetalOnlyEntries || hasPricedEntries}
+          >
+            <View style={[styles.radioCircle, metalOnly && styles.radioCircleActive]}>
+              {metalOnly && <View style={styles.radioInner} />}
+            </View>
+            <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}>
+              Metal Only
+            </Text>
+          </TouchableOpacity>
           
           {!metalOnly && (
             <TextInput
@@ -557,6 +575,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               mode="outlined"
               keyboardType="numeric"
               style={styles.input}
+              theme={inputTheme}
             />
           )}
           
@@ -576,24 +595,22 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           mode="outlined"
           keyboardType="numeric"
           style={styles.input}
+          theme={inputTheme}
         />
         
         {/* Metal Only Toggle */}
-        <View style={styles.metalOnlyContainer}>
-          <RadioButton
-            value="metal-only"
-            status={metalOnly ? 'checked' : 'unchecked'}
-            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
-            disabled={hasMetalOnlyEntries || hasPricedEntries}
-          />
-          <Text 
-            variant="bodyLarge" 
-            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)} 
-            style={[styles.metalOnlyText, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}
-          >
+        <TouchableOpacity 
+          style={styles.checkboxRow} 
+          onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
+          disabled={hasMetalOnlyEntries || hasPricedEntries}
+        >
+          <View style={[styles.radioCircle, metalOnly && styles.radioCircleActive]}>
+            {metalOnly && <View style={styles.radioInner} />}
+          </View>
+          <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}>
             Metal Only
           </Text>
-        </View>
+        </TouchableOpacity>
         
         {!metalOnly && (
           <TextInput
@@ -603,6 +620,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
             mode="outlined"
             keyboardType="numeric"
             style={styles.input}
+            theme={inputTheme}
           />
         )}
       </>
@@ -611,164 +629,192 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Page Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={2}>
-        <View style={styles.appTitleContent}>
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Transaction Entry
-          </Text>
-        </View>
-      </Surface>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Transaction Entry</Text>
+      </View>
 
-      {/* Customer Header */}
-      <Surface style={styles.customerHeader} elevation={1}>
-        <View style={styles.customerHeaderContent}>
-          <View style={styles.customerHeaderRow}>
-            <Button
-              mode="text"
-              contentStyle={styles.backButton}
-              labelStyle={styles.customerNameLabel}
-            >
-              {customer.name}
-            </Button>
-            <IconButton
-              icon="close"
-              onPress={onBack}
-              iconColor={theme.colors.onError}
-              containerColor={theme.colors.error}
-              style={styles.crossButton}
-            />
-          </View>
-        </View>
-      </Surface>
+      {/* Customer Bar */}
+      <View style={styles.customerBar}>
+        <Text style={styles.customerName}>{customer.name}</Text>
+        <TouchableOpacity style={styles.closeButton} onPress={onBack}>
+          <MaterialCommunityIcons name="close" size={20} color="#BA1A1A" />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Transaction Type Selector */}
-        
-        <SegmentedButtons
-          value={transactionType}
-          onValueChange={setTransactionType as any}
-          buttons={[
-            ...(availableTypes.includes('purchase') ? [{
-              value: 'purchase',
-              label: 'Purchase',
-              icon: 'arrow-down-circle',
-              style: { backgroundColor: transactionType === 'purchase' ? theme.colors.primary : undefined }
-            }] : []),
-            ...(availableTypes.includes('sell') ? [{
-              value: 'sell',
-              label: 'Sell',
-              icon: 'arrow-up-circle',
-              style: { backgroundColor: transactionType === 'sell' ? theme.colors.sellColor : undefined }
-            }] : []),
-            ...(availableTypes.includes('money') ? [{
-              value: 'money',
-              label: 'Money',
-              icon: 'cash',
-              style: { backgroundColor: transactionType === 'money' ? '#BABABA' : undefined }
-            }] : []),
-          ]}
-          style={styles.segmentedButtons}
-        />
+        {/* Transaction Type Tabs */}
+        <View style={styles.tabContainer}>
+          {availableTypes.includes('purchase') && (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                transactionType === 'purchase' && { backgroundColor: theme.colors.primary }
+              ]}
+              onPress={() => setTransactionType('purchase')}
+            >
+              {transactionType === 'purchase' && (
+                <MaterialCommunityIcons
+                  name="arrow-bottom-left"
+                  size={18}
+                  color="#FFF"
+                />
+              )}
+              <Text style={[
+                styles.tabText,
+                transactionType === 'purchase' && { color: '#FFF' }
+              ]}>Purchase</Text>
+            </TouchableOpacity>
+          )}
+          {availableTypes.includes('sell') && (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                transactionType === 'sell' && { backgroundColor: theme.colors.sellColor }
+              ]}
+              onPress={() => setTransactionType('sell')}
+            >
+              {transactionType === 'sell' && (
+                <MaterialCommunityIcons
+                  name="arrow-top-right"
+                  size={18}
+                  color="#FFF"
+                />
+              )}
+              <Text style={[
+                styles.tabText,
+                transactionType === 'sell' && { color: '#FFF' }
+              ]}>Sell</Text>
+            </TouchableOpacity>
+          )}
+          {availableTypes.includes('money') && (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                transactionType === 'money' && { backgroundColor: '#607D8B' }
+              ]}
+              onPress={() => setTransactionType('money')}
+            >
+              {transactionType === 'money' && (
+                <MaterialCommunityIcons
+                  name="cash-multiple"
+                  size={18}
+                  color="#FFF"
+                />
+              )}
+              <Text style={[
+                styles.tabText,
+                transactionType === 'money' && { color: '#FFF' }
+              ]}>Money</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
+        {/* Money Sub-tabs */}
         {transactionType === 'money' && (
-          <SegmentedButtons
-            value={moneyType}
-            onValueChange={setMoneyType as any}
-            buttons={[
-              {
-                value: 'receive',
-                label: 'Receive',
-                icon: 'arrow-down-bold',
-                style: { backgroundColor: moneyType === 'receive' ? theme.colors.success : undefined }
-              },
-              {
-                value: 'give',
-                label: 'Give',
-                icon: 'arrow-up-bold',
-                style: { backgroundColor: moneyType === 'give' ? theme.colors.debtColor : undefined }
-              },
-            ]}
-            style={[styles.segmentedButtons, { marginHorizontal: theme.spacing.md }]}
-          />
+          <View style={[styles.tabContainer, { marginTop: 0, marginBottom: 16 }]}>
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                moneyType === 'receive' && { backgroundColor: theme.colors.success }
+              ]}
+              onPress={() => setMoneyType('receive')}
+            >
+              {moneyType === 'receive' && (
+                <MaterialCommunityIcons
+                  name="arrow-bottom-left"
+                  size={18}
+                  color="#FFF"
+                />
+              )}
+              <Text style={[
+                styles.tabText,
+                moneyType === 'receive' && { color: '#FFF' }
+              ]}>Receive</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                moneyType === 'give' && { backgroundColor: theme.colors.warning }
+              ]}
+              onPress={() => setMoneyType('give')}
+            >
+              {moneyType === 'give' && (
+                <MaterialCommunityIcons
+                  name="arrow-top-right"
+                  size={18}
+                  color="#FFF"
+                />
+              )}
+              <Text style={[
+                styles.tabText,
+                moneyType === 'give' && { color: '#FFF' }
+              ]}>Give</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
-        {/* Item Type Dropdown */}
+        {/* Item Type Selector */}
         {transactionType !== 'money' && (
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <Button
-                mode="outlined"
-                onPress={() => setMenuVisible(true)}
-                icon="chevron-down"
-                contentStyle={styles.dropdownContent}
-                style={styles.dropdown}
-              >
-                {itemOptions.find(opt => opt.value === itemType)?.label}
-              </Button>
-            }
+          <TouchableOpacity
+            style={styles.dropdownField}
+            onPress={() => setBottomSheetVisible(true)}
           >
-            {itemOptions.map(option => (
-              <Menu.Item
-                key={option.value}
-                onPress={() => {
-                  setItemType(option.value as ItemType);
-                  setMenuVisible(false);
-                }}
-                title={option.label}
-              />
-            ))}
-          </Menu>
+            <Text style={styles.dropdownText}>
+              {itemOptions.find(opt => opt.value === itemType)?.label}
+            </Text>
+            <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.onSurfaceVariant} />
+          </TouchableOpacity>
         )}
 
-        {/* Dynamic Input Fields */}
-        {renderDynamicFields()}
+        {/* Form Fields */}
+        <View style={styles.formContainer}>
+          {renderDynamicFields()}
+        </View>
 
-        {/* Divider before subtotal - only show for non-metal-only */}
-        {!metalOnly && <Divider style={styles.subtotalDivider} />}
-
-        {/* Subtotal Display - only show for non-metal-only */}
-        {!metalOnly && (
-          <Surface style={styles.subtotalContainer} elevation={1}>
-            <View style={styles.subtotalContent}>
-              <Text variant="titleMedium">Subtotal:</Text>
-              <Text 
-                variant="titleMedium" 
-                style={styles.subtotalAmount}
-              >
-                {subtotal >= 0 ? '+' : '-'}₹{
-                  formatIndianNumber(parseFloat(formatMoney(Math.abs(subtotal).toString())))
-                }
-              </Text>
-            </View>
-          </Surface>
-        )}
+        {/* Spacer for bottom bar */}
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Action Buttons */}
-      <Surface style={styles.actionButtons} elevation={2}>
+      {/* Bottom Actions */}
+      <View style={styles.bottomBar}>
+        
+        {!metalOnly && (
+          <View style={styles.subtotalCard}>
+            <Text style={styles.subtotalLabel}>Subtotal</Text>
+            <Text style={styles.subtotalValue}>
+              {subtotal >= 0 ? '+' : '-'}₹{
+                formatIndianNumber(parseFloat(formatMoney(Math.abs(subtotal).toString())))
+              }
+            </Text>
+          </View>
+        )}
+        
         <View style={styles.buttonRow}>
-          <Button
-            mode="outlined"
-            onPress={handleBack}
-            style={[styles.actionButton, { flex: 0.45 }]}
-          >
-            Back
-          </Button>
-          <Button
-            mode="contained"
+          <TouchableOpacity style={styles.btnSecondary} onPress={handleBack}>
+            <Text style={styles.btnSecondaryText}>Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btnPrimary, (!isValid() || isSubmitting) && { opacity: 0.6 }]}
             onPress={handleAddEntry}
             disabled={!isValid() || isSubmitting}
-            loading={isSubmitting}
-            style={[styles.actionButton, { flex: 0.45 }]}
-            icon={isSubmitting ? undefined : "check"}
           >
-            {isSubmitting ? 'Saving...' : editingEntry ? 'Update Entry' : 'Add Entry'}
-          </Button>
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="check" size={20} color="#FFF" />
+                <Text style={styles.btnPrimaryText}>
+                  {editingEntry ? 'Update Entry' : 'Add Entry'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
-      </Surface>
+      </View>
       
       <Snackbar
         visible={snackbarVisible}
@@ -781,6 +827,41 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       >
         {snackbarMessage}
       </Snackbar>
+
+      <Portal>
+        <Modal
+          visible={bottomSheetVisible}
+          onDismiss={() => setBottomSheetVisible(false)}
+          contentContainerStyle={styles.bottomSheetContent}
+          style={styles.bottomSheetModal}
+        >
+          <View style={styles.bottomSheetHandle} />
+          <Text style={styles.bottomSheetTitle}>Select Item Type</Text>
+          {itemOptions.map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[
+                styles.bottomSheetItem,
+                itemType === option.value && styles.bottomSheetItemActive
+              ]}
+              onPress={() => {
+                setItemType(option.value as ItemType);
+                setBottomSheetVisible(false);
+              }}
+            >
+              <Text style={[
+                styles.bottomSheetItemText,
+                itemType === option.value && styles.bottomSheetItemTextActive
+              ]}>
+                {option.label}
+              </Text>
+              {itemType === option.value && (
+                <MaterialCommunityIcons name="check" size={24} color={theme.colors.primary} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </Modal>
+      </Portal>
     </SafeAreaView>
   );
 };
@@ -790,130 +871,258 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.md,
-  },
-  appTitleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-  },
-  appIcon: {
-    width: 24,
-    height: 24,
-    marginRight: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
-  },
-  customerHeader: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.sm,
-  },
-  customerHeaderContent: {
-    paddingHorizontal: theme.spacing.md,
-  },
-  customerHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  customerNameLabel: {
-    textAlign: 'left',
-  },
-  crossButton: {
-    margin: 0,
-    borderRadius: 8,
-  },
   header: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.sm,
-  },
-  headerContent: {
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: theme.colors.background,
+    gap: 16,
   },
   backButton: {
-    flexDirection: 'row-reverse',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F', // --on-surface
+    letterSpacing: -1,
+  },
+  customerBar: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 0.5,
+    borderBottomColor: theme.colors.outline,
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFDAD6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
-    padding: theme.spacing.md,
   },
-  segmentedButtons: {
-    marginBottom: theme.spacing.md,
+  tabContainer: {
+    margin: 20,
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surfaceContainer,
+    padding: 4,
+    borderRadius: 100,
   },
-  dropdown: {
-    marginBottom: theme.spacing.md,
-    borderRadius: 8,
-    height: 56,
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
-  dropdownContent: {
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  dropdownField: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingLeft: 16,
-    paddingRight: 48,
-    height: 56,
+    alignItems: 'center',
+  },
+  dropdownText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: theme.colors.onSurface,
+    fontFamily: 'Outfit_500Medium',
+  },
+  formContainer: {
+    paddingHorizontal: 20,
+    gap: 16,
   },
   input: {
-    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    fontSize: 16,
+    fontFamily: 'Outfit_400Regular',
+    marginBottom: 8,
   },
-  restrictionNotice: {
-    backgroundColor: theme.colors.primaryContainer,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: 8,
-    marginBottom: theme.spacing.md,
-  },
-  restrictionText: {
-    color: theme.colors.onPrimaryContainer,
-    textAlign: 'center',
-    fontFamily: 'Outfit_400Regular_Italic',
-  },
-  metalOnlyContainer: {
+  checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
+    gap: 12,
+    marginLeft: 4,
   },
-  metalOnlyText: {
-    marginLeft: theme.spacing.xs,
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    color: '#1B1B1F',
+    borderColor: '#1B1B1F',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  subtotalContainer: {
-    backgroundColor: theme.colors.surfaceVariant,
-    borderRadius: 12,
-    marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.xxl,
+  radioCircleActive: {
+    borderColor: '#1B1B1F',
   },
-  subtotalDivider: {
-    marginVertical: theme.spacing.sm,
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#1B1B1F',
   },
-  subtotalContent: {
+  checkboxLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.onSurface,
+    fontFamily: 'Outfit_500Medium',
+  },
+  subtotalCard: {
+    marginHorizontal: 10,
+    marginBottom: 8,
+    paddingBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: theme.spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: theme.colors.outline,
   },
-  subtotalAmount: {
+  subtotalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.onSurfaceVariant,
+    textTransform: 'uppercase',
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  subtotalValue: {
+    fontSize: 20,
+    color: theme.colors.onSurface,
     fontFamily: 'Outfit_700Bold',
   },
-  actionButtons: {
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: theme.colors.surface,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
+    padding: 20,
+    borderTopWidth: 0.5,
+    borderTopColor: theme.colors.outline,
+    flexDirection: 'column',
+    gap: 12,
   },
   buttonRow: {
     flexDirection: 'row',
+    gap: 12,
+  },
+  btnSecondary: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    paddingVertical: 14,
+    borderRadius: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnSecondaryText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onSurface,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  btnPrimary: {
+    flex: 2,
+    backgroundColor: theme.colors.onSurface,
+    paddingVertical: 14,
+    borderRadius: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  btnPrimaryText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.onPrimary,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  bottomSheetModal: {
+    justifyContent: 'flex-end',
+    margin: 0,
+  },
+  bottomSheetContent: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 32,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  bottomSheetHandle: {
+    width: 32,
+    height: 4,
+    backgroundColor: theme.colors.outline,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+    opacity: 0.4,
+  },
+  bottomSheetTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    fontFamily: 'Outfit_600SemiBold',
+    color: theme.colors.onSurface,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  bottomSheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.surfaceContainer,
   },
-  actionButton: {
-    borderRadius: 8,
+  bottomSheetItemActive: {
+    backgroundColor: theme.colors.secondaryContainer,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 0,
   },
-  
-  inputError: {
-    borderColor: theme.colors.error,
-    borderWidth: 2,
+  bottomSheetItemText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_500Medium',
+    color: theme.colors.onSurface,
+  },
+  bottomSheetItemTextActive: {
+    color: theme.colors.primary,
+    fontFamily: 'Outfit_700Bold',
   },
 });

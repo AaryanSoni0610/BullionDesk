@@ -35,6 +35,13 @@ export const HomeScreen = ({ navigation }: any) => {
     setRefreshing(false);
   };
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
   const getItemDisplayName = (entry: TransactionEntry & { _isAggregated?: boolean, _count?: number }): string => {
     if (entry.type === 'money') return 'Money';
     
@@ -331,6 +338,7 @@ export const HomeScreen = ({ navigation }: any) => {
       {/* Expressive Header */}
       <View style={styles.header}>
         <View>
+          <Text style={styles.greetingText}>{getGreeting()}</Text>
           <Text style={styles.screenTitle}>BullionDesk</Text>
         </View>
         <TouchableOpacity style={styles.settingsBtn} onPress={navigateToSettings}>
@@ -375,13 +383,20 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 32,
+    fontSize: 34,
     color: theme.colors.onPrimaryContainer,
     letterSpacing: -1,
+  },
+  greetingText: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 16,
+    color: theme.colors.onSurfaceVariant,
+    marginBottom: -4,
   },
   settingsBtn: {
     width: 48,
     height: 48,
+    marginTop: -14,
     marginRight: -7,
     borderRadius: 24,
     backgroundColor: theme.colors.surface,
@@ -412,7 +427,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 120, // Space for Navbar
+    paddingBottom: 100, // Space for Navbar
     gap: 12,
   },
   card: {

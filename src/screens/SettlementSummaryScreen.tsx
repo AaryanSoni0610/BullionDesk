@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler, Alert, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, Alert, Platform, TouchableOpacity } from 'react-native';
 import {
   Surface,
   Text,
@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { formatWeight, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry } from '../types';
@@ -78,12 +79,13 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);
   const isEditing = !!editingTransactionId;
 
-  // Format date for display in DD/MM/YYYY format
+  // Format date for display in DD Mon YYYY format
   const formatDateDisplay = (date: Date): string => {
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${day} ${monthNames[date.getMonth()]} ${year}`;
   };
 
   // Handle hardware back button - same as X button in titlebar
@@ -400,80 +402,38 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     const isEntryLocked = areEntriesLocked || (isEditing && (entry.itemType === 'rani' || entry.itemType === 'rupu') && !entry.metalOnly);
 
     return (
-    <Card key={entry.id} style={styles.entryCard} mode="outlined">
-      <Card.Content style={styles.entryCardContent}>
-        <View style={styles.entryHeader}>
-          <View style={styles.entryTitleContainer}>
-            <Text 
-              variant="titleSmall" 
-              style={[
-                styles.entryType,
-                { color: entry.type === 'sell' ? theme.colors.sellColor : 
-                        entry.type === 'money' ? (entry.moneyType === 'give' ? theme.colors.debtColor : theme.colors.success) : 
-                        theme.colors.primary }
-              ]}
-            >
-              {entry.type === 'money' ? 'Money' : `${entry.type === 'sell' ? 'Sell' : 'Purchase'} - ${getItemDisplayName(entry)}`}
-            </Text>
-          </View>
-          <View style={styles.actionButtons}>
-            <IconButton
-              icon="pencil"
-              iconColor={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.primary}
-              size={20}
-              onPress={() => onEditEntry(entry.id)}
-              style={styles.editButton}
-              disabled={isEntryLocked}
-            />
-          </View>
-        </View>
-        
-        <Divider style={styles.entryDivider} />
-        
-        <Text variant="bodySmall" style={styles.entryDetails}>
-          {formatEntryDetails(entry)}
+    <View key={entry.id} style={styles.entryCard}>
+      <View style={styles.entryHeader}>
+        <Text style={styles.entryTitle}>
+          {entry.type === 'money' ? 'Money' : `${entry.type === 'sell' ? 'Sell' : 'Purchase'} - ${getItemDisplayName(entry)}`}
         </Text>
-        <Text variant="bodyMedium" style={styles.entrySubtotal}>
-          Total: {entry.subtotal >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(entry.subtotal))}
-        </Text>
-      </Card.Content>
-    </Card>
+        <TouchableOpacity onPress={() => onEditEntry(entry.id)} disabled={isEntryLocked}>
+           <MaterialCommunityIcons name="pencil" size={20} color={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.onSurfaceVariant} />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.entryDetails}>{formatEntryDetails(entry)}</Text>
+      <Text style={styles.entryTotal}>Total: {entry.subtotal >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(entry.subtotal))}</Text>
+    </View>
   );
 };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Page Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={2}>
-        <View style={styles.appTitleContent}>
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Transaction Summary
-          </Text>
-        </View>
-      </Surface>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Transaction Summary</Text>
+      </View>
 
-      {/* Customer Header */}
-      <Surface style={styles.customerHeader} elevation={1}>
-        <View style={styles.customerHeaderContent}>
-          <View style={styles.customerHeaderRow}>
-            <Button
-              mode="text"
-              onPress={onBack}
-              contentStyle={styles.backButton}
-              labelStyle={styles.customerNameLabel}
-            >
-              {customer.name}
-            </Button>
-            <IconButton
-              icon="close"
-              onPress={onBack}
-              iconColor={theme.colors.onError}
-              containerColor={theme.colors.error}
-              style={styles.crossButton}
-            />
-          </View>
-        </View>
-      </Surface>
+      {/* Customer Bar */}
+      <View style={styles.customerBar}>
+        <Text style={styles.customerName}>{customer.name}</Text>
+        <TouchableOpacity style={styles.closeButton} onPress={onBack}>
+          <MaterialCommunityIcons name="close" size={20} color="#BA1A1A" />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView 
         style={styles.content} 
@@ -483,22 +443,14 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           shouldShowFAB ? styles.scrollContentWithFAB : styles.scrollContentWithoutFAB
         ]}
       >
-        {/* Save Date Picker */}
-        <View style={styles.dateSection}>
-          <Text variant="titleSmall" style={styles.dateLabel}>
-            Save on: {formatDateDisplay(selectedSaveDate)}
-          </Text>
-          <Button
-            mode="contained"
-            onPress={handleSelectSaveDatePress}
-            disabled={isEditing}
-            style={styles.dateButton}
-            contentStyle={styles.dateButtonContent}
-          >
-            Change Date
-          </Button>
+        {/* Date Pill */}
+        <View style={styles.dateContainer}>
+          <TouchableOpacity style={styles.dateBtnProminent} onPress={handleSelectSaveDatePress} disabled={isEditing}>
+            <MaterialCommunityIcons name="calendar-month" size={20} color="#005AC1" />
+            <Text style={styles.dateText}>Save on: {formatDateDisplay(selectedSaveDate)}</Text>
+            <MaterialCommunityIcons name="chevron-down" size={18} color="#44474F" />
+          </TouchableOpacity>
         </View>
-        <Divider style={styles.dateDivider} />
 
         {/* Save Date Picker Modal */}
         {showSaveDatePicker && (
@@ -514,288 +466,222 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         {/* Entry Cards */}
         <View style={styles.entriesSection}>
           {isMoneyOnlyTransaction ? (
-            <Card style={styles.entryCard} mode="outlined">
-              <Card.Content style={styles.entryCardContent}>
-                <Text variant="titleMedium" style={styles.moneyOnlyText}>
-                  No entry is added
-                </Text>
-              </Card.Content>
-            </Card>
+            <View style={styles.entryCard}>
+              <Text style={styles.moneyOnlyText}>
+                No entry is added
+              </Text>
+            </View>
           ) : (
             entries.map((entry, index) => renderEntryCard(entry, index))
           )}
         </View>
 
-        {/* Horizontal Line */}
-        <Divider style={styles.sectionDivider} />
-
-        {/* Transaction Summary Card */}
-        <Card style={styles.summaryCard} mode="contained">
-          <Card.Content>
-            <Text variant="titleMedium" style={styles.summaryTitle}>
-              Transaction Summary
-            </Text>
-            
-            <View style={styles.summaryContent}>
-              {/* Give Section */}
-              <View style={styles.summarySection}>
-                <View style={styles.sectionHeader}>
-                  <View style={styles.iconContainer}>
-                    <IconButton 
-                      icon="hand-coin-outline" 
-                      iconColor={theme.colors.primary}
-                      size={20}
-                    />
-                    <IconButton 
-                      icon="arrow-up" 
-                      iconColor={theme.colors.primary}
-                      size={16}
-                      style={styles.arrowIcon}
-                    />
-                  </View>
-                  <Text variant="titleSmall" style={styles.sectionTitle}>Give</Text>
-                </View>
-                {giveItems.map((item, index) => (
-                  <Text key={index} variant="bodyMedium" style={styles.summaryItem}>
-                    • {item.item}: {item.amount}
-                  </Text>
-                ))}
-                {/* Show net money if negative (merchant owes customer) - only for non-metal-only */}
-                {!isMetalOnly && netAmount < 0 && (
-                  <Text variant="bodyMedium" style={styles.summaryItem}>
-                    • Money: ₹{formatIndianNumber(Math.abs(netAmount))}
-                  </Text>
-                )}
-                {giveItems.length === 0 && (isMetalOnly || netAmount >= 0) && (
-                  <Text variant="bodyMedium" style={styles.summaryItem}>• Nothing</Text>
-                )}
+        {/* Trade Summary Card */}
+        <View style={styles.tradeCard}>
+          <Text style={styles.cardLabel}>Trade Summary</Text>
+          <View style={styles.tradeRow}>
+            {/* Give Section */}
+            <View style={styles.tradeCol}>
+              <View style={styles.tradeHeader}>
+                <MaterialCommunityIcons name="hand-coin-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.tradeHeaderText, { color: theme.colors.onSurfaceVariant }]}>GIVE</Text>
               </View>
-
-              {/* Take Section */}
-              <View style={styles.summarySection}>
-                <View style={styles.sectionHeader}>
-                  <View style={styles.iconContainer}>
-                    <IconButton 
-                      icon="hand-coin-outline" 
-                      iconColor={theme.colors.sellColor}
-                      size={20}
-                    />
-                    <IconButton 
-                      icon="arrow-down" 
-                      iconColor={theme.colors.sellColor}
-                      size={16}
-                      style={styles.arrowIcon}
-                    />
-                  </View>
-                  <Text variant="titleSmall" style={styles.sectionTitle}>Take</Text>
-                </View>
-                {takeItems.map((item, index) => (
-                  <Text key={index} variant="bodyMedium" style={styles.summaryItem}>
-                    • {item.item}: {item.amount}
-                  </Text>
-                ))}
-                {/* Show net money if positive (customer owes merchant) - only for non-metal-only */}
-                {!isMetalOnly && netAmount > 0 && (
-                  <Text variant="bodyMedium" style={styles.summaryItem}>
-                    • Money: ₹{formatIndianNumber(netAmount)}
-                  </Text>
-                )}
-                {takeItems.length === 0 && (isMetalOnly || netAmount <= 0) && (
-                  <Text variant="bodyMedium" style={styles.summaryItem}>• Nothing</Text>
-                )}
-              </View>
+              {giveItems.map((item, index) => (
+                <Text key={index} style={styles.tradeItem}>
+                  • {item.item}: {item.amount}
+                </Text>
+              ))}
+              {!isMetalOnly && netAmount < 0 && (
+                <Text style={styles.tradeItem}>
+                  • Money: ₹{formatIndianNumber(Math.abs(netAmount))}
+                </Text>
+              )}
+              {giveItems.length === 0 && (isMetalOnly || netAmount >= 0) && (
+                <Text style={styles.tradeItem}>• Nothing</Text>
+              )}
             </View>
-          </Card.Content>
-        </Card>
 
-        {/* Horizontal Line */}
-        <Divider style={styles.sectionDivider} />
+            {/* Take Section */}
+            <View style={styles.tradeCol}>
+              <View style={styles.tradeHeader}>
+                <MaterialCommunityIcons name="hand-coin" size={20} color={theme.colors.sellColor} />
+                <Text style={[styles.tradeHeaderText, { color: theme.colors.onSurfaceVariant }]}>TAKE</Text>
+              </View>
+              {takeItems.map((item, index) => (
+                <Text key={index} style={styles.tradeItem}>
+                  • {item.item}: {item.amount}
+                </Text>
+              ))}
+              {!isMetalOnly && netAmount > 0 && (
+                <Text style={styles.tradeItem}>
+                  • Money: ₹{formatIndianNumber(netAmount)}
+                </Text>
+              )}
+              {takeItems.length === 0 && (isMetalOnly || netAmount <= 0) && (
+                <Text style={styles.tradeItem}>• Nothing</Text>
+              )}
+            </View>
+          </View>
+        </View>
 
-        {/* Total Card - hide for metal-only transactions */}
+        {/* Settlement Card - hide for metal-only transactions */}
         {!isMetalOnly && (entries.some(entry => entry.type !== 'money') || isMoneyOnlyTransaction) && (
-          <>
-            <Card style={styles.totalCard} mode="contained">
-              <Card.Content>
-                <View style={styles.totalSection}>
-                  <Text variant="titleMedium">
-                    {isMoneyOnlyTransaction 
-                      ? (pendingMoneyType === 'receive' ? 'Customer Pays:' : 'Customer Gets:')
-                      : (adjustedNetAmount > 0 ? 'Customer Pays:' : 'Customer Gets:')
+          <View style={styles.settleCard}>
+            <View style={styles.settleHeader}>
+              <Text style={styles.settleHeaderLabel}>
+                {isMoneyOnlyTransaction 
+                  ? (pendingMoneyType === 'receive' ? 'Customer Pays:' : 'Customer Gets:')
+                  : (adjustedNetAmount > 0 ? 'Customer Pays:' : 'Customer Gets:')
+                }
+              </Text>
+              <Text style={styles.heroAmount}>
+                ₹{formatIndianNumber(isMoneyOnlyTransaction 
+                  ? 0
+                  : Math.abs(adjustedNetAmount)
+                )}
+              </Text>
+            </View>
+
+            <View style={styles.settleBody}>
+              {/* Merchant Pays Input */}
+              <TextInput
+                value={(() => {
+                  const val = Math.abs(parseFloat(receivedAmount || '0'));
+                  return val === 0 ? '' : val.toString();
+                })()}
+                onChangeText={(text) => {
+                  if (!isMoneyOnlyTransaction) {
+                    setReceivedAmount(text);
+                    setHasPaymentInteracted(true);
+                  } else {
+                    const numericValue = parseFloat(text) || 0;
+                    const signedValue = pendingMoneyType === 'receive' ? numericValue : -numericValue;
+                    setReceivedAmount(signedValue.toString());
+                    setHasPaymentInteracted(true);
+                  }
+                }}
+                label = {isMoneyOnlyTransaction 
+                  ? (pendingMoneyType === 'receive' ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                  : (adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                }
+                mode="outlined"
+                keyboardType="numeric"
+                editable={!isMoneyOnlyTransaction}
+                style={styles.textInput}
+                theme={{ roundness: 12, fonts: { regular: { fontFamily: 'Outfit_400Regular' } } }}
+                placeholder={isMoneyOnlyTransaction 
+                  ? (pendingMoneyType === 'receive' ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                  : (adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                }
+              />
+
+              {/* Extra Input */}
+              <TextInput
+                value={discountExtra}
+                onChangeText={(text) => {
+                  const filtered = filterDiscountExtraInput(text);
+                  setDiscountExtra(filtered);
+                }}
+                label={netAmount > 0 ? "Discount (₹)" : "Extra (₹)"}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.textInput}
+                theme={{ roundness: 12, fonts: { regular: { fontFamily: 'Outfit_400Regular' } } }}
+                placeholder={netAmount > 0 ? "Discount (₹)" : "Extra (₹)"}
+                disabled={isMoneyOnlyTransaction}
+              />
+
+              {/* Chips */}
+              <View style={styles.chipsRow}>
+                <TouchableOpacity 
+                  style={styles.chip}
+                  onPress={() => {
+                    if (!isMoneyOnlyTransaction) {
+                      setReceivedAmount(Math.abs(adjustedNetAmount).toString());
                     }
-                  </Text>
-                  <Text 
-                    variant="titleMedium" 
-                    style={[
-                      styles.totalAmount,
-                      { color: isMoneyOnlyTransaction 
-                        ? (pendingMoneyType === 'receive' ? theme.colors.sellColor : theme.colors.primary)
-                        : (adjustedNetAmount > 0 ? theme.colors.sellColor : theme.colors.primary)
-                      }
-                    ]}
-                  >
-                    ₹{formatIndianNumber(isMoneyOnlyTransaction 
-                      ? 0
-                      : Math.abs(adjustedNetAmount)
-                    )}
-                  </Text>
-                </View>
-
-                <Divider style={styles.totalDivider} />
-
-                {/* Enhanced Money Input */}
-                <View>
-                  <TextInput
-                    label={isMoneyOnlyTransaction 
-                      ? (pendingMoneyType === 'receive' ? "Customer Pays (₹)" : "Merchant Pays (₹)")
-                      : (adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)")
+                  }}
+                >
+                  <Text style={styles.chipText}>Full: ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.chip}
+                  onPress={() => {
+                    if (!isMoneyOnlyTransaction) {
+                      setReceivedAmount((Math.abs(adjustedNetAmount) / 2).toString());
                     }
-                    value={Math.abs(parseFloat(receivedAmount || '0')).toString()}
-                    onChangeText={(text) => {
-                      // Only allow editing if there are entries (not money-only)
-                      if (!isMoneyOnlyTransaction) {
-                        setReceivedAmount(text);
-                        setHasPaymentInteracted(true);
-                      } else {
-                        // For money-only transactions, determine sign based on money type
-                        const numericValue = parseFloat(text) || 0;
-                        const signedValue = pendingMoneyType === 'receive' ? numericValue : -numericValue;
-                        setReceivedAmount(signedValue.toString());
-                        setHasPaymentInteracted(true);
-                      }
-                    }}
-                    mode="outlined"
-                    keyboardType="numeric"
-                    editable={!isMoneyOnlyTransaction} // Active but not editable unless there is at least one entry
-                    style={[
-                      styles.receivedInput,
-                      paymentError ? styles.inputError : null
-                    ]}
-                    error={!!paymentError}
-                    placeholder={`Suggested: ₹${formatIndianNumber(Math.abs(adjustedNetAmount))}`}
-                  />
-                  {/* Discount/Extra Input */}
-                  <View>
-                    <TextInput
-                      label={netAmount > 0 ? "Discount (₹)" : "Extra (₹)"}
-                      value={discountExtra}
-                      onChangeText={(text) => {
-                        const filtered = filterDiscountExtraInput(text);
-                        setDiscountExtra(filtered);
-                      }}
-                      mode="outlined"
-                      keyboardType="numeric"
-                      style={styles.discountInput}
-                      placeholder="0-100"
-                      disabled={isMoneyOnlyTransaction}
-                    />
-                  </View>
+                  }}
+                >
+                  <Text style={styles.chipText}>Half: ₹{formatIndianNumber(Math.abs(adjustedNetAmount) / 2)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.chip}
+                  onPress={() => {
+                    if (!isMoneyOnlyTransaction) {
+                      setReceivedAmount('');
+                    }
+                  }}
+                >
+                  <Text style={styles.chipText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
 
+              {/* Note Input */}
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                placeholder="Add a note..."
+                style={[ styles.textInput ]}
+                mode="outlined"
+                theme={{ roundness: 12, colors: { outline: 'transparent' } }}
+              />
+            </View>
 
-                  {/* Quick Amount Chips */}
-                  <View style={styles.quickAmountChips}>
-                    <Chip 
-                      mode="outlined" 
-                      onPress={() => {
-                        if (!isMoneyOnlyTransaction) {
-                          setReceivedAmount(Math.abs(adjustedNetAmount).toString());
-                        }
-                      }}
-                      style={styles.amountChip}
-                    >
-                      Full: ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}
-                    </Chip>
-                    <Chip 
-                      mode="outlined" 
-                      onPress={() => {
-                        if (!isMoneyOnlyTransaction) {
-                          setReceivedAmount((Math.abs(adjustedNetAmount) / 2).toString());
-                        }
-                      }}
-                      style={styles.amountChip}
-                    >
-                      Half: ₹{formatIndianNumber(Math.abs(adjustedNetAmount) / 2)}
-                    </Chip>
-                    <Chip 
-                      mode="outlined" 
-                      onPress={() => {
-                        if (!isMoneyOnlyTransaction) {
-                          setReceivedAmount('');
-                        }
-                      }}
-                      style={styles.amountChip}
-                    >
-                      Clear
-                    </Chip>
-                  </View>
-
-                  {/* Note Input */}
-                  <TextInput
-                    label="Note"
-                    value={note}
-                    onChangeText={setNote}
-                    mode="outlined"
-                    style={{ marginTop: 6 }}
-                    placeholder="Add a note..."
-                  />
-                </View>
-
-                <Divider style={styles.totalDivider} />
-
-                {/* Final Balance */}
-                <View style={styles.balanceSection}>
-                  <Text variant="titleMedium">
-                    {/* INVERTED SIGN: positive = balance, negative = debt */}
-                    {finalBalance > 0 ? 'Balance:' : finalBalance < 0 ? 'Debt:' : 'Settled'}
-                  </Text>
-                  <Text 
-                    variant="titleMedium" 
-                    style={[
-                      styles.balanceAmount,
-                      { 
-                        color: finalBalance > 0
-                          ? theme.colors.success  // Positive = balance (green)
-                          : finalBalance < 0
-                            ? theme.colors.debtColor  // Negative = debt (orange)
-                            : theme.colors.onSurface  // Zero = settled
-                      }
-                    ]}
-                  >
-                    ₹{formatIndianNumber(Math.abs(finalBalance))}
-                  </Text>
-                </View>
-              </Card.Content>
-            </Card>
-
-            {/* Horizontal Line */}
-            <Divider style={styles.sectionDivider} />
-          </>
+            <View style={styles.settleFooter}>
+              <Text style={styles.settleFooterLabel}>
+                {finalBalance > 0 ? 'Balance:' : finalBalance < 0 ? 'Debt:' : 'Settled'}
+              </Text>
+              <Text style={[
+                styles.balanceVal,
+                { color: finalBalance > 0 ? '#146C2E' : finalBalance < 0 ? theme.colors.debtColor : theme.colors.onSurface }
+              ]}>
+                ₹{formatIndianNumber(Math.abs(finalBalance))}
+              </Text>
+            </View>
+          </View>
         )}
-
-        {/* Enhanced Save Transaction Button */}
-
-        {/* Enhanced Save Transaction Button */}
-        <Button
-          mode="contained"
-          icon={isSaving ? undefined : "check"}
-          onPress={handleSaveTransaction}
-          disabled={isSaving || !!paymentError}
-          loading={isSaving}
-          style={styles.saveButton}
-          contentStyle={styles.saveButtonContent}
-          buttonColor={theme.colors.success}
-        >
-          {isSaving ? (isEditing ? 'Updating...' : 'Saving...') : (isEditing ? 'Update Transaction' : 'Save Transaction')}
-        </Button>
+        
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* FAB for adding more entries - hide when all entries are money */}
+      {/* FAB */}
       {shouldShowFAB && (
-        <FAB
-          icon="plus"
-          style={styles.fab}
-          onPress={onAddMoreEntry}
-        />
+        <TouchableOpacity style={styles.fab} onPress={onAddMoreEntry}>
+          <MaterialCommunityIcons name="plus" size={32} color="#FFF" />
+        </TouchableOpacity>
       )}
+
+      {/* Save Bar */}
+      <View style={styles.saveBar}>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity style={styles.btnSecondary} onPress={onBack}>
+            <Text style={styles.btnSecondaryText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btnPrimary, (isSaving || !!paymentError) && { opacity: 0.7 }]}
+            onPress={handleSaveTransaction}
+            disabled={isSaving || !!paymentError}
+          >
+            {isSaving ? (
+              <Text style={styles.btnPrimaryText}>{isEditing ? 'Updating...' : 'Saving...'}</Text>
+            ) : (
+              <>
+                <MaterialCommunityIcons name="check" size={20} color="#FFF" />
+                <Text style={styles.btnPrimaryText}>{isEditing ? 'Update Transaction' : 'Save Transaction'}</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Date Warning Custom Alert */}
       <CustomAlert
@@ -815,247 +701,302 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.md,
-  },
-  appTitleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-  },
-  appIcon: {
-    width: 24,
-    height: 24,
-    marginRight: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
-  },
-  customerHeader: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.sm,
-  },
-  customerHeaderContent: {
-    paddingHorizontal: theme.spacing.md,
+    backgroundColor: '#FDFBFF', // --background
   },
   header: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.sm,
-  },
-  headerContent: {
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDFBFF',
+    gap: 16,
   },
   backButton: {
-    flexDirection: 'row-reverse',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F2F5', // --surface-container
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F', // --on-surface
+    letterSpacing: -1,
+  },
+  customerBar: {
+    backgroundColor: '#FFFFFF', // --surface
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E2E5', // --outline
+  },
+  customerName: {
+    fontSize: 16,
+    color: '#1B1B1F', // --on-surface
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFDAD6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
   },
   scrollContent: {
-    padding: theme.spacing.md,
+    padding: 16,
+    gap: 16,
   },
   scrollContentWithFAB: {
-    paddingBottom: 100, // Space for FAB
+    paddingBottom: 50,
   },
   scrollContentWithoutFAB: {
-    paddingBottom: theme.spacing.md,
+    paddingBottom: 50,
+  },
+  dateContainer: {
+    alignItems: 'center',
+    backgroundColor: '#FDFBFF',
+  },
+  dateBtnProminent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF', // --surface
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 100, // --radius-pill
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
+  dateText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F', // --on-surface
   },
   entriesSection: {
-    marginBottom: theme.spacing.xs,
-  },
-  sectionDivider: {
-    marginVertical: theme.spacing.lg,
-    height: 1,
-    backgroundColor: theme.colors.outline,
+    gap: 16,
   },
   entryCard: {
-    borderRadius: 12,
-    marginTop: theme.spacing.sm,
-  },
-  entryCardContent: {
-    paddingVertical: theme.spacing.md,
+    backgroundColor: '#FFFFFF', // --surface
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    borderRadius: 16, // --radius-m
+    padding: 16,
   },
   entryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  entryTitleContainer: {
-    flex: 1,
+    alignItems: 'center',
+    marginBottom: 8,
   },
   entryTitle: {
+    fontSize: 14,
+    color: '#005AC1', // --primary
     fontFamily: 'Outfit_700Bold',
-    marginBottom: theme.spacing.xs,
-  },
-  entryType: {
-    fontFamily: 'Outfit_500Medium',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  editButton: {
-    margin: 0,
-    marginTop: -8,
-  },
-  entryDivider: {
-    marginVertical: theme.spacing.sm,
   },
   entryDetails: {
-    color: theme.colors.onSurfaceVariant,
-    marginBottom: theme.spacing.xs,
+    fontSize: 13,
+    color: '#44474F', // --on-surface-variant
+    marginBottom: 4,
+    lineHeight: 18,
+    fontFamily: 'Outfit_400Regular',
   },
-  entrySubtotal: {
-    fontFamily: 'Outfit_500Medium',
-  },
-  summaryCard: {
-    borderRadius: 12,
-  },
-  summaryTitle: {
-    textAlign: 'left',
-    marginBottom: theme.spacing.sm,
-    fontFamily: 'Outfit_700Bold',
-  },
-  customerHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  customerNameLabel: {
-    textAlign: 'left',
-  },
-  crossButton: {
-    margin: 0,
-    borderRadius: 8,
-  },
-  summaryContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: theme.spacing.md,
-  },
-  summarySection: {
-    flex: 1,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-  },
-  sectionTitle: {
-    fontFamily: 'Outfit_700Bold',
-    marginLeft: theme.spacing.xs,
-  },
-  iconContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  arrowIcon: {
-    margin: 0,
-    marginLeft: -22,
-  },
-  summaryItem: {
-    marginLeft: theme.spacing.md,
-  },
-  summaryDivider: {
-    marginVertical: theme.spacing.md,
-  },
-  totalCard: {
-    borderRadius: 12,
-  },
-  totalSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  totalAmount: {
-    fontFamily: 'Outfit_700Bold',
-  },
-  totalDivider: {
-    marginVertical: theme.spacing.md,
-    height: 1,
-  },
-  receivedInput: {
-    marginBottom: theme.spacing.sm,
-  },
-  discountInput: {
-    marginBottom: theme.spacing.sm,
-  },
-  balanceSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  balanceAmount: {
-    fontFamily: 'Outfit_700Bold',
-    fontSize: 18,
-  },
-  saveButton: {
-    marginBottom: theme.spacing.md,
-    borderRadius: 12,
-  },
-  saveButtonContent: {
-    paddingVertical: theme.spacing.sm,
-  },
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 10,
-    bottom: 32,
-    backgroundColor: theme.colors.primary,
-  },
-  
-  // Part 5 Enhanced Styles - Validation & Error Handling
-  inputError: {
-    borderColor: theme.colors.error,
-    borderWidth: 2,
-  },
-  quickAmountChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: theme.spacing.sm,
-  },
-  amountChip: {
-    marginRight: theme.spacing.sm,
-    marginBottom: theme.spacing.xs,
-  },
-  dateCard: {
-    marginBottom: theme.spacing.md,
-    borderRadius: 12,
-  },
-  dateSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-  },
-  dateLabel: {
-    fontFamily: 'Outfit_500Medium',
-    flex: 1,
+  entryTotal: {
+    fontSize: 14,
+    color: '#1B1B1F', // --on-surface
+    fontFamily: 'Outfit_600SemiBold',
   },
   moneyOnlyText: {
     textAlign: 'center',
     fontFamily: 'Outfit_500Medium',
-    marginBottom: theme.spacing.xs,
+    color: '#44474F',
   },
-  moneyOnlyHint: {
-    textAlign: 'center',
-    color: theme.colors.onSurfaceVariant,
+  tradeCard: {
+    backgroundColor: '#F0F2F5', // --surface-container
+    borderRadius: 24, // --radius-l
+    padding: 16,
   },
-  dateButton: {
-    marginLeft: theme.spacing.sm,
-    borderRadius: 20,
+  cardLabel: {
+    fontSize: 14,
+    marginBottom: 12,
+    fontFamily: 'Outfit_700Bold',
+    color: '#1B1B1F',
   },
-  dateButtonContent: {
-    paddingHorizontal: theme.spacing.sm,
+  tradeRow: {
+    flexDirection: 'row',
+    gap: 16,
   },
-  dateDivider: {
-    marginBottom: theme.spacing.md,
+  tradeCol: {
+    flex: 1,
+  },
+  tradeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  tradeHeaderText: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    fontFamily: 'Outfit_700Bold',
+  },
+  tradeItem: {
+    fontSize: 13,
+    color: '#1B1B1F',
+    marginBottom: 4,
+    fontFamily: 'Outfit_400Regular',
+  },
+  settleCard: {
+    backgroundColor: '#F0F2F5', // --surface-container
+    borderRadius: 24, // --radius-l
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+  },
+  settleHeader: {
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E2E5',
+  },
+  settleHeaderLabel: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
+  },
+  heroAmount: {
+    fontSize: 20,
+    color: '#005AC1', // --primary
+    fontFamily: 'Outfit_700Bold',
+  },
+  settleBody: {
+    padding: 16,
+    gap: 12,
+  },
+  textInput: {
+    backgroundColor: '#FFFFFF', // --surface
+    fontSize: 16,
+    fontFamily: 'Outfit_400Regular',
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  chip: {
+    backgroundColor: '#FFFFFF', // --surface
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 100, // --radius-pill
+  },
+  chipText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
+  },
+  noteInput: {
+    backgroundColor: 'transparent',
+    fontSize: 16,
+    fontFamily: 'Outfit_400Regular',
+    paddingHorizontal: 0,
+  },
+  settleFooter: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderTopWidth: 1,
+    borderTopColor: '#E0E2E5',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settleFooterLabel: {
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
+  },
+  balanceVal: {
+    fontSize: 16,
+    fontFamily: 'Outfit_700Bold',
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 80,
+    right: 20,
+    width: 64,
+    height: 64,
+    backgroundColor: '#00BCD4', // --primary
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#00BCD4',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  saveBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF', // --surface
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E2E5', // --outline
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  btnSecondary: {
+    flex: 1,
+    backgroundColor: '#FFFFFF', // --surface
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    paddingVertical: 14,
+    borderRadius: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnSecondaryText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F', // --on-surface
+  },
+  btnPrimary: {
+    flex: 2,
+    backgroundColor: '#1B1B1F', // Success Green
+    paddingVertical: 14,
+    borderRadius: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  btnPrimaryText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#FFFFFF', // --on-primary
   },
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Modal, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Modal, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button, Text, Surface, RadioButton } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 
 interface InventoryInput {
@@ -22,8 +23,8 @@ interface InventoryInputDialogProps {
   onSubmit: (values: Record<string, any>) => void;
   onRadioChange?: (key: string, value: string) => void;
   requireAtLeastOneNumeric?: boolean;
-  allowDefaults?: boolean; // New prop to allow proceeding with default values
-  disableRequiredValidation?: boolean; // New prop to disable "Required" validation for empty fields
+  allowDefaults?: boolean;
+  disableRequiredValidation?: boolean;
 }
 
 export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
@@ -35,8 +36,8 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   onSubmit,
   onRadioChange,
   requireAtLeastOneNumeric = false,
-  allowDefaults = false, // Default to false to maintain existing behavior
-  disableRequiredValidation = false, // Default to false
+  allowDefaults = false,
+  disableRequiredValidation = false,
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
@@ -45,40 +46,35 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   const [currentSelectKey, setCurrentSelectKey] = useState<string>('');
   const [currentSelectOptions, setCurrentSelectOptions] = useState<Array<{ label: string; value: string }>>([]);
 
-  // Initialize values when inputs change, but preserve existing values
+  // Initialize values when inputs change
   useEffect(() => {
-    setValues(prevValues => {
-      const newValues = { ...prevValues };
-      const newOriginalValues: Record<string, string> = {};
-      inputs.forEach(input => {
-        // Only set default value if this input doesn't already have a value
-        if (!(input.key in newValues) || newValues[input.key] === '') {
-          newValues[input.key] = input.value;
-        }
-        newOriginalValues[input.key] = input.value;
+    if (visible) {
+      setValues(prevValues => {
+        const newValues = { ...prevValues };
+        const newOriginalValues: Record<string, string> = {};
+        inputs.forEach(input => {
+          // Initialize if key doesn't exist or is empty
+          if (!(input.key in newValues) || newValues[input.key] === '') {
+            newValues[input.key] = input.value || '';
+          }
+          newOriginalValues[input.key] = input.value || '';
+        });
+        setOriginalValues(newOriginalValues);
+        return newValues;
       });
-      setOriginalValues(newOriginalValues);
-      return newValues;
-    });
-    setErrors({});
-  }, [inputs]);
+      setErrors({});
+    }
+  }, [inputs, visible]);
 
   const handleValueChange = (key: string, value: string) => {
     setValues(prev => ({ ...prev, [key]: value }));
-    // Clear error when user starts typing
-    if (errors[key]) {
-      setErrors(prev => ({ ...prev, [key]: '' }));
-    }
+    if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }));
   };
 
   const handleRadioChange = (key: string, value: string) => {
     setValues(prev => ({ ...prev, [key]: value }));
-    if (errors[key]) {
-      setErrors(prev => ({ ...prev, [key]: '' }));
-    }
-    if (onRadioChange) {
-      onRadioChange(key, value);
-    }
+    if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }));
+    if (onRadioChange) onRadioChange(key, value);
   };
 
   const openSelectModal = (key: string, options: Array<{ label: string; value: string }>) => {
@@ -90,9 +86,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   const handleSelectOption = (value: string) => {
     setValues(prev => ({ ...prev, [currentSelectKey]: value }));
     setSelectModalVisible(false);
-    if (errors[currentSelectKey]) {
-      setErrors(prev => ({ ...prev, [currentSelectKey]: '' }));
-    }
+    if (errors[currentSelectKey]) setErrors(prev => ({ ...prev, [currentSelectKey]: '' }));
   };
 
   const hasValuesChanged = (): boolean => {
@@ -104,42 +98,31 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   };
 
   const validateInputs = (): boolean => {
-    // Skip validation if allowDefaults is enabled
-    if (allowDefaults) {
-      return true;
-    }
-
+    if (allowDefaults) return true;
     const newErrors: Record<string, string> = {};
     let hasErrors = false;
 
     inputs.forEach(input => {
       const value = values[input.key] || '';
-
-      if (input.type === 'text') {
+      if (input.type === 'text' || !input.type) {
         if (input.keyboardType === 'numeric') {
-          // Numeric validation for price inputs
-          // Only validate if there's a value (allow empty when disableRequiredValidation is true)
           if (value.trim()) {
             const numValue = parseFloat(value);
             if (isNaN(numValue)) {
               newErrors[input.key] = 'Must be a number';
               hasErrors = true;
             }
-            // Allow negative values when disableRequiredValidation is true (for adjustments)
           } else if (!disableRequiredValidation) {
-            // Only mark as required if disableRequiredValidation is false
             newErrors[input.key] = 'Required';
             hasErrors = true;
           }
         } else {
-          // Text validation for name inputs
           if (!value.trim() && !disableRequiredValidation) {
             newErrors[input.key] = 'Required';
             hasErrors = true;
           }
         }
       } else {
-        // For radio and select inputs
         if (!value.trim() && !disableRequiredValidation) {
           newErrors[input.key] = 'Required';
           hasErrors = true;
@@ -147,10 +130,9 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
       }
     });
 
-    // Check if at least one numeric field has a value when required
     if (requireAtLeastOneNumeric && !hasErrors) {
       const hasAtLeastOneNumeric = inputs.some(input => {
-        if (input.type === 'text' && input.keyboardType === 'numeric') {
+        if ((input.type === 'text' || !input.type) && input.keyboardType === 'numeric') {
           const value = values[input.key] || '';
           if (!value.trim()) return false;
           const numValue = parseFloat(value);
@@ -160,9 +142,8 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
       });
 
       if (!hasAtLeastOneNumeric) {
-        // Add error to the first numeric field
         const firstNumericInput = inputs.find(input => 
-          input.type === 'text' && input.keyboardType === 'numeric'
+          (input.type === 'text' || !input.type) && input.keyboardType === 'numeric'
         );
         if (firstNumericInput) {
           newErrors[firstNumericInput.key] = 'At least one field must have a value';
@@ -176,16 +157,12 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   };
 
   const handleSubmit = () => {
-    if (!validateInputs()) {
-      return;
-    }
-
+    if (!validateInputs()) return;
     const result: Record<string, any> = {};
     inputs.forEach(input => {
-      if (input.type === 'text' && input.keyboardType === 'numeric') {
+      if ((input.type === 'text' || !input.type) && input.keyboardType === 'numeric') {
         const value = values[input.key] || '';
         if (value.trim() === '') {
-          // Use default value of 0 when allowDefaults is enabled and field is empty
           result[input.key] = 0;
         } else {
           result[input.key] = parseFloat(value);
@@ -194,7 +171,6 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
         result[input.key] = values[input.key];
       }
     });
-
     onSubmit(result);
   };
 
@@ -212,21 +188,32 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
         animationType="fade"
         onRequestClose={handleCancel}
       >
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.overlay}
+        >
           <Surface style={styles.dialog}>
-            <Text variant="titleLarge" style={styles.title}>
-              {title}
-            </Text>
+            
+            {/* Same Line Header */}
+            <View style={styles.headerContainer}>
+                <View style={styles.iconBadge}>
+                   <MaterialCommunityIcons name="pencil-box-outline" size={24} color={theme.colors.primary} />
+                </View>
+                <Text variant="titleLarge" style={styles.title}>
+                  {title}
+                </Text>
+            </View>
+            
             <Text variant="bodyMedium" style={styles.message}>
               {message}
             </Text>
 
-            <ScrollView style={styles.inputsContainer}>
+            <ScrollView style={styles.inputsScroll} showsVerticalScrollIndicator={false}>
               {inputs.map((input) => {
                 if (input.type === 'radio' && input.options) {
                   return (
                     <View key={input.key} style={styles.inputContainer}>
-                      <Text variant="bodyLarge" style={styles.radioLabel}>
+                      <Text variant="bodyMedium" style={styles.radioLabel}>
                         {input.label}
                       </Text>
                       <RadioButton.Group
@@ -236,14 +223,14 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                         <View style={styles.radioGroupHorizontal}>
                           {input.options.map((option) => (
                             <View key={option.value} style={styles.radioOptionHorizontal}>
-                              <RadioButton value={option.value} />
+                              <RadioButton value={option.value} color={theme.colors.primary} />
                               <Text style={styles.radioText}>{option.label}</Text>
                             </View>
                           ))}
                         </View>
                       </RadioButton.Group>
                       {errors[input.key] ? (
-                        <Text variant="bodySmall" style={styles.error}>
+                        <Text variant="bodySmall" style={styles.errorText}>
                           {errors[input.key]}
                         </Text>
                       ) : null}
@@ -257,19 +244,23 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                         style={styles.selectButton}
                         onPress={() => openSelectModal(input.key, input.options!)}
                       >
-                        <Text style={styles.selectButtonText}>
+                        <Text style={[
+                            styles.selectButtonText, 
+                            !selectedOption && {color: theme.colors.onSurfaceVariant}
+                        ]}>
                           {selectedOption ? selectedOption.label : input.label}
                         </Text>
+                        <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.onSurfaceVariant} />
                       </TouchableOpacity>
                       {errors[input.key] ? (
-                        <Text variant="bodySmall" style={styles.error}>
+                        <Text variant="bodySmall" style={styles.errorText}>
                           {errors[input.key]}
                         </Text>
                       ) : null}
                     </View>
                   );
                 } else {
-                  // Default text input
+                  // Default to Text Input (handles type='text' or undefined)
                   return (
                     <View key={input.key} style={styles.inputContainer}>
                       <TextInput
@@ -279,11 +270,13 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                         onChangeText={(value) => handleValueChange(input.key, value)}
                         placeholder={input.placeholder}
                         keyboardType={input.keyboardType || 'default'}
-                        style={styles.input}
+                        style={styles.textInput}
+                        outlineStyle={{ borderRadius: 12 }}
+                        activeOutlineColor={theme.colors.primary}
                         error={!!errors[input.key]}
                       />
                       {errors[input.key] ? (
-                        <Text variant="bodySmall" style={styles.error}>
+                        <Text variant="bodySmall" style={styles.errorText}>
                           {errors[input.key]}
                         </Text>
                       ) : null}
@@ -297,21 +290,24 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
               <Button
                 mode="text"
                 onPress={handleCancel}
+                textColor={theme.colors.onSurfaceVariant}
                 style={styles.button}
+                labelStyle={styles.buttonLabel}
               >
                 Cancel
               </Button>
               <Button
                 mode="contained"
                 onPress={handleSubmit}
-                style={styles.button}
+                style={[styles.button, styles.submitButton]}
+                labelStyle={styles.buttonLabel}
                 disabled={!allowDefaults && !hasValuesChanged()}
               >
                 Next
               </Button>
             </View>
           </Surface>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Select Options Modal */}
@@ -334,6 +330,9 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                   onPress={() => handleSelectOption(option.value)}
                 >
                   <Text style={styles.selectOptionText}>{option.label}</Text>
+                  {values[currentSelectKey] === option.value && (
+                      <MaterialCommunityIcons name="check" size={20} color={theme.colors.primary} />
+                  )}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -341,9 +340,9 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
               <Button
                 mode="text"
                 onPress={() => setSelectModalVisible(false)}
-                style={styles.button}
+                textColor={theme.colors.onSurfaceVariant}
               >
-                Cancel
+                Close
               </Button>
             </View>
           </Surface>
@@ -356,125 +355,161 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: theme.spacing.md,
+    padding: 24,
   },
   dialog: {
     width: '100%',
-    maxWidth: 400,
-    padding: theme.spacing.lg,
-    borderRadius: 8,
+    maxWidth: 360,
+    padding: 24,
+    borderRadius: 28,
     elevation: 6,
+    backgroundColor: '#FDFBFF',
+    maxHeight: '80%',
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  iconBadge: {
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: 8,
+    borderRadius: 12,
+    marginRight: 12,
   },
   title: {
-    textAlign: 'center',
-    marginBottom: theme.spacing.sm,
+    textAlign: 'left',
     color: theme.colors.onSurface,
+    fontFamily: 'Outfit_700Bold',
+    flexShrink: 1,
   },
   message: {
     textAlign: 'center',
-    marginBottom: theme.spacing.lg,
+    marginBottom: 20,
     color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Outfit_400Regular',
   },
-  inputsContainer: {
-    maxHeight: 300,
-    marginBottom: theme.spacing.md,
+  inputsScroll: {
+    marginBottom: 16,
+    flexGrow: 0, // IMPORTANT: Prevents ScrollView from taking 0 height if items are few
   },
   inputContainer: {
-    marginBottom: theme.spacing.md,
+    marginBottom: 12,
+    width: '100%', // Ensure container takes full width
   },
-  input: {
-    backgroundColor: theme.colors.surface,
+  textInput: {
+    backgroundColor: '#FFFFFF', // Ensure visible background
+    fontSize: 16,
+    minHeight: 56, // Ensure visible height
   },
-  error: {
+  errorText: {
     color: theme.colors.error,
-    marginTop: theme.spacing.xs,
-    marginLeft: theme.spacing.xs,
+    marginTop: 4,
+    marginLeft: 4,
+    fontFamily: 'Outfit_500Medium',
   },
   radioLabel: {
     color: theme.colors.onSurface,
     fontFamily: 'Outfit_500Medium',
-    marginBottom: theme.spacing.sm,
-  },
-  radioOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing.xs,
+    marginBottom: 8,
   },
   radioGroupHorizontal: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: 12,
+    padding: 4,
   },
   radioOptionHorizontal: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   radioText: {
     color: theme.colors.onSurface,
-    fontFamily: 'Outfit_400Regular',
-    marginLeft: theme.spacing.sm,
+    fontFamily: 'Outfit_500Medium',
+    marginLeft: 4,
   },
   selectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderColor: theme.colors.outline,
     borderWidth: 1,
-    borderRadius: 4,
-    backgroundColor: theme.colors.surface,
-    padding: theme.spacing.md,
-    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF', // Ensure visible background
+    padding: 16,
+    minHeight: 56,
   },
   selectButtonText: {
     color: theme.colors.onSurface,
     fontFamily: 'Outfit_400Regular',
     fontSize: 16,
   },
+  buttons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 8,
+  },
+  button: {
+    flex: 1,
+    borderRadius: 100,
+  },
+  submitButton: {
+    backgroundColor: theme.colors.primary,
+  },
+  buttonLabel: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 14,
+    letterSpacing: 0.5,
+    paddingVertical: 2,
+  },
   selectModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: theme.spacing.md,
+    padding: 24,
   },
   selectModalDialog: {
     width: '100%',
-    maxWidth: 350,
-    padding: theme.spacing.lg,
-    borderRadius: 8,
+    maxWidth: 320,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: '#FDFBFF',
     maxHeight: 400,
   },
   selectModalTitle: {
     textAlign: 'center',
-    marginBottom: theme.spacing.md,
+    marginBottom: 16,
     color: theme.colors.onSurface,
-    fontFamily: 'Outfit_500Medium',
+    fontFamily: 'Outfit_700Bold',
   },
   selectOptionsContainer: {
     maxHeight: 250,
   },
   selectOption: {
-    padding: theme.spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.outlineVariant,
   },
   selectOptionText: {
     color: theme.colors.onSurface,
-    fontFamily: 'Outfit_400Regular',
+    fontFamily: 'Outfit_500Medium',
     fontSize: 16,
   },
   selectModalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: theme.spacing.md,
-  },
-  buttons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: theme.spacing.sm,
-  },
-  button: {
-    minWidth: 80,
+    alignItems: 'center',
+    marginTop: 16,
   },
 });

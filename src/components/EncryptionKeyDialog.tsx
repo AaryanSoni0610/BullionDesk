@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Modal } from 'react-native';
+import { View, StyleSheet, Modal, TouchableWithoutFeedback, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button, Text, Surface } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 
 interface EncryptionKeyDialogProps {
@@ -28,12 +29,10 @@ export const EncryptionKeyDialog: React.FC<EncryptionKeyDialogProps> = ({
       setError('Key cannot be empty');
       return;
     }
-
     if (mode === 'setup' && key.length < 8) {
       setError('Key must be at least 8 characters');
       return;
     }
-
     setError('');
     onSubmit(key);
     setKey('');
@@ -45,6 +44,15 @@ export const EncryptionKeyDialog: React.FC<EncryptionKeyDialogProps> = ({
     onCancel();
   };
 
+  const getIcon = () => {
+    switch (mode) {
+      case 'setup': return 'key-plus';
+      case 'confirm': return 'check-decagram';
+      case 'enter': return 'lock-open-outline';
+      default: return 'key-outline';
+    }
+  };
+
   return (
     <Modal
       visible={visible}
@@ -52,54 +60,68 @@ export const EncryptionKeyDialog: React.FC<EncryptionKeyDialogProps> = ({
       animationType="fade"
       onRequestClose={handleCancel}
     >
-      <View style={styles.overlay}>
-        <Surface style={styles.dialog}>
-          <Text variant="titleLarge" style={styles.title}>
-            {title}
-          </Text>
-          <Text variant="bodyMedium" style={styles.message}>
-            {message}
-          </Text>
-
-          <TextInput
-            mode="outlined"
-            label="Encryption Key"
-            value={key}
-            onChangeText={(text) => {
-              setKey(text);
-              setError('');
-            }}
-            secureTextEntry
-            autoFocus
-            style={styles.input}
-            error={!!error}
-            onSubmitEditing={handleSubmit}
-          />
-
-          {error ? (
-            <Text variant="bodySmall" style={styles.error}>
-              {error}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.overlay}
+      >
+        <TouchableWithoutFeedback onPress={() => {}}>
+          <Surface style={styles.dialog}>
+            
+            {/* Same Line Header */}
+            <View style={styles.headerContainer}>
+               <View style={styles.iconBadge}>
+                  <MaterialCommunityIcons name={getIcon()} size={24} color={theme.colors.primary} />
+               </View>
+               <Text variant="titleLarge" style={styles.title}>
+                 {title}
+               </Text>
+            </View>
+            
+            <Text variant="bodyMedium" style={styles.message}>
+              {message}
             </Text>
-          ) : null}
 
-          <View style={styles.buttons}>
-            <Button
-              mode="text"
-              onPress={handleCancel}
-              style={styles.button}
-            >
-              Cancel
-            </Button>
-            <Button
-              mode="contained"
-              onPress={handleSubmit}
-              style={styles.button}
-            >
-              {mode === 'confirm' ? 'Confirm' : 'Submit'}
-            </Button>
-          </View>
-        </Surface>
-      </View>
+            <TextInput
+              mode="outlined"
+              label="Encryption Key"
+              value={key}
+              onChangeText={(text) => { setKey(text); setError(''); }}
+              secureTextEntry
+              autoFocus
+              style={styles.input}
+              outlineStyle={{ borderRadius: 12 }}
+              activeOutlineColor={theme.colors.primary}
+              error={!!error}
+              onSubmitEditing={handleSubmit}
+              left={<TextInput.Icon icon="key" color={theme.colors.onSurfaceVariant} />}
+            />
+
+            {error ? (
+              <Text variant="bodySmall" style={styles.error}>{error}</Text>
+            ) : null}
+
+            <View style={styles.buttons}>
+              <Button
+                mode="text"
+                onPress={handleCancel}
+                textColor={theme.colors.onSurfaceVariant}
+                labelStyle={styles.buttonLabel}
+                style={styles.button}
+              >
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleSubmit}
+                style={[styles.button, styles.submitButton]}
+                labelStyle={styles.buttonLabel}
+              >
+                {mode === 'confirm' ? 'Confirm' : 'Submit'}
+              </Button>
+            </View>
+          </Surface>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -107,40 +129,74 @@ export const EncryptionKeyDialog: React.FC<EncryptionKeyDialogProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   dialog: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 360,
+    backgroundColor: '#FDFBFF',
+    borderRadius: 28,
     padding: 24,
+    elevation: 6,
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  iconBadge: {
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: 8,
     borderRadius: 12,
-    elevation: 8,
+    marginRight: 12,
   },
   title: {
-    marginBottom: 16,
-    fontWeight: 'bold',
+    textAlign: 'left',
+    fontFamily: 'Outfit_700Bold',
+    color: theme.colors.onSurface,
+    flexShrink: 1,
   },
   message: {
-    marginBottom: 20,
+    textAlign: 'center',
+    fontFamily: 'Outfit_400Regular',
     color: theme.colors.onSurfaceVariant,
+    marginBottom: 24,
+    fontSize: 14,
   },
   input: {
+    width: '100%',
     marginBottom: 8,
+    backgroundColor: theme.colors.surface,
+    fontSize: 16,
   },
   error: {
     color: theme.colors.error,
+    fontFamily: 'Outfit_500Medium',
     marginBottom: 16,
+    marginLeft: 4,
   },
   buttons: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
     marginTop: 8,
   },
   button: {
-    minWidth: 80,
+    flex: 1,
+    borderRadius: 100,
+  },
+  submitButton: {
+    backgroundColor: theme.colors.primary,
+  },
+  buttonLabel: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 14,
+    letterSpacing: 0.5,
+    paddingVertical: 2,
   },
 });

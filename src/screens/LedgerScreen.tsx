@@ -135,6 +135,7 @@ export const LedgerScreen: React.FC = () => {
     if (isConfirmed && selectedDate) {
       setCustomDate(selectedDate);
       setSelectedPeriod('custom');
+      loadInventoryData(true, 'custom', selectedDate);
     } else if (event.type === 'dismissed') {
       // User cancelled, don't change anything
       setShowDatePicker(false);
@@ -155,17 +156,9 @@ export const LedgerScreen: React.FC = () => {
     }
   };
 
-  // Handle Select Date button press
-  const handleSelectDatePress = () => {
-    setShowDatePicker(true);
-    // Don't set selectedPeriod to 'custom' until date is actually selected
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadInventoryData();
-    }, [selectedPeriod, customDate, showOnlyRaniRupu, selectedInventory])
-  );
+  useEffect(() => {
+    loadInventoryData();
+  }, [showOnlyRaniRupu, selectedInventory]);
 
   // Reset filter when switching subledgers
   useEffect(() => {
@@ -189,7 +182,7 @@ export const LedgerScreen: React.FC = () => {
     }, [navigation])
   );
 
-  const loadInventoryData = async (refresh = false) => {
+  const loadInventoryData = async (refresh = false, periodOverride?: string, dateOverride?: Date) => {
     try {
       if (refresh) {
         setIsRefreshing(true);
@@ -204,7 +197,10 @@ export const LedgerScreen: React.FC = () => {
       let endDate: string;
       let upToEndDate: string;
       
-      switch (selectedPeriod) {
+      const period = periodOverride || selectedPeriod;
+      const dateVal = dateOverride || customDate;
+
+      switch (period) {
         case 'today':
           startDate = today.toISOString();
           endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
@@ -217,7 +213,7 @@ export const LedgerScreen: React.FC = () => {
           upToEndDate = endDate;
           break;
         case 'custom':
-          const customStart = new Date(customDate.getFullYear(), customDate.getMonth(), customDate.getDate());
+          const customStart = new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate());
           startDate = customStart.toISOString();
           endDate = new Date(customStart.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
           upToEndDate = endDate;
@@ -1089,7 +1085,7 @@ export const LedgerScreen: React.FC = () => {
 
     } else {
       // Add opening stock entry for gold and silver subledgers (not for rani/rupu)
-      if (inventoryData && !showOnlyRaniRupu) {
+      if (inventoryData && !showOnlyRaniRupu && filteredTransactions.length > 0) {
         // Calculate opening balances by reversing transactions in the current period
         const goldOpeningBalances = {
           gold999: inventoryData.goldInventory.gold999,
@@ -1345,14 +1341,12 @@ export const LedgerScreen: React.FC = () => {
           
           if (isGold) {
                displayValue = `${formatWeight(gold999Opening)} (999)\n${formatWeight(gold995Opening)} (995)`;
-               displayMeta = "Opening Stock";
+               displayMeta = "";
           } else {
                displayValue = `${formatWeight(silverOpening, true)}`;
-               displayMeta = "Opening Stock";
+               displayMeta = "";
           }
         } else {
-            const isPurchase = entry.type === 'purchase';
-            
             let weight = entry.pureWeight || entry.weight || 0;
             if (entry.itemType === 'rani' && selectedInventory === 'gold') {
               const touchNum = entry.touch || 0;
@@ -1459,11 +1453,11 @@ export const LedgerScreen: React.FC = () => {
         </Text>
       </View>
       <View style={styles.cardContent}>
-        <Text variant="headlineSmall" style={[styles.cardValue, { color: iconColor }]}>
+        <Text variant="headlineSmall" style={[styles.cardValue, { color: iconColor }]} adjustsFontSizeToFit={true} minimumFontScale={0.8}>
           {value}
         </Text>
         {unit && (
-          <Text variant="bodyMedium" style={[{ color: iconColor }]}>
+          <Text variant="bodyMedium" style={[{ color: iconColor }]} adjustsFontSizeToFit={true} minimumFontScale={0.8}>
             {unit}
           </Text>
         )}
@@ -1532,14 +1526,20 @@ export const LedgerScreen: React.FC = () => {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateChipsContainer}>
           <TouchableOpacity 
             style={[styles.dateChip, selectedPeriod === 'today' && styles.dateChipActive]} 
-            onPress={() => setSelectedPeriod('today')}
+            onPress={() => {
+              setSelectedPeriod('today');
+              loadInventoryData(true, 'today');
+            }}
           >
             <Text style={[styles.dateChipText, selectedPeriod === 'today' && styles.dateChipTextActive]}>Today</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={[styles.dateChip, selectedPeriod === 'yesterday' && styles.dateChipActive]} 
-            onPress={() => setSelectedPeriod('yesterday')}
+            onPress={() => {
+              setSelectedPeriod('yesterday');
+              loadInventoryData(true, 'yesterday');
+            }}
           >
             <Text style={[styles.dateChipText, selectedPeriod === 'yesterday' && styles.dateChipTextActive]}>Yesterday</Text>
           </TouchableOpacity>
@@ -1623,7 +1623,10 @@ export const LedgerScreen: React.FC = () => {
                 <TouchableOpacity 
                   style={[
                     styles.statItem, 
-                    { backgroundColor: showOnlyRaniRupu ? '#FFE0B2' : '#FFF8E1', borderColor: '#E65100' }
+                    { 
+                      backgroundColor: showOnlyRaniRupu ? '#FFE0B2' : '#FFF8E1', borderColor: '#E65100',
+                      borderWidth: 1
+                    }
                   ]}
                   onPress={() => setShowOnlyRaniRupu(!showOnlyRaniRupu)}
                 >
@@ -1817,7 +1820,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   tableContent: {
-    paddingBottom: 100, // Space for FAB and navbar
+    paddingBottom: 100,
   },
   transactionHeader: {
     flexGrow: 0,
@@ -2031,7 +2034,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   inventoryCard: {
-    height: 90,
     borderRadius: 20,
     padding: 16,
     marginBottom: 0,
@@ -2040,9 +2042,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    width: 130,
     borderWidth: 2,
     borderColor: 'transparent',
+    minWidth: 125,
+    justifyContent: 'space-between',
   },
   inventoryCardSelected: {
     borderColor: 'rgba(0,0,0,0.05)',
@@ -2052,11 +2055,9 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   cardContent: {
-    flex: 1,
-    justifyContent: 'flex-end',
     alignItems: 'center',
   },
   inventoryCardTitle: {
@@ -2288,12 +2289,11 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     backgroundColor: theme.colors.surface,
-    borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
     padding: 10,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
     gap: 6,
   },
   statLabel: {
@@ -2316,12 +2316,8 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     paddingBottom: 14,
   },
-  selectionIndicator: {
-    position: 'absolute',
-    bottom: 8,
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'transparent',
-  },
+  inventoryScrollCard: {
+    width: 140,
+    height: 90,
+  }
 });

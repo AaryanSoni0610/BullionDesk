@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, View, StyleSheet, TouchableWithoutFeedback, ScrollView } from 'react-native';
+import { Modal, View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Surface, Text, Button } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 
 interface AlertButton {
@@ -9,20 +10,12 @@ interface AlertButton {
   style?: 'default' | 'cancel' | 'destructive';
 }
 
-interface AlertInput {
-  label: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
-  placeholder?: string;
-}
-
 interface CustomAlertProps {
   visible: boolean;
   title: string;
   message: string;
   buttons?: AlertButton[];
-  inputs?: AlertInput[];
+  icon?: string;
   onDismiss?: () => void;
   maxHeight?: number;
 }
@@ -32,33 +25,27 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   title,
   message,
   buttons,
+  icon,
   onDismiss,
   maxHeight,
 }) => {
-  // Use default OK button only if buttons is undefined, not if it's an empty array
   const finalButtons = buttons === undefined ? [{ text: 'OK' }] : buttons;
-  // If no buttons provided or empty array, make alert non-dismissible
   const isDismissible = finalButtons && finalButtons.length > 0;
 
   const handleButtonPress = (button: AlertButton) => {
-    if (button.onPress) {
-      button.onPress();
-    }
-    if (onDismiss) {
-      onDismiss();
-    }
+    if (button.onPress) button.onPress();
+    else if (onDismiss) onDismiss();
   };
 
   const getButtonColor = (style?: string) => {
     switch (style) {
-      case 'destructive':
-        return theme.colors.error;
-      case 'cancel':
-        return theme.colors.onSurfaceVariant;
-      default:
-        return theme.colors.primary;
+      case 'destructive': return theme.colors.error;
+      case 'cancel': return theme.colors.onSurfaceVariant;
+      default: return theme.colors.primary;
     }
   };
+
+  const isStacked = finalButtons.length > 2;
 
   return (
     <Modal
@@ -67,39 +54,61 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
       animationType="fade"
       onRequestClose={isDismissible ? onDismiss : undefined}
     >
-      <View style={styles.overlay}>
-        <TouchableWithoutFeedback onPress={() => {}}>
-          <Surface style={[styles.alertContainer, { backgroundColor: theme.colors.surface }, maxHeight ? { maxHeight } : {}]}>
-            <Text
-              variant="headlineSmall"
-              style={[styles.title, { color: theme.colors.onSurface }]}
-            >
-              {title}
-            </Text>
-            <ScrollView
+      {/* Pressable Overlay: Clicking background dismisses the modal.
+        We remove TouchableWithoutFeedback because it kills scroll gestures.
+      */}
+      <Pressable 
+        style={styles.overlay} 
+        onPress={isDismissible ? onDismiss : undefined}
+      >
+        {/* Stop Propagation: Pressing the actual card shouldn't close it.
+          We use a View with onStartShouldSetResponder to block clicks passing through to the overlay.
+        */}
+        <View onStartShouldSetResponder={() => true}>
+          <Surface style={[styles.alertContainer, maxHeight ? { maxHeight } : {}]}>
+            
+            {/* Header */}
+            <View style={styles.headerContainer}>
+               <View style={styles.iconBadge}>
+                  <MaterialCommunityIcons name={icon as any || "alert-circle-outline"} size={24} color={theme.colors.primary} />
+               </View>
+               <Text variant="titleLarge" style={styles.title}>
+                 {title}
+               </Text>
+            </View>
+
+            {/* Scrollable Message */}
+            <ScrollView 
               style={styles.messageContainer}
+              persistentScrollbar={true} // Visual cue that it scrolls
               showsVerticalScrollIndicator={true}
-              bounces={false}
-              scrollEnabled={true}
-              nestedScrollEnabled={true}
-              contentContainerStyle={styles.messageContent}
             >
-              <Text
-                variant="bodyMedium"
-                style={[styles.message, { color: theme.colors.onSurfaceVariant }]}
-              >
-                {message}
-              </Text>
+              <Pressable>
+                {/* Inner Pressable ensures touches inside the text don't bubble up 
+                  accidentally, though ScrollView handles this mostly. 
+                */}
+                <Text variant="bodyMedium" style={styles.message}>
+                  {message}
+                </Text>
+              </Pressable>
             </ScrollView>
+
+            {/* Buttons */}
             {isDismissible && (
-              <View style={styles.buttonContainer}>
+              <View style={[styles.buttonContainer, isStacked && styles.buttonContainerStacked]}>
                 {finalButtons.map((button, index) => (
                   <Button
                     key={index}
-                    mode="text"
+                    mode={button.style === 'destructive' ? 'contained' : 'text'}
                     onPress={() => handleButtonPress(button)}
-                    textColor={getButtonColor(button.style)}
-                    style={styles.button}
+                    textColor={button.style === 'destructive' ? theme.colors.onError : getButtonColor(button.style)}
+                    buttonColor={button.style === 'destructive' ? theme.colors.error : undefined}
+                    labelStyle={styles.buttonLabel}
+                    style={[
+                      styles.button, 
+                      !isStacked && index > 0 && { marginLeft: 8 },
+                      isStacked && index > 0 && { marginTop: 8 }
+                    ]}
                   >
                     {button.text}
                   </Button>
@@ -107,8 +116,8 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
               </View>
             )}
           </Surface>
-        </TouchableWithoutFeedback>
-      </View>
+        </View>
+      </Pressable>
     </Modal>
   );
 };
@@ -118,47 +127,71 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    padding: 24,
   },
   alertContainer: {
-    margin: 20,
+    width: '100%',
+    // Fixed width constraint ensures it looks like a card on tablets too
+    maxWidth: 340, 
+    // Default max height if prop not provided (allows scrolling)
+    maxHeight: 500, 
+    backgroundColor: '#FDFBFF',
+    borderRadius: 28,
     padding: 24,
-    borderRadius: 12,
     elevation: 6,
-    minWidth: 300,
-    maxWidth: 300,
-    maxHeight: 400,
-    flexShrink: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  iconBadge: {
+    backgroundColor: theme.colors.surfaceVariant,
+    padding: 8,
+    borderRadius: 12,
+    marginRight: 12,
   },
   title: {
-    marginBottom: 16,
     textAlign: 'left',
-    fontFamily: 'Outfit_500Medium',
+    fontFamily: 'Outfit_700Bold',
+    color: theme.colors.onSurface,
+    flexShrink: 1,
   },
   messageContainer: {
-    marginBottom: 0,
-  },
-  messageContent: {
-    paddingVertical: 0,
+    marginBottom: 24,
+    flexGrow: 0, // Allows ScrollView to shrink if content is small
   },
   message: {
     textAlign: 'left',
-    lineHeight: 20,
+    fontFamily: 'Outfit_400Regular',
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 15,
+    lineHeight: 22,
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    width: '100%',
+  },
+  buttonContainerStacked: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
   },
   button: {
-    minWidth: 64,
+    minWidth: 80,
+    borderRadius: 100,
   },
-  inputsContainer: {
-    marginTop: 16,
-    gap: 12,
-  },
-  input: {
-    marginBottom: 8,
-  },
+  buttonLabel: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 14,
+    letterSpacing: 0.5,
+  }
 });
 
 export default CustomAlert;

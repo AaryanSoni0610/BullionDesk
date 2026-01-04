@@ -74,22 +74,6 @@ export const TradeScreen: React.FC = () => {
     );
   };
 
-  const handleAddTrade = () => {
-    // Start with customer name input
-    setTradeInputs([
-      {
-        key: 'customerName',
-        label: 'Customer Name',
-        value: '',
-        placeholder: 'Enter customer name',
-        type: 'text',
-        keyboardType: 'default'
-      }
-    ]);
-    setCollectedTradeData({});
-    setTradeDialogVisible(true);
-  };
-
   const handleTradeDialogSubmit = (values: Record<string, any>) => {
     const updatedData = { ...collectedTradeData, ...values };
     setCollectedTradeData(updatedData);
@@ -171,6 +155,8 @@ export const TradeScreen: React.FC = () => {
     } else {
       // All data collected, save the trade
       setTradeDialogVisible(false);
+      setCollectedTradeData({}); // Reset collected data after saving
+      setTradeInputs([]); // Reset inputs after saving
 
       const tradeData = {
         customerName: updatedData.customerName,
@@ -195,6 +181,7 @@ export const TradeScreen: React.FC = () => {
   const handleTradeDialogCancel = () => {
     setTradeDialogVisible(false);
     setCollectedTradeData({});
+    setTradeInputs([]); // Reset inputs on cancel
   };
 
   const handleRadioChange = (key: string, value: string) => {
@@ -332,24 +319,26 @@ export const TradeScreen: React.FC = () => {
       </View>
 
       {/* Trade Input Dialog */}
-      <InventoryInputDialog
-        visible={tradeDialogVisible}
-        title={
-          !collectedTradeData.customerName ? 'Add Trade - Customer' :
-          (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Add Trade - Details' :
-          'Add Trade - Amount'
-        }
-        message={
-          !collectedTradeData.customerName ? 'Enter the customer name:' :
-          (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Select trade type and item:' :
-          'Enter weight and price:'
-        }
-        inputs={tradeInputs}
-        onSubmit={handleTradeDialogSubmit}
-        onCancel={handleTradeDialogCancel}
-        onRadioChange={handleRadioChange}
-        allowDefaults={(!collectedTradeData.tradeType || !collectedTradeData.itemType)}
-      />
+      {tradeDialogVisible && (
+        <InventoryInputDialog
+          visible={tradeDialogVisible}
+          title={
+            !collectedTradeData.customerName ? 'Add Trade - Customer' :
+            (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Add Trade - Details' :
+            'Add Trade - Amount'
+          }
+          message={
+            !collectedTradeData.customerName ? 'Enter the customer name:' :
+            (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Select trade type and item:' :
+            'Enter weight and price:'
+          }
+          inputs={tradeInputs}
+          onSubmit={handleTradeDialogSubmit}
+          onCancel={handleTradeDialogCancel}
+          onRadioChange={handleRadioChange}
+          allowDefaults={(!collectedTradeData.tradeType || !collectedTradeData.itemType)}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -399,7 +388,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 120, // Space for FAB and Nav
+    paddingBottom: 100,
   },
   tradeCard: {
     borderRadius: 32,
@@ -412,7 +401,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF8E1',
   },
   cardSilver: {
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#E4E7EC',
   },
   textGold: { color: '#5C4300' },
   textSilver: { color: '#191C1E' },

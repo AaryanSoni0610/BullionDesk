@@ -1,8 +1,9 @@
 import React, { useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler } from 'react-native';
-import { Surface, Text, Switch, Divider, List, IconButton } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity } from 'react-native';
+import { Text, Switch } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as SecureStore from 'expo-secure-store';
 import { theme } from '../theme';
@@ -567,211 +568,198 @@ export const SettingsScreen: React.FC = () => {
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* App Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={1}>
-        <View style={styles.appTitleContent}>
-          <IconButton
-            icon="arrow-left"
-            size={20}
-            onPress={navigateToTabs}
-            style={styles.backButton}
+  const SettingsItem = ({ 
+    icon, 
+    title, 
+    description, 
+    onPress, 
+    rightElement, 
+    isDestructive = false,
+    isLast = false 
+  }: any) => (
+    <>
+      <TouchableOpacity 
+        style={[styles.itemContainer, isDestructive && styles.destructiveItem]} 
+        onPress={onPress}
+        activeOpacity={0.7}
+        disabled={!onPress}
+      >
+        <View style={styles.iconBox}>
+          <Icon 
+            name={icon} 
+            size={24} 
+            color={isDestructive ? theme.colors.error : '#44474F'} 
           />
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Settings
-          </Text>
         </View>
-      </Surface>
+        <View style={styles.itemContent}>
+          <Text style={[styles.itemTitle, isDestructive && styles.destructiveText]}>{title}</Text>
+          <Text style={styles.itemDesc}>{description}</Text>
+        </View>
+        {rightElement || (onPress && <Icon name="chevron-right" size={24} color="#E0E2E5" />)}
+      </TouchableOpacity>
+      {!isLast && <View style={styles.separator} />}
+    </>
+  );
 
-      <ScrollView style={styles.content}>
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={navigateToTabs}>
+          <Icon name="arrow-left" size={24} color="#1B1B1F" />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Settings</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* App Settings */}
-        <List.Section>
-          <List.Subheader style={styles.sectionHeader}>App Settings</List.Subheader>
-
-          <List.Item
-            title="Enable Notifications"
-            description="Receive daily reminders for customers with pending debt"
-            style={styles.sectionListItem}
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="bell-outline" />}
-            right={() => (
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={handleNotificationToggle}
-                disabled={isCheckingNotifications}
-              />
-            )}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Auto Backup"
-            description="Automatically backup data daily to external storage"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="cloud-upload-outline" />}
-            right={() => (
-              <Switch
-                value={autoBackupEnabled}
-                onValueChange={handleAutoBackupToggle}
-                disabled={isCheckingBackup}
-              />
-            )}
-          />
-        </List.Section>
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupLabel}>App Settings</Text>
+          <View style={styles.cardContainer}>
+            <SettingsItem
+              icon="bell-outline"
+              title="Enable Notifications"
+              description="Daily reminders for pending debt"
+              rightElement={
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={handleNotificationToggle}
+                  disabled={isCheckingNotifications}
+                  color="#005AC1"
+                />
+              }
+            />
+            <SettingsItem
+              icon="cloud-upload-outline"
+              title="Auto Backup"
+              description="Daily backup to external storage"
+              isLast
+              rightElement={
+                <Switch
+                  value={autoBackupEnabled}
+                  onValueChange={handleAutoBackupToggle}
+                  disabled={isCheckingBackup}
+                  color="#005AC1"
+                />
+              }
+            />
+          </View>
+        </View>
 
         {/* Data Overview */}
-        <List.Section>
-          <List.Subheader style={styles.sectionHeader}>Data Overview</List.Subheader>
-
-          <List.Item
-            title="Customers"
-            description={isLoadingCustomers ? "Loading..." : `${customers.length} customers registered`}
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="account-group-outline" />}
-            onPress={navigateToCustomers}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Rate Cut"
-            description="Manage metal rate cuts"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="content-cut" />}
-            onPress={navigateToRateCut}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Base Inventory"
-            description={
-              isLoadingInventory
-                ? "Loading..."
-                : `Gold: ${formatPureGoldPrecise((baseInventory?.gold999 + baseInventory?.gold995 || 0))}g, Silver: ${formatPureSilver(baseInventory?.silver || 0)}g, Money: ₹${formatIndianNumber(Math.round(baseInventory?.money || 0))}`
-            }
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="package-variant-closed" />}
-            onPress={() => {
-              if (baseInventory) {
-                let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(raniTotal)}g\nRupu: ${formatPureSilver(rupuTotal)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
-                
-                showAlert(
-                  'Base Inventory',
-                  message,
-                  [
-                    { text: 'OK' },
-                    { 
-                      text: 'Set Custom Values', 
-                      onPress: () => {
-                        // Use setTimeout to ensure the current alert is fully dismissed before showing the warning
-                        setTimeout(() => {
-                          handleSetBaseInventoryWithWarning();
-                        }, 100);
-                      }
-                    }
-                  ]
-                );
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupLabel}>Data Overview</Text>
+          <View style={styles.cardContainer}>
+            <SettingsItem
+              icon="account-group-outline"
+              title="Customers"
+              description={isLoadingCustomers ? "Loading..." : `${customers.length} customers registered`}
+              onPress={navigateToCustomers}
+            />
+            <SettingsItem
+              icon="content-cut"
+              title="Rate Cut"
+              description="Manage metal rate cuts"
+              onPress={navigateToRateCut}
+            />
+            <SettingsItem
+              icon="swap-horizontal"
+              title="Rani/Rupa Bulk Sell"
+              description="Bulk sell Rani or Rupu items"
+              onPress={() => navigateToRaniRupaSell()}
+            />
+            <SettingsItem
+              icon="package-variant-closed"
+              title="Base Inventory"
+              description={
+                isLoadingInventory
+                  ? "Loading..."
+                  : `Gold: ${formatPureGoldPrecise((baseInventory?.gold999 + baseInventory?.gold995 || 0))}g, Silver: ${formatPureSilver(baseInventory?.silver || 0)}g, Money: ₹${formatIndianNumber(Math.round(baseInventory?.money || 0))}`
               }
-            }}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Rani/Rupa Bulk Sell"
-            description="Bulk sell Rani or Rupu items"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="swap-horizontal" />}
-            onPress={() => navigateToRaniRupaSell()}
-          />
-        </List.Section>
+              isLast
+              onPress={() => {
+                if (baseInventory) {
+                  let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(raniTotal)}g\nRupu: ${formatPureSilver(rupuTotal)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
+                  
+                  showAlert(
+                    'Base Inventory',
+                    message,
+                    [
+                      { text: 'OK' },
+                      { 
+                        text: 'Set Custom Values', 
+                        onPress: () => {
+                          setTimeout(() => {
+                            handleSetBaseInventoryWithWarning();
+                          }, 100);
+                        }
+                      }
+                    ]
+                  );
+                }
+              }}
+            />
+          </View>
+        </View>
 
         {/* Data Management */}
-        <List.Section>
-          <List.Subheader style={styles.sectionHeader}>Data Management</List.Subheader>
-
-          <List.Item
-            title="Recycle Bin"
-            description="View and restore deleted transactions"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="recycle" />}
-            onPress={navigateToRecycleBin}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Export Data"
-            description="Export to external storage location"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="file-export-outline" />}
-            onPress={handleExportData}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Import Data"
-            description="Import from backup file"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="file-import-outline" />}
-            onPress={handleImportData}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Clear All Data"
-            description={isClearing ? "Clearing data..." : "Delete all data, reset inventory to base"}
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            descriptionStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="delete-forever-outline" color={theme.colors.error} />}
-            disabled={isClearing}
-            onPress={handleClearAllData}
-          />
-        </List.Section>
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupLabel}>Data Management</Text>
+          <View style={styles.cardContainer}>
+            <SettingsItem
+              icon="recycle"
+              title="Recycle Bin"
+              description="Restore deleted transactions"
+              onPress={navigateToRecycleBin}
+            />
+            <SettingsItem
+              icon="file-export-outline"
+              title="Export Data"
+              description="Backup manually to storage"
+              onPress={handleExportData}
+            />
+            <SettingsItem
+              icon="file-import-outline"
+              title="Import Data"
+              description="Restore from file"
+              onPress={handleImportData}
+            />
+            <SettingsItem
+              icon="delete-forever-outline"
+              title="Clear All Data"
+              description={isClearing ? "Clearing data..." : "Reset app to factory state"}
+              isDestructive
+              isLast
+              onPress={handleClearAllData}
+            />
+          </View>
+        </View>
 
         {/* About */}
-        <List.Section>
-          <List.Subheader style={styles.sectionHeader}>About</List.Subheader>
-
-          <List.Item
-            title="Privacy Policy"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="shield-check-outline" />}
-            onPress={() => setShowPrivacyPolicy(true)}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Terms of Service"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="file-document-outline" />}
-            onPress={() => setShowTermsOfService(true)}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="About"
-            titleStyle={{ fontFamily: 'Outfit_400Regular' }}
-            left={props => <List.Icon {...props} icon="information-outline" />}
-            onPress={() => setShowAbout(true)}
-          />
-        </List.Section>
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupLabel}>About</Text>
+          <View style={styles.cardContainer}>
+            <SettingsItem
+              icon="shield-check-outline"
+              title="Privacy Policy"
+              description="View privacy policy"
+              onPress={() => setShowPrivacyPolicy(true)}
+            />
+            <SettingsItem
+              icon="file-document-outline"
+              title="Terms of Service"
+              description="View terms of service"
+              onPress={() => setShowTermsOfService(true)}
+            />
+            <SettingsItem
+              icon="information-outline"
+              title="About BullionDesk"
+              description="v6.4.5"
+              isLast
+              onPress={() => setShowAbout(true)}
+            />
+          </View>
+        </View>
       </ScrollView>
 
       {/* Encryption Key Dialog */}
@@ -823,6 +811,7 @@ export const SettingsScreen: React.FC = () => {
       <CustomAlert
         visible={showPrivacyPolicy}
         title="Privacy Policy"
+        icon="shield-check-outline"
         message={`Privacy Policy for BullionDesk
 
 Last Updated: November 20, 2025
@@ -860,6 +849,7 @@ This privacy policy may be updated as needed. Continued use of the app constitut
       <CustomAlert
         visible={showTermsOfService}
         title="Terms of Service"
+        icon="file-document-outline"
         message={`Terms of Service for BullionDesk
 
 Last Updated: October 9, 2025
@@ -905,6 +895,7 @@ For support or questions, please contact the developer.`}
       <CustomAlert
         visible={showAbout}
         title="About BullionDesk"
+        icon="information-outline"
         message={`BullionDesk v6.4.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
@@ -947,34 +938,93 @@ Contact: For feedback, suggestions, or support, please reach out to the develope
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F2F4F7', // --background
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.xs,
-  },
-  appTitleContent: {
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
+    gap: 16,
+    backgroundColor: '#F2F4F7', // Match background
   },
   backButton: {
-    marginRight: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E3E7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  content: {
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F', // --on-surface
+    letterSpacing: -1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+    gap: 20,
+  },
+  groupContainer: {
+    gap: 8,
+  },
+  groupLabel: {
+    marginLeft: 12,
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 13,
+    color: '#005AC1', // --primary
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  cardContainer: {
+    backgroundColor: '#FFFFFF', // --surface
+    borderRadius: 24, // --card-radius
+    overflow: 'hidden',
+    elevation: 2, // box-shadow approximation
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  itemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingHorizontal: 20,
+    gap: 16,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#E0E2E5', // --outline-variant
+  },
+  iconBox: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemContent: {
     flex: 1,
-    paddingHorizontal: theme.spacing.sm,
   },
-  sectionHeader: {
-    color: theme.colors.primary,
+  itemTitle: {
     fontFamily: 'Outfit_500Medium',
     fontSize: 16,
+    color: '#1B1B1F', // --on-surface
+    marginBottom: 2,
   },
-  sectionListItem: {
-    // fontFamily removed - use titleStyle and descriptionStyle instead
+  itemDesc: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 13,
+    color: '#44474F', // --on-surface-variant
+    lineHeight: 18,
+  },
+  destructiveItem: {
+    backgroundColor: '#FFFBFB',
+  },
+  destructiveText: {
+    color: '#BA1A1A', // --error
   },
 });

@@ -1216,16 +1216,16 @@ export class TransactionService {
     }
   }
 
-  // Automatically delete transactions that have been in recycle bin for 3+ days
+  // Automatically delete transactions that have been in recycle bin for 15+ days
   static async cleanupOldDeletedTransactions(): Promise<number> {
     
     try {
-      // Calculate date 3 days ago
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      const cutoffDate = threeDaysAgo.toISOString().split('T')[0];
+      // Calculate date 15 days ago
+      const cutoffDateObj = new Date();
+      cutoffDateObj.setDate(cutoffDateObj.getDate() - 15);
+      const cutoffDate = cutoffDateObj.toISOString().split('T')[0];
 
-      // Find transactions that were deleted 3 or more days ago
+      // Find transactions that were deleted 15 or more days ago
       const oldTransactions = await DatabaseService.getAllAsyncBatch<{ id: string }>(
         'SELECT id FROM transactions WHERE deleted_on IS NOT NULL AND deleted_on <= ?',
         [cutoffDate]

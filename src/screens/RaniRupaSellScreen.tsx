@@ -5,21 +5,14 @@ import {
   FlatList,
   BackHandler,
   Platform,
-} from 'react-native';
-import {
-  Surface,
+  TouchableOpacity,
+  TextInput as RNTextInput,
   Text,
-  IconButton,
-  Button,
-  SegmentedButtons,
-  List,
-  Checkbox,
-  TextInput,
-  Divider,
-} from 'react-native-paper';
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatPureGoldPrecise, customFormatPureSilver } from '../utils/formatting';
 import { theme } from '../theme';
 import { TransactionService } from '../services/transaction.service';
@@ -62,7 +55,8 @@ export const RaniRupaSellScreen: React.FC = () => {
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${day} ${monthNames[date.getMonth()]} ${year}`;
   };
 
   // Handle Select Save Date button press
@@ -421,66 +415,28 @@ export const RaniRupaSellScreen: React.FC = () => {
     setShowEditDialog(true);
   };
 
-  const renderInventoryItem = ({ item }: { item: InventoryItem }) => (
-    <List.Item
-      key={item.id}
-      title={item.name}
-      description={`Weight: ${selectedType === 'rani' ? item.weight.toFixed(3) : item.weight.toFixed(1)}g${item.touch ? `, Touch: ${item.touch.toFixed(2)}%` : ''}, Pure: ${selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g`}
-      left={() => (
-        <Checkbox
-          status={selectedItems.has(item.id) ? 'checked' : 'unchecked'}
-          onPress={() => toggleItemSelection(item.id)}
-        />
-      )}
-      right={() => (
-        <IconButton
-          icon="pencil"
-          size={18}
-          onPress={() => handleEditItem(item)}
-          style={{ margin: 0, marginRight: -2 }}
-        />
-      )}
-      onPress={() => toggleItemSelection(item.id)}
-      style={[styles.listItem]}
-      titleStyle={[{ fontFamily: 'Outfit_500Medium' }]}
-      descriptionStyle={[{ fontFamily: 'Outfit_400Regular' }]}
-    />
-  );
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* App Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={1}>
-        <View style={styles.appTitleContent}>
-          <IconButton
-            icon="arrow-left"
-            size={20}
-            onPress={navigateToSettings}
-            style={styles.backButton}
-          />
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Rani/Rupa Bulk Sell
-          </Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Rani/Rupa Bulk Sell</Text>
         </View>
-      </Surface>
-
-      {/* Save Date Picker */}
-      <View style={styles.dateSection}>
-        <Text variant="titleSmall" style={styles.dateLabel}>
-          Save on: {formatDateDisplay(selectedSaveDate)}
-        </Text>
-        <Button
-          mode="contained"
-          onPress={handleSelectSaveDatePress}
-          style={styles.dateButton}
-          contentStyle={styles.dateButtonContent}
-        >
-          Change Date
-        </Button>
       </View>
-      <Divider style={styles.dateDivider} />
 
-      {/* Save Date Picker Modal */}
+      {/* Date Button */}
+      <View style={styles.dateContainer}>
+        <TouchableOpacity style={styles.dateBtnProminent} onPress={handleSelectSaveDatePress}>
+            <MaterialCommunityIcons name="calendar-month" size={20} color="#005AC1" />
+            <Text style={styles.dateText}>Save on: {formatDateDisplay(selectedSaveDate)}</Text>
+            <MaterialCommunityIcons name="chevron-down" size={18} color="#44474F" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Date Picker Modal */}
       {showSaveDatePicker && (
         <DateTimePicker
           value={selectedSaveDate}
@@ -491,95 +447,117 @@ export const RaniRupaSellScreen: React.FC = () => {
         />
       )}
 
-      {/* Segmented Buttons */}
-      <View style={styles.segmentedContainer}>
-        <SegmentedButtons
-          value={selectedType}
-          onValueChange={(value) => setSelectedType(value as 'rani' | 'rupu')}
-          buttons={[
-            { value: 'rani', label: 'Rani' },
-            { value: 'rupu', label: 'Rupu' },
-          ]}
-          style={styles.segmentedButtons}
-        />
-        
-        {/* Select All Checkbox */}
-        {inventoryItems.length > 0 && (
-          <View style={styles.selectAllContainer}>
-            <Checkbox
-              status={selectAll ? 'checked' : 'unchecked'}
-              onPress={toggleSelectAll}
-            />
-            <Text onPress={toggleSelectAll} style={styles.selectAllText}>
-              Select All {selectedType === 'rani' ? 'Rani' : 'Rupu'} Items
-            </Text>
-          </View>
-        )}
+      {/* Tabs */}
+      <View style={styles.tabsContainer}>
+        <View style={styles.tabs}>
+            <TouchableOpacity 
+                style={[styles.tab, selectedType === 'rani' && styles.tabActive]} 
+                onPress={() => setSelectedType('rani')}
+            >
+                <Text style={[styles.tabText, selectedType === 'rani' && styles.tabTextActive]}>Rani</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+                style={[styles.tab, selectedType === 'rupu' && styles.tabActive]} 
+                onPress={() => setSelectedType('rupu')}
+            >
+                <Text style={[styles.tabText, selectedType === 'rupu' && styles.tabTextActive]}>Rupu</Text>
+            </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Items List */}
+      {/* Select All */}
+      {inventoryItems.length > 0 && (
+        <TouchableOpacity style={styles.selectAllRow} onPress={toggleSelectAll} activeOpacity={0.7}>
+            <View style={[styles.checkboxCustom, selectAll && styles.checkboxSelected]}>
+                {selectAll && <MaterialCommunityIcons name="check" size={14} color="white" />}
+            </View>
+            <Text style={styles.selectLabel}>Select All Items</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* List */}
       <FlatList
         data={inventoryItems}
-        renderItem={renderInventoryItem}
+        renderItem={({ item }) => {
+            const isSelected = selectedItems.has(item.id);
+            return (
+                <TouchableOpacity 
+                    style={[styles.itemCard, isSelected && styles.itemCardSelected]} 
+                    onPress={() => toggleItemSelection(item.id)}
+                    activeOpacity={0.9}
+                >
+                    <View style={[styles.itemCheckbox, isSelected && styles.itemCheckboxSelected]}>
+                        {isSelected && <MaterialCommunityIcons name="check" size={16} color="white" />}
+                    </View>
+                    <View style={styles.itemContent}>
+                        <Text style={styles.itemName}>{item.name}</Text>
+                        <Text style={styles.itemMeta}>
+                            Weight: <Text style={styles.itemMetaValue}>{selectedType === 'rani' ? item.weight.toFixed(3) : item.weight.toFixed(1)}g</Text>
+                            {item.touch ? <Text> • Touch: <Text style={styles.itemMetaValue}>{item.touch.toFixed(2)}%</Text></Text> : ''}
+                            {' '} • Pure: <Text style={styles.itemMetaValue}>{selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g</Text>
+                        </Text>
+                    </View>
+                    <TouchableOpacity style={styles.editBtn} onPress={() => handleEditItem(item)}>
+                        <MaterialCommunityIcons name="pencil" size={20} color="#44474F" />
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            );
+        }}
         keyExtractor={(item) => item.id}
-        style={styles.itemsList}
-        contentContainerStyle={inventoryItems.length === 0 ? styles.emptyList : styles.listContent}
+        contentContainerStyle={styles.listContent}
         ListEmptyComponent={
-          isLoading ? (
-            <Text style={styles.loadingText}>Loading items...</Text>
-          ) : (
-            <Text style={styles.emptyText}>No {selectedType} items available</Text>
-          )
+            isLoading ? (
+              <Text style={styles.loadingText}>Loading items...</Text>
+            ) : (
+              <Text style={styles.emptyText}>No {selectedType} items available</Text>
+            )
         }
-        showsVerticalScrollIndicator={false}
       />
 
-      {/* Bottom Navigation Card */}
-      <View style={styles.bottomNavigation}>
-        <View style={styles.navigationContent}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.pureWeightLabel}>
-              {selectedType === 'rani' ? 'Gold 999: ' + calculateTotalPureWeight().toFixed(3) : 'Silver: '+ calculateTotalPureWeight().toFixed(1)}g
+      {/* Bottom Sheet */}
+      <View style={styles.bottomSheet}>
+        <View style={styles.sheetSummary}>
+            <Text style={styles.totalLabel}>Total {selectedType === 'rani' ? 'Gold 999' : 'Silver'}</Text>
+            <Text style={styles.totalValue}>
+                {selectedType === 'rani' ? calculateTotalPureWeight().toFixed(3) : calculateTotalPureWeight().toFixed(1)}g
             </Text>
-            <View style={styles.inputsRow}>
-              {selectedType === 'rani' && (
-                <TextInput
-                  label="Cut"
-                  value={cutValue}
-                  onChangeText={(value) => {
-                    // Allow only values between 0.00 and 1.00
-                    const num = parseFloat(value);
-                    if (value === '' || (num >= 0 && num <= 1.00)) {
-                      setCutValue(value);
-                    }
-                  }}
-                  keyboardType="decimal-pad"
-                  style={styles.cutInput}
-                  mode="outlined"
-                  dense
+        </View>
+
+        <View style={styles.inputRow}>
+            {selectedType === 'rani' && (
+                <RNTextInput
+                    placeholder="Cut (e.g. 0.5)"
+                    value={cutValue}
+                    onChangeText={(value) => {
+                        const num = parseFloat(value);
+                        if (value === '' || (num >= 0 && num <= 1.00)) {
+                            setCutValue(value);
+                        }
+                    }}
+                    keyboardType="decimal-pad"
+                    style={styles.sheetInput}
+                    placeholderTextColor="#44474F"
                 />
-              )}
-              <TextInput
-                label="Extra (g)"
+            )}
+            <RNTextInput
+                placeholder="Extra (g)"
                 value={extraWeight}
                 onChangeText={setExtraWeight}
                 keyboardType="numeric"
-                style={styles.extraInput}
-                mode="outlined"
-                dense
-              />
-            </View>
-          </View>
-          <Button
-            mode="contained"
-            onPress={handleSell}
-            style={styles.sellButton}
-            disabled={calculateTotalPureWeight() === 0}
-          >
-            Sell {selectedType.charAt(0).toUpperCase() + selectedType.slice(1)}
-          </Button>
+                style={styles.sheetInput}
+                placeholderTextColor="#44474F"
+            />
         </View>
+
+        <TouchableOpacity 
+            style={[styles.sellBtn, calculateTotalPureWeight() === 0 && styles.sellBtnDisabled]} 
+            onPress={handleSell}
+            disabled={calculateTotalPureWeight() === 0}
+        >
+            <Text style={styles.sellBtnText}>Sell {selectedType === 'rani' ? 'Rani' : 'Rupu'}</Text>
+        </TouchableOpacity>
       </View>
+
       <InventoryInputDialog
         visible={showEditDialog}
         title={`Edit ${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Weight`}
@@ -596,7 +574,7 @@ export const RaniRupaSellScreen: React.FC = () => {
         onCancel={() => setShowEditDialog(false)}
         onSubmit={handleEditConfirm}
       />
-      {/* Date Warning Custom Alert */}
+      
       <CustomAlert
         visible={showDateWarningAlert}
         title="Date Selection Warning"
@@ -614,130 +592,259 @@ export const RaniRupaSellScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#FDFBFF', // --background
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.xs,
+  // Header
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FDFBFF',
+    zIndex: 10,
   },
-  appTitleContent: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
+    gap: 16,
   },
   backButton: {
-    marginRight: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F2F5', // --surface-container
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  segmentedContainer: {
-    paddingHorizontal: 16,
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F',
+    letterSpacing: -1,
+  },
+  // Date
+  dateContainer: {
+    paddingHorizontal: 20,
     paddingBottom: 16,
-    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    backgroundColor: '#FDFBFF',
   },
-  segmentedButtons: {
-    marginBottom: 8,
-  },
-  selectAllContainer: {
+  dateBtnProminent: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: -16,
-    marginLeft: -6,
+    gap: 8,
+    backgroundColor: '#FFFFFF', // --surface
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 100, // --radius-pill
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
   },
-  selectAllText: {
-    marginLeft: 8,
-    fontFamily: 'Outfit_500Medium',
+  dateText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F', // --on-surface
   },
-  itemsList: {
+  // Tabs
+  tabsContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: '#FDFBFF',
+  },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F2F5', // --surface-container
+    padding: 4,
+    borderRadius: 100,
+  },
+  tab: {
     flex: 1,
-    backgroundColor: theme.colors.background,
-    marginLeft: 10,
-  },
-  listContent: {
-    paddingBottom: 150, // Space for bottom navigation
-  },
-  emptyList: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 200,
-    paddingBottom: 120, // Space for bottom navigation
+    paddingVertical: 10,
+    borderRadius: 100,
   },
-  listItem: {
-    backgroundColor: 'transparent',
-    paddingVertical: 8,
+  tabActive: {
+    backgroundColor: '#FFFFFF', // --surface
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
-  loadingText: {
-    textAlign: 'center',
-    fontStyle: 'italic',
-    color: theme.colors.onSurfaceVariant,
+  tabText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#44474F', // --on-surface-variant
+  },
+  tabTextActive: {
+    color: '#005AC1', // --primary
+  },
+  // Select All
+  selectAllRow: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  checkboxCustom: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#44474F',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#005AC1',
+    borderColor: '#005AC1',
+  },
+  selectLabel: {
+    fontSize: 14,
+    fontFamily: 'Outfit_500Medium',
+    color: '#44474F',
+  },
+  // List
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 200, // Space for bottom sheet
+    gap: 8,
+  },
+  itemCard: {
+    backgroundColor: '#FFFFFF', // --surface
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    borderRadius: 12, // --radius-m
+    padding: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  itemCardSelected: {
+    backgroundColor: '#E3F2FD', // --highlight
+    borderColor: '#005AC1', // --primary
+  },
+  itemCheckbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#44474F',
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemCheckboxSelected: {
+    backgroundColor: '#005AC1',
+    borderColor: '#005AC1',
+  },
+  itemContent: {
+    flex: 1,
+  },
+  itemName: {
+    fontSize: 15,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
+    marginBottom: 4,
+  },
+  itemMeta: {
+    fontSize: 12,
     fontFamily: 'Outfit_400Regular',
+    color: '#44474F',
+    lineHeight: 18,
   },
-  emptyText: {
-    textAlign: 'center',
-    color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Outfit_400Regular',
+  itemMetaValue: {
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
   },
-  bottomNavigation: {
+  editBtn: {
+    padding: 8,
+  },
+  // Bottom Sheet
+  bottomSheet: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: theme.colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.outlineVariant,
-    elevation: 8,
+    backgroundColor: '#FFFFFF', // --surface
+    borderTopLeftRadius: 24, // --radius-l
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingTop: 20,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
   },
-  navigationContent: {
-    padding: 16,
-  },
-  summaryRow: {
+  sheetSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  inputsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  pureWeightLabel: {
-    fontSize: 16,
-    color: theme.colors.primary,
+  totalLabel: {
+    fontSize: 14,
     fontFamily: 'Outfit_500Medium',
+    color: '#44474F',
   },
-  cutInput: {
-    width: 80,
+  totalValue: {
+    fontSize: 18,
+    fontFamily: 'Outfit_700Bold',
+    color: '#005AC1',
   },
-  extraInput: {
-    width: 80,
-  },
-  sellButton: {
-    marginTop: 8,
-  },
-  dateSection: {
+  inputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
+    gap: 12,
+    marginBottom: 16,
   },
-  dateLabel: {
-    fontFamily: 'Outfit_500Medium',
+  sheetInput: {
     flex: 1,
+    backgroundColor: '#F0F2F5', // --surface-container
+    borderRadius: 12, // --radius-m
+    paddingVertical: 12,
     paddingHorizontal: 16,
+    fontSize: 14,
+    fontFamily: 'Outfit_400Regular',
+    color: '#1B1B1F',
   },
-  dateButton: {
-    marginLeft: theme.spacing.sm,
-    borderRadius: 20,
+  sellBtn: {
+    backgroundColor: '#1B1B1F', // --on-surface
+    paddingVertical: 16,
+    borderRadius: 100,
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
   },
-  dateButtonContent: {
-    paddingHorizontal: theme.spacing.sm,
+  sellBtnDisabled: {
+    opacity: 0.5,
   },
-  dateDivider: {
-    marginBottom: theme.spacing.md,
+  sellBtnText: {
+    color: '#FFFFFF', // --on-primary
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  loadingText: {
+    textAlign: 'center',
+    marginTop: 20,
+    fontFamily: 'Outfit_400Regular',
+    color: '#44474F',
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 20,
+    fontFamily: 'Outfit_400Regular',
+    color: '#44474F',
   },
 });

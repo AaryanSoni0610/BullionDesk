@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Alert, BackHandler } from 'react-native';
-import { Text, Button, TextInput, SegmentedButtons, IconButton, Surface } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity, TextInput as RNTextInput } from 'react-native';
+import { Text, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RateCutService, RateCutRecord } from '../services/rateCut.service';
 import { Customer } from '../types';
 import { formatIndianNumber } from '../utils/formatting';
 import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
 import { useAppContext } from '../context/AppContext';
+import CustomAlert from '../components/CustomAlert';
 
 export const RateCutScreen: React.FC = () => {
   const { navigateToSettings } = useAppContext();
@@ -22,6 +23,11 @@ export const RateCutScreen: React.FC = () => {
   const [history, setHistory] = useState<RateCutRecord[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showErrorAlert, setShowErrorAlert] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [showDeleteConfirmAlert, setShowDeleteConfirmAlert] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<RateCutRecord | null>(null);
 
   // Handle hardware back button
   useFocusEffect(
@@ -89,7 +95,8 @@ export const RateCutScreen: React.FC = () => {
     const rateVal = parseFloat(rate);
     
     if (isNaN(weightVal) || isNaN(rateVal) || weightVal <= 0 || rateVal <= 0) {
-      Alert.alert('Error', 'Please enter valid positive numbers for weight and rate');
+      setErrorMessage('Please enter valid positive numbers for weight and rate');
+      setShowErrorAlert(true);
       return;
     }
 
@@ -97,7 +104,8 @@ export const RateCutScreen: React.FC = () => {
 
     // Validation: Weight Cut <= Metal Balance (Absolute)
     if (weightVal > Math.abs(currentBalance)) {
-      Alert.alert('Error', `Weight cut (${weightVal}) cannot exceed current balance (${Math.abs(currentBalance).toFixed(3)})`);
+      setErrorMessage(`Weight cut (${weightVal}) cannot exceed current balance (${Math.abs(currentBalance).toFixed(3)})`);
+      setShowErrorAlert(true);
       return;
     }
 
@@ -120,36 +128,34 @@ export const RateCutScreen: React.FC = () => {
       setWeight('');
       setRate('');
       loadHistory();
-      Alert.alert('Success', 'Rate cut applied successfully');
+      setShowSuccessAlert(true);
     } else {
-      Alert.alert('Error', 'Failed to apply rate cut');
+      setErrorMessage('Failed to apply rate cut');
+      setShowErrorAlert(true);
     }
     setLoading(false);
   };
 
   const handleDelete = async (cut: RateCutRecord) => {
-    Alert.alert(
-      'Confirm Delete',
-      'Are you sure you want to delete this rate cut?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            // @ts-ignore - metal_type is compatible but TS might complain due to strict union check if not updated everywhere
-            const success = await RateCutService.deleteLatestRateCut(cut.id, cut.customer_id, cut.metal_type);
-            if (success) {
-              loadHistory();
-            } else {
-              Alert.alert('Error', 'Failed to delete rate cut');
-            }
-            setLoading(false);
-          },
-        },
-      ]
-    );
+    setDeleteTarget(cut);
+    setShowDeleteConfirmAlert(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    
+    setShowDeleteConfirmAlert(false);
+    setLoading(true);
+    // @ts-ignore - metal_type is compatible but TS might complain due to strict union check if not updated everywhere
+    const success = await RateCutService.deleteLatestRateCut(deleteTarget.id, deleteTarget.customer_id, deleteTarget.metal_type);
+    if (success) {
+      loadHistory();
+    } else {
+      setErrorMessage('Failed to delete rate cut');
+      setShowErrorAlert(true);
+    }
+    setLoading(false);
+    setDeleteTarget(null);
   };
 
   const hasMetalBalance = (customer: Customer) => {
@@ -160,72 +166,88 @@ export const RateCutScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* App Title Bar */}
-      <Surface style={styles.appTitleBar} elevation={1}>
-        <View style={styles.appTitleContent}>
-          <IconButton
-            icon="arrow-left"
-            size={20}
-            onPress={navigateToSettings}
-            style={styles.backButton}
-          />
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Rate Cut
-          </Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Rate Cut</Text>
         </View>
-      </Surface>
+      </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Surface style={styles.card} elevation={1}>
-          <Button 
-            mode="outlined" 
+        <View style={styles.formContainer}>
+          {/* Customer Select */}
+          <TouchableOpacity 
+            style={styles.customerSelect}
             onPress={() => setShowCustomerModal(true)}
-            style={styles.input}
           >
-            {selectedCustomer ? selectedCustomer.name : 'Select Customer'}
-          </Button>
+            <Text style={styles.customerSelectText}>
+              {selectedCustomer ? selectedCustomer.name : 'Select Customer'}
+            </Text>
+            <MaterialCommunityIcons name="menu-down" size={24} color="#44474F" />
+          </TouchableOpacity>
 
+          {/* Metal Segment */}
           {selectedCustomer && availableMetals.length > 0 ? (
-            <SegmentedButtons
-              value={metalType}
-              onValueChange={value => setMetalType(value as 'gold999' | 'gold995' | 'silver')}
-              buttons={availableMetals}
-              style={styles.input}
-            />
+            <View style={styles.metalSegment}>
+              {availableMetals.map((metal) => (
+                <TouchableOpacity
+                  key={metal.value}
+                  style={[
+                    styles.segmentOpt,
+                    metalType === metal.value && styles.segmentOptActive
+                  ]}
+                  onPress={() => setMetalType(metal.value as any)}
+                >
+                  <Text style={[
+                    styles.segmentText,
+                    metalType === metal.value && styles.segmentTextActive
+                  ]}>
+                    {metal.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           ) : (
-            <Text style={[styles.input, { textAlign: 'center', color: theme.colors.onSurfaceVariant }]}>
+            <Text style={styles.noMetalText}>
               {selectedCustomer ? 'No metal balance available for rate cut' : 'Select a customer to see options'}
             </Text>
           )}
 
-          <TextInput
-            label="Weight Cut"
-            value={weight}
-            onChangeText={setWeight}
-            keyboardType="numeric"
-            mode="outlined"
-            style={styles.input}
-            disabled={!selectedCustomer || availableMetals.length === 0}
-          />
+          {/* Inputs Row */}
+          <View style={styles.inputRow}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.fieldLabel}>Weight Cut (g)</Text>
+              <RNTextInput
+                style={styles.textInput}
+                value={weight}
+                onChangeText={setWeight}
+                keyboardType="numeric"
+                editable={!!selectedCustomer && availableMetals.length > 0}
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.fieldLabel}>Rate</Text>
+              <RNTextInput
+                style={styles.textInput}
+                value={rate}
+                onChangeText={setRate}
+                keyboardType="numeric"
+                editable={!!selectedCustomer && availableMetals.length > 0}
+              />
+            </View>
+          </View>
 
-          <TextInput
-            label="Rate"
-            value={rate}
-            onChangeText={setRate}
-            keyboardType="numeric"
-            mode="outlined"
-            style={styles.input}
-            disabled={!selectedCustomer || availableMetals.length === 0}
-          />
-
-          <Button 
-            mode="outlined" 
+          {/* Date Button */}
+          <TouchableOpacity 
+            style={styles.dateBtn}
             onPress={() => setShowDatePicker(true)}
-            style={styles.input}
             disabled={!selectedCustomer || availableMetals.length === 0}
           >
-            Date: {date.toLocaleDateString()}
-          </Button>
+            <Text style={styles.dateBtnText}>Date: {date.toLocaleDateString()}</Text>
+          </TouchableOpacity>
 
           {showDatePicker && (
             <DateTimePicker
@@ -238,39 +260,68 @@ export const RateCutScreen: React.FC = () => {
             />
           )}
 
-          <Button 
-            mode="contained" 
-            onPress={handleApply} 
-            loading={loading}
-            disabled={!selectedCustomer || !weight || !rate || availableMetals.length === 0}
-            style={styles.button}
+          {/* Submit Button */}
+          <TouchableOpacity 
+            style={[
+              styles.submitBtn,
+              (!selectedCustomer || !weight || !rate || availableMetals.length === 0) && styles.submitBtnDisabled
+            ]}
+            onPress={handleApply}
+            disabled={loading || !selectedCustomer || !weight || !rate || availableMetals.length === 0}
           >
-            Apply Rate Cut
-          </Button>
-        </Surface>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.submitBtnText}>Apply Rate Cut</Text>
+            )}
+          </TouchableOpacity>
+        </View>
 
-        <Text variant="titleMedium" style={styles.historyTitle}>History</Text>
+        <Text style={styles.sectionTitle}>Recent History</Text>
         
-        {history.map((item, index) => (
-          <Surface key={item.id} style={styles.historyCard} elevation={1}>
-            <View style={styles.historyHeader}>
-              <Text variant="bodyMedium" style={{ fontWeight: 'bold' }}>
-                {new Date(item.cut_date).toLocaleDateString()}
-              </Text>
-              <Text variant="bodySmall" style={{ color: item.metal_type.includes('gold') ? '#FFD700' : '#C0C0C0', fontWeight: 'bold' }}>
-                {item.metal_type.toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.historyRow}>
-              <Text>Weight: {Math.abs(item.weight_cut)}</Text>
-              <Text>Rate: {item.rate}</Text>
-            </View>
-            <View style={styles.historyRow}>
-              <Text>Total: {formatIndianNumber(Math.abs(item.total_amount))}</Text>
-              <IconButton icon="delete" size={20} onPress={() => handleDelete(item)} />
-            </View>
-          </Surface>
-        ))}
+        <View style={styles.historyList}>
+          {history.map((item) => {
+            const isGold = item.metal_type.includes('gold');
+            const badgeStyle = isGold ? styles.badgeGold : styles.badgeSilver;
+            const badgeTextStyle = isGold ? styles.badgeTextGold : styles.badgeTextSilver;
+            const metalLabel = item.metal_type === 'gold999' ? 'Gold 999' : 
+                               item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
+
+            return (
+              <View key={item.id} style={styles.historyCard}>
+                <View style={styles.cardTop}>
+                  <Text style={styles.hDate}>{new Date(item.cut_date).toLocaleDateString()}</Text>
+                  <View style={styles.cardTopRight}>
+                    <View style={[styles.hBadge, badgeStyle]}>
+                      <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.deleteIcon}
+                      onPress={() => handleDelete(item)}
+                    >
+                      <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                <View style={styles.cardDetails}>
+                  <View>
+                    <Text style={styles.calcRow}>
+                      Weight: <Text style={styles.calcVal}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
+                    </Text>
+                    <Text style={styles.calcRow}>
+                      Rate: <Text style={styles.calcVal}>₹{formatIndianNumber(item.rate)}</Text>
+                    </Text>
+                  </View>
+                  <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(item.total_amount))}</Text>
+                </View>
+              </View>
+            );
+          })}
+          {history.length === 0 && (
+            <Text style={styles.emptyHistoryText}>No rate cut history found</Text>
+          )}
+        </View>
       </ScrollView>
 
       <CustomerSelectionModal
@@ -280,9 +331,42 @@ export const RateCutScreen: React.FC = () => {
           setSelectedCustomer(customer);
           setShowCustomerModal(false);
         }}
-        onCreateCustomer={() => {}} // Disable creation in this context if desired, or implement
+        onCreateCustomer={() => {}}
         allowCreateCustomer={false}
         filterFn={hasMetalBalance}
+      />
+
+      {/* Error Alert */}
+      <CustomAlert
+        visible={showErrorAlert}
+        title="Error"
+        message={errorMessage}
+        icon="alert-circle-outline"
+        buttons={[{ text: 'OK', onPress: () => setShowErrorAlert(false) }]}
+        onDismiss={() => setShowErrorAlert(false)}
+      />
+
+      {/* Success Alert */}
+      <CustomAlert
+        visible={showSuccessAlert}
+        title="Success"
+        message="Rate cut applied successfully"
+        icon="check-circle-outline"
+        buttons={[{ text: 'OK', onPress: () => setShowSuccessAlert(false) }]}
+        onDismiss={() => setShowSuccessAlert(false)}
+      />
+
+      {/* Delete Confirmation Alert */}
+      <CustomAlert
+        visible={showDeleteConfirmAlert}
+        title="Confirm Delete"
+        message="Are you sure you want to delete this rate cut?"
+        icon="delete-outline"
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowDeleteConfirmAlert(false) },
+          { text: 'Delete', style: 'destructive', onPress: handleConfirmDelete }
+        ]}
+        onDismiss={() => setShowDeleteConfirmAlert(false)}
       />
     </SafeAreaView>
   );
@@ -291,67 +375,263 @@ export const RateCutScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F2F4F7', // --background
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.xs,
+  // Header
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F2F4F7',
+    zIndex: 10,
   },
-  appTitleContent: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
-    flex: 1,
+    gap: 16,
   },
   backButton: {
-    marginRight: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E3E7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F', // --on-surface
+    letterSpacing: -1,
   },
   content: {
-    padding: 16,
+    paddingBottom: 40,
   },
-  card: {
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: theme.colors.surface,
-    marginBottom: 20,
+  // Form Card
+  formContainer: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    backgroundColor: '#FFFFFF', // --surface
+    padding: 20,
+    borderRadius: 24, // --radius-l
+    // box-shadow approximation
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+    gap: 16,
   },
-  input: {
-    marginBottom: 12,
-  },
-  button: {
-    marginTop: 8,
-  },
-  historyTitle: {
-    marginBottom: 10,
-  },
-  historyCard: {
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: theme.colors.surface,
-    marginBottom: 10,
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  historyRow: {
+  // Customer Select
+  customerSelect: {
+    backgroundColor: '#F0F2F5', // --surface-container
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16, // --radius-m
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  modal: {
-    backgroundColor: 'white',
-    padding: 20,
-    margin: 20,
-    borderRadius: 8,
-    maxHeight: '80%',
+  customerSelectText: {
+    fontSize: 16,
+    fontFamily: 'Outfit_500Medium',
+    color: '#1B1B1F',
   },
-  modalContent: {
+  // Metal Segment
+  metalSegment: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F2F5', // --surface-container
+    padding: 4,
+    borderRadius: 100, // --radius-pill
+  },
+  segmentOpt: {
     flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 100,
+  },
+  segmentOptActive: {
+    backgroundColor: '#005AC1', // --primary
+    // box-shadow approximation
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#44474F', // --on-surface-variant
+  },
+  segmentTextActive: {
+    color: '#FFFFFF', // --on-primary
+  },
+  noMetalText: {
+    textAlign: 'center',
+    color: '#44474F',
+    padding: 10,
+    fontFamily: 'Outfit_400Regular',
+  },
+  // Inputs Row
+  inputRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  inputGroup: {
+    flex: 1,
+    gap: 4,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#44474F', // --on-surface-variant
+    marginLeft: 4,
+  },
+  textInput: {
+    backgroundColor: '#F0F2F5', // --surface-container
+    borderRadius: 16, // --radius-m
+    paddingVertical: 12, // Adjusted for RN TextInput vertical alignment
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontFamily: 'Outfit_400Regular',
+    color: '#1B1B1F', // --on-surface
+  },
+  // Date Button
+  dateBtn: {
+    backgroundColor: '#F0F2F5', // --surface-container
+    padding: 14,
+    borderRadius: 16, // --radius-m
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#005AC1', // --primary
+    borderStyle: 'dashed', // Note: dashed border style support varies in RN, works on iOS/Android usually
+  },
+  dateBtnText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_500Medium',
+    color: '#005AC1', // --primary
+  },
+  // Submit Button
+  submitBtn: {
+    backgroundColor: '#1B1B1F', // --on-surface
+    padding: 16,
+    borderRadius: 100,
+    alignItems: 'center',
+    marginTop: 4,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  submitBtnDisabled: {
+    opacity: 0.5,
+  },
+  submitBtnText: {
+    color: '#FFFFFF', // --on-primary
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  // History
+  sectionTitle: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#44474F', // --on-surface-variant
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  historyList: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  historyCard: {
+    backgroundColor: '#FFFFFF', // --surface
+    borderRadius: 16, // --radius-m
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E0E2E5', // --outline
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cardTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hDate: {
+    fontSize: 13,
+    fontFamily: 'Outfit_500Medium',
+    color: '#44474F', // --on-surface-variant
+  },
+  hBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 50,
+    borderWidth: 1,
+  },
+  hBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Outfit_700Bold',
+    textTransform: 'uppercase',
+  },
+  badgeGold: {
+    backgroundColor: '#FFF8E1', // --gold-light
+    borderColor: 'rgba(255, 193, 7, 0.2)',
+  },
+  badgeTextGold: {
+    color: '#6F4C00', // --gold-text
+  },
+  badgeSilver: {
+    backgroundColor: '#ECEFF1', // --silver-light
+    borderColor: 'rgba(120, 144, 156, 0.2)',
+  },
+  badgeTextSilver: {
+    color: '#263238', // --silver-text
+  },
+  cardDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  calcRow: {
+    fontSize: 14,
+    fontFamily: 'Outfit_400Regular',
+    color: '#44474F', // --on-surface-variant
+    marginBottom: 4,
+  },
+  calcVal: {
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F', // --on-surface
+  },
+  hTotal: {
+    fontSize: 18,
+    fontFamily: 'Outfit_700Bold',
+    color: '#1B1B1F', // --on-surface
+  },
+  deleteIcon: {
+    backgroundColor: '#FFDAD6',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyHistoryText: {
+    textAlign: 'center',
+    color: '#44474F',
+    marginTop: 20,
+    fontFamily: 'Outfit_400Regular',
   },
 });

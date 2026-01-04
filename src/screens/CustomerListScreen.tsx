@@ -5,7 +5,10 @@ import {
   FlatList,
   ScrollView,
   BackHandler,
+  TouchableOpacity,
+  TextInput,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   Surface,
   Searchbar,
@@ -359,9 +362,9 @@ export const CustomerListScreen: React.FC = () => {
             <thead>
               <tr>
                 <th rowspan="2">Customer</th>
+                <th colspan="2">Money</th>
                 <th colspan="2">Gold</th>
                 <th colspan="2">Silver</th>
-                <th colspan="2">Money</th>
               </tr>
               <tr>
                 <th>Balance</th>
@@ -376,12 +379,12 @@ export const CustomerListScreen: React.FC = () => {
               ${pdfData.map(row => `
                 <tr>
                   <td class="customer-name">${row.customer}</td>
+                  <td class="balance">${row.moneyBalance}</td>
+                  <td class="debt">${row.moneyDebt}</td>
                   <td class="balance">${row.goldBalance}</td>
                   <td class="debt">${row.goldDebt}</td>
                   <td class="balance">${row.silverBalance}</td>
                   <td class="debt">${row.silverDebt}</td>
-                  <td class="balance">${row.moneyBalance}</td>
-                  <td class="debt">${row.moneyDebt}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -631,8 +634,35 @@ export const CustomerListScreen: React.FC = () => {
         TransactionService.getTransactionsByCustomerId(customerId)
       ]);
 
+      // Create a map of transactions for easy lookup
+      const transactionMap = new Map(customerTransactions.map(t => [t.id, t]));
+
+      // Enrich money ledger entries with note and fallback amounts
+      const enrichedMoneyEntries = moneyLedgerEntries.map(entry => {
+        const transaction = transactionMap.get(entry.transactionId);
+        
+        let amountReceived = entry.amountReceived;
+        let amountGiven = entry.amountGiven;
+
+        // Fallback to transaction data if ledger amounts are 0 but transaction has money flow
+        if (amountReceived === 0 && amountGiven === 0 && transaction) {
+            if (transaction.amountPaid > 0) {
+                amountReceived = transaction.amountPaid;
+            } else if (transaction.amountPaid < 0) {
+                amountGiven = Math.abs(transaction.amountPaid);
+            }
+        }
+
+        return {
+            ...entry,
+            amountReceived,
+            amountGiven,
+            note: transaction?.note
+        };
+      });
+
       // Get metal transactions and convert them to ledger-like entries
-      const metalLedgerEntries: LedgerEntry[] = [];
+      const metalLedgerEntries: (LedgerEntry & { note?: string })[] = [];
 
       // Create a set of transaction IDs that are already in moneyLedgerEntries
       const existingTransactionIds = new Set(moneyLedgerEntries.map(entry => entry.transactionId));
@@ -644,11 +674,13 @@ export const CustomerListScreen: React.FC = () => {
         }
 
         // Only include transactions that have entries (exclude money-only)
+        // OR if they have a note (to show empty transactions with notes)
         const hasEntries = transaction.entries && transaction.entries.length > 0;
+        const hasNote = transaction.note && transaction.note.trim().length > 0;
 
-        if (hasEntries) {
+        if (hasEntries || hasNote) {
           // Create a ledger-like entry for transactions with entries
-          const metalEntry: LedgerEntry = {
+          const metalEntry: LedgerEntry & { note?: string } = {
             id: `metal_${transaction.id}`,
             transactionId: transaction.id,
             customerId: transaction.customerId,
@@ -656,8 +688,9 @@ export const CustomerListScreen: React.FC = () => {
             date: transaction.date,
             amountReceived: 0, // Metal transactions don't involve money
             amountGiven: 0,
-            entries: transaction.entries, // Include all transaction entries
-            createdAt: transaction.createdAt
+            entries: transaction.entries || [], // Include all transaction entries
+            createdAt: transaction.createdAt,
+            note: transaction.note
           };
 
           metalLedgerEntries.push(metalEntry);
@@ -665,7 +698,7 @@ export const CustomerListScreen: React.FC = () => {
       });
 
       // Combine money and metal entries
-      const allCustomerEntries = [...moneyLedgerEntries, ...metalLedgerEntries];
+      const allCustomerEntries = [...enrichedMoneyEntries, ...metalLedgerEntries];
 
       // Sort by date (newest first), then by type (metal before money)
       const sortedEntries = allCustomerEntries.sort((a, b) => {
@@ -757,22 +790,52 @@ export const CustomerListScreen: React.FC = () => {
     setExpandedCards(newExpanded);
   };
 
-  const renderLedgerEntry = (entry: LedgerEntry) => {
+  const renderLedgerEntry = (entry: LedgerEntry & { note?: string }) => {
     const date = formatFullDate(entry.date);
     
+    // Calculate amounts if they are 0 but money entries exist (Fallback for display)
+    let amountReceived = entry.amountReceived;
+    let amountGiven = entry.amountGiven;
+
+    if (amountReceived === 0 && amountGiven === 0) {
+        const moneyEntries = entry.entries.filter(e => e.type === 'money');
+        moneyEntries.forEach(e => {
+            if (e.moneyType === 'receive') {
+                amountReceived += e.amount || 0;
+            } else if (e.moneyType === 'give') {
+                amountGiven += e.amount || 0;
+            }
+        });
+    }
+
     // Money Column Logic
-    let moneyText = '';
-    let moneyColor = theme.colors.onSurface;
-    let moneyFlowArrow = '';
+    let moneyContent = <Text style={styles.dashText}>-</Text>;
+    let hasMoney = false;
     
-    if (entry.amountReceived > 0) {
-      moneyText = `₹${formatIndianNumber(entry.amountReceived)}`;
-      moneyColor = theme.colors.sellColor; // Green
-      moneyFlowArrow = '↙️';
-    } else if (entry.amountGiven > 0) {
-      moneyText = `₹${formatIndianNumber(entry.amountGiven)}`;
-      moneyColor = theme.colors.primary; // Blue
-      moneyFlowArrow = '↗️';
+    if (amountReceived > 0) {
+      hasMoney = true;
+      moneyContent = (
+        <View style={styles.moneyCellContent}>
+          <View style={[styles.arrowIcon, { backgroundColor: '#E8F5E9' }]}>
+             <MaterialCommunityIcons name="arrow-bottom-left" size={16} color="#146C2E" />
+          </View>
+          <Text style={[styles.moneyText, { color: '#146C2E' }]}>
+            ₹{formatIndianNumber(amountReceived)}
+          </Text>
+        </View>
+      );
+    } else if (amountGiven > 0) {
+      hasMoney = true;
+      moneyContent = (
+        <View style={styles.moneyCellContent}>
+          <View style={[styles.arrowIcon, { backgroundColor: '#E3F2FD' }]}>
+             <MaterialCommunityIcons name="arrow-top-right" size={16} color="#005AC1" />
+          </View>
+          <Text style={[styles.moneyText, { color: '#005AC1' }]}>
+            ₹{formatIndianNumber(amountGiven)}
+          </Text>
+        </View>
+      );
     }
 
     // Bullion Column Logic
@@ -785,73 +848,89 @@ export const CustomerListScreen: React.FC = () => {
     
     const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
 
-    sortedMetalEntries.forEach((e, index) => {
-        const isSell = e.type === 'sell';
-        const arrow = isSell ? '↗️' : '↙️';
-        let details = '';
-        
-        if (e.itemType === 'rani' || e.itemType === 'rupu') {
-             const weight = e.weight || 0;
-             const touch = e.touch || 100;
-             const cut = e.cut || 0;
-             const effectiveTouch = e.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-             const pureWeight = (weight * effectiveTouch) / 100;
-             
-             if (e.itemType === 'rani') {
-                 if (isSell) {
-                     // 3 decimal precision
-                     details = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
-                 } else {
-                     // Purchase: 2 decimal precision (X.YZ0)
-                     details = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
-                 }
-             } else {
-                 // Rupu
-                 if (isSell) {
-                    // Use precision from raniRupuBulkSell screen (usually 1 decimal for silver)
-                    details = `${formatPureSilver(pureWeight).toFixed(1)}g`;
-                 } else {
-                    // Purchase: same as purchase entry in entry screen (integer)
-                    details = `${formatPureSilver(pureWeight)}g`;
-                 }
-             }
-             
-             const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
-             details = `${typeName} ${details}`;
-
+    if (sortedMetalEntries.length === 0) {
+        if (!hasMoney && entry.note) {
+            bullionEntries.push(
+                <Text key="note" style={[styles.bullionText, { fontStyle: 'italic', color: '#44474F', textAlign: 'center' }]}>
+                    {entry.note}
+                </Text>
+            );
         } else {
-             // Gold/Silver
-             const isGold = e.itemType.includes('gold');
-             const weight = e.weight || 0;
-             const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
-             
-             const typeName = e.itemType === 'gold999' ? 'Gold 999' :
-                              e.itemType === 'gold995' ? 'Gold 995' :
-                              e.itemType === 'silver' ? 'Silver' : e.itemType;
-             
-             details = `${typeName} ${formattedWeight}g`;
+            bullionEntries.push(<Text key="empty" style={styles.dashText}>-</Text>);
         }
-        
-        bullionEntries.push(
-            <Text key={index} variant="bodySmall" style={{ color: theme.colors.onSurface }}>
-                {arrow} {details}
-            </Text>
-        );
-    });
+    } else {
+        sortedMetalEntries.forEach((e, index) => {
+            const isSell = e.type === 'sell';
+            // Sell (Outgoing Goods) -> arrow-top-right (Blue)
+            // Purchase (Incoming Goods) -> arrow-bottom-left (Green)
+            const arrowIconName = isSell ? 'arrow-top-right' : 'arrow-bottom-left';
+            const arrowBg = isSell ? '#E3F2FD' : '#E8F5E9';
+            const arrowColor = isSell ? '#005AC1' : '#146C2E';
+            
+            let details = '';
+            
+            if (e.itemType === 'rani' || e.itemType === 'rupu') {
+                 const weight = e.weight || 0;
+                 const touch = e.touch || 100;
+                 const cut = e.cut || 0;
+                 const effectiveTouch = e.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+                 const pureWeight = (weight * effectiveTouch) / 100;
+                 
+                 if (e.itemType === 'rani') {
+                     if (isSell) {
+                         // 3 decimal precision
+                         details = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
+                     } else {
+                         // Purchase: 2 decimal precision (X.YZ0)
+                         details = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
+                     }
+                 } else {
+                     // Rupu
+                     if (isSell) {
+                        // Use precision from raniRupuBulkSell screen (usually 1 decimal for silver)
+                        details = `${formatPureSilver(pureWeight).toFixed(1)}g`;
+                     } else {
+                        // Purchase: same as purchase entry in entry screen (integer)
+                        details = `${formatPureSilver(pureWeight)}g`;
+                     }
+                 }
+                 
+                 const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
+                 details = `${typeName} ${details}`;
+
+            } else {
+                 // Gold/Silver
+                 const isGold = e.itemType.includes('gold');
+                 const weight = e.weight || 0;
+                 const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
+                 
+                 const typeName = e.itemType === 'gold999' ? 'Gold 999' :
+                                  e.itemType === 'gold995' ? 'Gold 995' :
+                                  e.itemType === 'silver' ? 'Silver' : e.itemType;
+                 
+                 details = `${typeName} ${formattedWeight}g`;
+            }
+            
+            bullionEntries.push(
+                <View key={index} style={styles.bullionRow}>
+                    <View style={[styles.arrowIcon, { backgroundColor: arrowBg }]}>
+                        <MaterialCommunityIcons name={arrowIconName} size={16} color={arrowColor} />
+                    </View>
+                    <Text style={styles.bullionText}>{details}</Text>
+                </View>
+            );
+        });
+    }
 
     return (
-      <View style={styles.transactionRow}>
-        <View style={[styles.transactionCell, { flex: 0.8 }]}> 
-          <Text variant="bodySmall" style={styles.transactionDate}>
-            {date}
-          </Text>
+      <View style={styles.txnRow}>
+        <View style={styles.colDate}> 
+          <Text style={styles.dateText}>{date}</Text>
         </View>
-        <View style={[styles.transactionCell, { flex: 1 }]}>
-          <Text variant="bodySmall" style={[styles.transactionAmount, { color: moneyColor, textAlign: 'center' }]}>
-            {moneyFlowArrow} {moneyText}
-          </Text>
+        <View style={styles.colMoney}>
+          {moneyContent}
         </View>
-        <View style={[styles.transactionCell, { flex: 1 }]}>
+        <View style={styles.colBullion}>
             {bullionEntries}
         </View>
       </View>
@@ -862,77 +941,108 @@ export const CustomerListScreen: React.FC = () => {
     const isExpanded = expandedCards.has(item.id);
     const ledgerData = ledgerCache.get(item.id)?.data || [];
 
-    return (
-      <View>
-        <List.Item
-          title={item.name}
-          description={formatMetalBalances(item)}
-          titleStyle={styles.customerName}
-          descriptionStyle={styles.customerBalance}
-          left={() => (
-            <Avatar.Text
-              size={36}
-              label={getInitials(item.name)}
-              style={styles.avatar}
-              labelStyle={[styles.avatarLabel, {fontFamily: 'Outfit_500Medium'}]}
-            />
-          )}
-          right={() => (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
-                <IconButton
-                  icon="delete-outline"
-                  size={18}
-                  onPress={() => handleDeleteCustomer(item)}
-                  style={{ marginRight: -5, marginTop: 0, marginBottom: 0 }}
-                  iconColor={theme.colors.error}
-                />
-              )}
-              <IconButton
-                icon="tray-arrow-up"
-                size={18}
-                onPress={() => exportCustomerTransactionHistoryToPDF(item)}
-                style={{ marginRight: -5, marginTop: 0, marginBottom: 0 }}
-              />
-              <IconButton
-                icon={isExpanded ? "chevron-up" : "chevron-down"}
-                size={20}
-                onPress={() => toggleCardExpansion(item.id)}
-                style={styles.expandButton}
-              />
+    // Badge Logic
+    const badges: React.ReactNode[] = [];
+    
+    // Money Balance
+    if (item.balance > 0) {
+        badges.push(
+            <View key="money-bal" style={[styles.badge, styles.badgeGreen]}>
+                <Text style={styles.badgeTextGreen}>Bal: ₹{formatIndianNumber(item.balance)}</Text>
             </View>
-          )}
-          onPress={() => toggleCardExpansion(item.id)}
-          style={styles.customerItem}
-        />
+        );
+    } else if (item.balance < 0) {
+        badges.push(
+            <View key="money-debt" style={[styles.badge, styles.badgeRed]}>
+                <Text style={styles.badgeTextRed}>Debt: ₹{formatIndianNumber(Math.abs(item.balance))}</Text>
+            </View>
+        );
+    }
+
+    // Metal Balances
+    if (item.metalBalances) {
+        Object.entries(item.metalBalances).forEach(([type, balance]) => {
+            if (balance && Math.abs(balance) > 0.001) {
+                const isGold = type.includes('gold') || type === 'rani';
+                const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
+                
+                const typeName = type === 'gold999' ? 'Gold999' :
+                                 type === 'gold995' ? 'Gold995' :
+                                 type === 'rani' ? 'Rani' :
+                                 type === 'silver' ? 'Silver' :
+                                 type === 'rupu' ? 'Rupu' : type;
+                
+                const label = `${typeName} ${formattedBalance}g`;
+                
+                if (balance < 0) {
+                    // Debt
+                    badges.push(
+                        <View key={`metal-${type}`} style={[styles.badge, styles.badgeRed]}>
+                            <Text style={styles.badgeTextRed}>Debt: {label}</Text>
+                        </View>
+                    );
+                } else {
+                    // Balance (Credit)
+                    badges.push(
+                        <View key={`metal-${type}`} style={[styles.badge, styles.badgeMetal]}>
+                            <Text style={styles.badgeTextMetal}>Bal: {label}</Text>
+                        </View>
+                    );
+                }
+            }
+        });
+    }
+
+    return (
+      <View style={styles.customerItemContainer}>
+        <TouchableOpacity 
+            style={styles.customerMain} 
+            onPress={() => toggleCardExpansion(item.id)}
+            activeOpacity={0.7}
+        >
+            <View style={styles.avatarContainer}>
+                <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+            </View>
+            
+            <View style={styles.infoContainer}>
+                <Text style={styles.customerName}>{item.name}</Text>
+                <View style={styles.statusRow}>
+                    {badges}
+                </View>
+            </View>
+            
+            <View style={styles.actionsContainer}>
+                {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
+                    <TouchableOpacity onPress={() => handleDeleteCustomer(item)} style={styles.actionIconBtn}>
+                        <MaterialCommunityIcons name="delete-outline" size={20} color="#BA1A1A" />
+                    </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => exportCustomerTransactionHistoryToPDF(item)} style={styles.actionIconBtn}>
+                    <MaterialCommunityIcons name="share-variant" size={20} color="#44474F" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => toggleCardExpansion(item.id)} style={styles.actionIconBtn}>
+                    <MaterialCommunityIcons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#44474F" />
+                </TouchableOpacity>
+            </View>
+        </TouchableOpacity>
 
         {isExpanded && (
-          <View style={styles.expandedContent}>
-            {/* Transaction Header */}
-            <View style={styles.transactionHeader}>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 0.8 }]}>
-                Date
-              </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'center', flex: 1, paddingRight: 10 }]}>
-                Money
-              </Text>
-              <Text variant="bodyMedium" style={[styles.transactionHeaderText, { textAlign: 'left', flex: 1 }]}>
-                Bullion
-              </Text>
+          <View style={styles.expandedView}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, styles.colDate]}>Date</Text>
+              <Text style={[styles.th, styles.colMoney]}>Money</Text>
+              <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
             </View>
-
-            {/* Transaction Table */}
-            <ScrollView style={styles.transactionTable} nestedScrollEnabled={true}>
-              {ledgerData.length > 0 ? (
-                ledgerData.map((entry, index) => (
-                  <View key={`${entry.id}-${index}`}>
-                    {renderLedgerEntry(entry)}
-                  </View>
-                ))
-              ) : (
+            
+            {ledgerData.length === 0 ? (
                 <Text style={styles.noLedgerData}>No transactions found</Text>
-              )}
-            </ScrollView>
+            ) : (
+                ledgerData.map((entry, index) => (
+                    <React.Fragment key={index}>
+                        {renderLedgerEntry(entry)}
+                    </React.Fragment>
+                ))
+            )}
           </View>
         )}
       </View>
@@ -943,62 +1053,51 @@ export const CustomerListScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-        {/* App Title Bar */}
-        <Surface style={styles.appTitleBar} elevation={1}>
-            <View style={styles.appTitleContent}>
-            <IconButton
-                icon="arrow-left"
-                size={20}
-                onPress={navigateToSettings}
-                style={styles.backButton}
-            />
-            <Text variant="titleLarge" style={styles.appTitle}>
-                Customers
-            </Text>
-            <IconButton
-                icon="tray-arrow-up"
-                size={24}
-                onPress={exportCustomersToPDF}
-                style={styles.exportButton}
-            />
+        {/* Header */}
+        <View style={styles.header}>
+            <View style={styles.headerLeft}>
+                <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
+                    <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+                </TouchableOpacity>
+                <Text style={styles.screenTitle}>Customers</Text>
             </View>
-        </Surface>
+        </View>
 
-      <View style={styles.content}>
-        <Searchbar
-          placeholder="Search by customer name"
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={styles.searchBar}
-        />
+        {/* Toolbar Island (Search + Share) */}
+        <View style={styles.toolbarIsland}>
+            <View style={styles.searchContainer}>
+                <MaterialCommunityIcons name="magnify" size={24} color="#44474F" style={styles.searchIcon} />
+                <TextInput
+                    placeholder="Search customers..."
+                    placeholderTextColor="#44474F"
+                    onChangeText={setSearchQuery}
+                    value={searchQuery}
+                    style={styles.searchInput}
+                />
+            </View>
+            <TouchableOpacity style={styles.exportBtn} onPress={exportCustomersToPDF}>
+                <MaterialCommunityIcons name="share-variant" size={24} color="#1B1B1F" />
+            </TouchableOpacity>
+        </View>
 
-        {error ? (
-          <Text variant="bodyMedium" style={styles.errorText}>
-            {error}
-          </Text>
-        ) : (
-          <FlatList
-            data={displayedCustomers}
-            renderItem={renderCustomerItem}
-            keyExtractor={item => item.id}
-            style={styles.customerList}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-            ItemSeparatorComponent={() => <Divider />}
-            ListEmptyComponent={
-              searchQuery.trim() !== '' ? (
-                <Text variant="bodyMedium" style={styles.noResults}>
-                  No customers found
-                </Text>
-              ) : (
-                <Text variant="bodyMedium" style={styles.noResults}>
-                  No customers yet
-                </Text>
-              )
-            }
-          />
-        )}
-      </View>
+        <View style={styles.listContainer}>
+            {error ? (
+                <Text style={styles.errorText}>{error}</Text>
+            ) : (
+                <FlatList
+                    data={displayedCustomers}
+                    renderItem={renderCustomerItem}
+                    keyExtractor={item => item.id}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                    ListEmptyComponent={
+                        <Text style={styles.noResults}>
+                            {searchQuery.trim() !== '' ? 'No customers found' : 'No customers yet'}
+                        </Text>
+                    }
+                />
+            )}
+        </View>
 
       {/* Delete Confirmation Alert */}
       <CustomAlert
@@ -1039,151 +1138,248 @@ function debounce(func: Function, wait: number) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F2F4F7', // --background
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.xs,
+  // Header
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F2F4F7', // Match background
+    zIndex: 10,
   },
-  appTitleContent: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
-    flex: 1,
+    gap: 16,
   },
   backButton: {
-    marginRight: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E3E7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  exportButton: {
-    margin: 0,
-    marginRight: 10
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F', // --on-surface
+    letterSpacing: -1,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: theme.spacing.md,
+  // Toolbar Island
+  toolbarIsland: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
   },
-  searchBar: {
-    marginHorizontal: theme.spacing.xs,
-    marginTop: theme.spacing.md,
-    marginBottom: theme.spacing.md,
-    elevation: 0,
-    backgroundColor: theme.colors.surfaceVariant,
+  exportBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  customerList: {
-    flex: 1,
-  },
-  customerItem: {
-    backgroundColor: 'transparent',
-    paddingVertical: 8,
-  },
-  customerContent: {
+  // Search
+  searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    height: 50,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  avatar: {
-    backgroundColor: theme.colors.primary,
-    marginLeft: 10,
-    marginRight: 0,
+  searchIcon: {
+    marginRight: 8,
   },
-  avatarLabel: {
-    color: theme.colors.onPrimary,
-    fontSize: 16,
-  },
-  customerInfo: {
+  searchInput: {
     flex: 1,
-  },
-  customerName: {
-    color: theme.colors.onSurface,
-    fontWeight: '500',
-    fontSize: 16,
-    fontFamily: 'Outfit_500Medium',
-    marginTop: -10,
-  },
-  customerBalance: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 14,
-    marginTop: 2,
     fontFamily: 'Outfit_400Regular',
+    fontSize: 16,
+    color: '#1B1B1F', // on-surface
   },
-  historyButton: {
-    margin: 0,
-  },
-  noResults: {
-    textAlign: 'center',
-    color: theme.colors.onSurfaceVariant,
-    marginTop: 32,
-  },
-  errorText: {
-    textAlign: 'center',
-    color: theme.colors.error,
-    marginTop: 32,
-  },
-  expandButton: {
-    marginRight: -10,
-    marginTop: 0,
-    marginBottom: 0,
-  },
-  expandedContent: {
-    backgroundColor: theme.colors.surface,
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    elevation: theme.elevation.level1,
-  },
-  transactionTable: {
-    maxHeight: 200,
-  },
-  transactionHeader: {
-    flexDirection: 'row',
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-    backgroundColor: theme.colors.surfaceVariant,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-  },
-  transactionHeaderText: {
+  // List
+  listContainer: {
     flex: 1,
-    fontFamily: 'Outfit_700Bold',
-    color: theme.colors.onSurfaceVariant,
   },
-  transactionRow: {
-    flexDirection: 'row',
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
+  customerItemContainer: {
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outlineVariant,
+    borderBottomColor: '#E0E2E5', // outline
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  transactionCell: {
-    flex: 1,
+  customerMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#005AC1', // primary
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  transactionDate: {
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 14,
+  avatarText: {
+    color: 'white',
+    fontSize: 18,
+    fontFamily: 'Outfit_600SemiBold',
   },
-  transactionType: {
-    textAlign: 'center',
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 14,
+  infoContainer: {
+    flex: 1,
+    gap: 4,
   },
-  transactionAmount: {
+  customerName: {
+    fontSize: 16,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F', // on-surface
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignItems: 'center',
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  badgeGreen: {
+    backgroundColor: '#E6F4EA',
+  },
+  badgeRed: {
+    backgroundColor: '#FFDAD6',
+  },
+  badgeMetal: {
+    backgroundColor: '#E6F4EA', // Same as badgeGreen
+  },
+  badgeTextGreen: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#146C2E',
+  },
+  badgeTextRed: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#BA1A1A',
+  },
+  badgeTextMetal: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#146C2E', // Same as badgeTextGreen
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  actionIconBtn: {
+    padding: 8,
+  },
+  // Expanded View
+  expandedView: {
+    marginTop: 12,
+    backgroundColor: '#F0F2F5', // surface-container
+    borderRadius: 16,
+    padding: 16,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  th: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#44474F', // on-surface-variant
+    textTransform: 'uppercase',
+  },
+  colDate: { width: '25%' },
+  colMoney: { width: '30%', textAlign: 'center' },
+  colBullion: { flex: 1, textAlign: 'center' },
+  
+  txnRow: {
+    flexDirection: 'row',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
+  },
+  dateText: {
+    color: '#44474F',
+    fontSize: 12,
     fontFamily: 'Outfit_500Medium',
-    color: theme.colors.onSurface,
-    fontSize: 14,
+  },
+  moneyCellContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  moneyText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+  },
+  arrowIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bullionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  bullionText: {
+    color: '#1B1B1F',
+    fontSize: 13,
+    fontFamily: 'Outfit_400Regular',
+  },
+  dashText: {
+    textAlign: 'center',
+    color: '#44474F',
   },
   noLedgerData: {
     textAlign: 'center',
-    color: theme.colors.onSurfaceVariant,
+    color: '#44474F',
     fontSize: 14,
-    marginTop: 0,
-    padding: theme.spacing.sm,
+    padding: 16,
     fontFamily: 'Outfit_400Regular',
-
+  },
+  noResults: {
+    textAlign: 'center',
+    color: '#44474F',
+    marginTop: 32,
+    fontFamily: 'Outfit_500Medium',
+  },
+  errorText: {
+    textAlign: 'center',
+    color: '#BA1A1A',
+    marginTop: 32,
+    fontFamily: 'Outfit_500Medium',
   },
 });

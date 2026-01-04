@@ -4,20 +4,25 @@ import {
   StyleSheet, 
   FlatList, 
   BackHandler,
-} from 'react-native';
-import {
-  Surface,
+  TouchableOpacity,
+  TextInput,
   Text,
-  Searchbar,
-  Card,
-  Divider,
-  ActivityIndicator,
-  IconButton
-} from 'react-native-paper';
+  Platform
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatIndianNumber, customFormatPureSilver } from '../utils/formatting';
+import { 
+  formatTransactionAmount, 
+  formatFullDate, 
+  formatPureGoldPrecise, 
+  formatIndianNumber, 
+  customFormatPureSilver,
+  formatCurrency,
+  formatPureGold,
+  formatPureSilver
+} from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -35,7 +40,7 @@ export const RecycleBinScreen: React.FC = () => {
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
-  const [alertButtons, setAlertButtons] = useState<Array<{ text: string; onPress?: () => void }>>([]);
+  const [alertButtons, setAlertButtons] = useState<Array<{ text: string; style?: 'cancel' | 'default' | 'destructive'; onPress?: () => void }>>([]);
 
   // Handle hardware back button
   useFocusEffect(
@@ -58,9 +63,10 @@ export const RecycleBinScreen: React.FC = () => {
     setAlertTitle('Delete Permanently');
     setAlertMessage('This will permanently delete this transaction. This action cannot be undone.');
     setAlertButtons([
-      { text: 'Cancel' },
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
+        style: 'destructive',
         onPress: async () => {
           try {
             const success = await TransactionService.deleteTransactionPermanently(transaction.id);
@@ -94,7 +100,7 @@ export const RecycleBinScreen: React.FC = () => {
     setAlertTitle('Restore Transaction');
     setAlertMessage('Do you want to restore this transaction?');
     setAlertButtons([
-      { text: 'Cancel' },
+      { text: 'Cancel', style: 'cancel' },
       {
         text: 'Restore',
         onPress: async () => {
@@ -154,7 +160,8 @@ export const RecycleBinScreen: React.FC = () => {
       }
       setError(null);
       
-      // Clean up old deleted transactions (3+ days old)
+      // Clean up old deleted transactions (15+ days old)
+      // Note: The service method has been updated to use 15 days
       const deletedCount = await TransactionService.cleanupOldDeletedTransactions();
       if (deletedCount > 0) {
         console.log(`Automatically deleted ${deletedCount} old transactions from recycle bin`);
@@ -206,22 +213,124 @@ export const RecycleBinScreen: React.FC = () => {
     }
   };
 
+  const getEntryDisplayData = (entry: any, transaction: Transaction) => {
+    const isMetalOnly = entry.metalOnly;
+    const isRaniRupa = ['rani', 'rupu'].includes(entry.itemType);
+    const isGoldSilver = !isRaniRupa && entry.type !== 'money';
+    
+    // Exception Check: Rani Sell + Gold Purchase -> Keep "Same as is"
+    const hasRaniSell = transaction.entries.some(e => e.itemType === 'rani' && e.type === 'sell');
+    const hasGoldPurchase = transaction.entries.some(e => e.itemType.includes('gold') && e.type === 'purchase');
+    const isExceptionCase = hasRaniSell && hasGoldPurchase;
+
+    if (isExceptionCase) {
+        let line1 = '';
+        if (isRaniRupa) {
+             const weight = entry.weight || 0;
+             const touch = entry.touch || 100;
+             const cut = entry.cut || 0;
+             const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+             const pureWeight = (weight * effectiveTouch) / 100;
+             const formattedPure = entry.itemType === 'rani' 
+                ? formatPureGoldPrecise(pureWeight) 
+                : formatPureSilver(pureWeight);
+             const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+             line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+        } else if (isGoldSilver) {
+             const isGold = entry.itemType.includes('gold');
+             line1 = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
+        }
+        
+        let line2 = '';
+        if (!isMetalOnly && entry.price && entry.price > 0) {
+            line2 = formatCurrency(entry.price);
+        }
+        return { line1, line2 };
+    }
+
+    // New Logic
+    let line1 = '';
+    let line2 = '';
+
+    if (isRaniRupa) {
+         const weight = entry.weight || 0;
+         const touch = entry.touch || 100;
+         const cut = entry.cut || 0;
+         const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+         const pureWeight = (weight * effectiveTouch) / 100;
+         
+         // Pure Weight Formatting Logic
+         let formattedPure = 0;
+         if (entry.itemType === 'rani') {
+             if (entry.type === 'sell') formattedPure = formatPureGoldPrecise(pureWeight);
+             else formattedPure = formatPureGold(pureWeight); // Purchase -> Normal
+         } else {
+             formattedPure = formatPureSilver(pureWeight);
+         }
+         
+         const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+         line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+         
+         if (!isMetalOnly && entry.price && entry.price > 0) {
+             line2 = `${formatCurrency(entry.price)} : ${formatCurrency(entry.subtotal || 0)}`;
+         }
+    } else if (isGoldSilver) {
+         const isGold = entry.itemType.includes('gold');
+         const weightStr = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
+         
+         if (!isMetalOnly && entry.price && entry.price > 0) {
+             line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
+             
+             // Subtotal Logic
+             const hasRaniRupaEntry = transaction.entries.some(e => ['rani', 'rupu'].includes(e.itemType));
+             if (!hasRaniRupaEntry) {
+                 // Normal Gold/Silver only
+                 line2 = `(${formatCurrency(entry.subtotal || 0)})`;
+             } else {
+                 // Mixed case -> No subtotal
+                 line2 = '';
+             }
+         } else {
+             line1 = weightStr;
+         }
+    }
+
+    return { line1, line2 };
+  };
+
   const renderTransactionCard = ({ item: transaction }: { item: Transaction }) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+    
+    // Preprocess entries
+    const processedEntries = transaction.entries.map((entry, index) => {
+      let displayName = getItemDisplayName(entry);
+      if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+        const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+          e.itemType === entry.itemType && e.type === entry.type
+        );
+        const totalCount = transaction.entries.filter(e => 
+          e.itemType === entry.itemType && e.type === entry.type
+        ).length;
+        if (totalCount > 1) {
+          displayName += ` ${sameTypeEntries.length}`;
+        }
+      }
+      return { ...entry, displayName };
+    });
     
     let transactionBalanceLabel = '';
     let transactionBalanceColor = theme.colors.onSurfaceVariant;
 
-    // Calculate deleted on info if needed
+    // Calculate deleted on info
     let deletedOnInfo = null;
     if (transaction.deleted_on) {
       const deletedDate = new Date(transaction.deleted_on);
       const autoDeleteDate = new Date(deletedDate);
-      autoDeleteDate.setDate(autoDeleteDate.getDate() + 3);
+      autoDeleteDate.setDate(autoDeleteDate.getDate() + 15); // Changed to 15 days
       const daysLeft = Math.ceil((autoDeleteDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
       deletedOnInfo = {
         text: daysLeft > 0 ? `Auto-delete in ${daysLeft} day${daysLeft > 1 ? 's' : ''}` : 'Pending deletion',
-        isWarning: daysLeft <= 1
+        isWarning: daysLeft <= 3
       };
     }
 
@@ -254,16 +363,10 @@ export const RecycleBinScreen: React.FC = () => {
       const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
       
       if (isMoneyOnly) {
-        // For money-only transactions (NEW SIGN CONVENTION):
-        // amountPaid > 0 = merchant received = customer has balance/credit
-        // amountPaid < 0 = merchant gave = customer has debt
         const isBalance = transaction.amountPaid > 0;
         transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
         transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
       } else {
-        // For regular transactions with entries
-        // Formula: amountPaid - total + discount
-        // Positive = balance (merchant owes), Negative = debt (customer owes)
         const transactionRemaining = transaction.amountPaid - transaction.total + transaction.discountExtraAmount;
         
         if (transactionRemaining === 0) {
@@ -277,234 +380,184 @@ export const RecycleBinScreen: React.FC = () => {
     }
 
     return (
-      <Card style={styles.transactionCard}>
-        <Card.Content style={styles.cardContent}>
-          {/* Action Buttons and Delete Info */}
-          <View style={styles.editButtonRow}>
+      <View style={styles.historyCard}>
+        {/* Action Buttons and Delete Info */}
+        <View style={styles.cardTopActions}>
             {deletedOnInfo && (
-              <Text variant="bodySmall" style={[styles.deletedOnText, deletedOnInfo.isWarning ? styles.warningText : null]}>
-                {deletedOnInfo.text}
+              <View style={[styles.warningPill, deletedOnInfo.isWarning ? styles.warningPillUrgent : styles.warningPillNormal]}>
+                <MaterialCommunityIcons name="clock-outline" size={16} color={deletedOnInfo.isWarning ? "#D32F2F" : "#F57F17"} />
+                <Text style={[styles.warningPillText, deletedOnInfo.isWarning ? styles.warningPillTextUrgent : styles.warningPillTextNormal]}>
+                  {deletedOnInfo.text}
+                </Text>
+              </View>
+            )}
+            <View style={styles.actionPill}>
+              <TouchableOpacity 
+                style={[styles.iconBtn, styles.btnRestore]}
+                onPress={() => handleRestoreTransaction(transaction)}
+              >
+                <MaterialCommunityIcons name="restore" size={20} color={theme.colors.onPrimaryContainer} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.iconBtn, styles.btnDelete]}
+                onPress={() => handleDeletePermanently(transaction)}
+              >
+                <MaterialCommunityIcons name="delete-forever" size={20} color={theme.colors.error} />
+              </TouchableOpacity>
+            </View>
+        </View>
+
+        {/* Card Header */}
+        <View style={styles.cardHeader}>
+          <View style={styles.infoBlock}>
+            <Text style={styles.customerName}>
+              {transaction.customerName}
+            </Text>
+            <Text style={styles.transactionDate}>
+              {formatFullDate(transaction.date)}
+            </Text>
+          </View>
+          <View style={styles.amountBlock}>
+            {!isMetalOnly && (
+              <Text 
+                style={[styles.mainAmount, { color: getAmountColor(transaction) }]}
+              >
+                {formatTransactionAmount(transaction)}
               </Text>
             )}
-            <View style={styles.iconContainer}>
-              <IconButton
-                icon="restore"
-                size={20}
-                iconColor={theme.colors.onPrimaryContainer}
-                style={{ backgroundColor: theme.colors.primaryContainer, margin: 0, marginRight: 2.5 }}
-                onPress={() => handleRestoreTransaction(transaction)}
-              />
-              <IconButton
-                icon="delete-forever"
-                size={20}
-                iconColor={theme.colors.error}
-                style={{ backgroundColor: theme.colors.errorContainer, margin: 0 }}
-                onPress={() => handleDeletePermanently(transaction)}
-              />
-            </View>
           </View>
+        </View>
 
-          {/* Header Row */}
-          <View style={styles.cardHeader}>
-            <View style={styles.customerInfo}>
-              <Text variant="titleMedium" style={styles.customerName}>
-                {transaction.customerName}
-              </Text>
-              <Text variant="bodySmall" style={styles.transactionDate}>
-                {formatFullDate(transaction.date)}
-              </Text>
-            </View>
-            <View style={styles.rightSection}>
-              {!isMetalOnly && (
-                <Text 
-                  variant="titleMedium" 
-                  style={[styles.amount, { color: getAmountColor(transaction) }]}
-                >
-                  {formatTransactionAmount(transaction)}
-                </Text>
-              )}
-            </View>
-          </View>
+        {/* Receipt / Details Section */}
+        <View style={styles.receiptSection}>
+            {processedEntries.map((entry, index) => (
+                <View key={index} style={styles.entryWrapper}>
+                  {(() => {
+                    const isSell = entry.type === 'sell';
+                    const isPurchase = entry.type === 'purchase';
+                    const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
+                    const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
+                    const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;
+                    
+                    const { line1, line2 } = getEntryDisplayData(entry, transaction);
 
-          {/* Transaction Details */}
-          <View style={styles.expandedContent}>
-            {transaction.entries.length > 0 && <Divider style={styles.expandedDivider} />}
-            {transaction.entries.length > 0 ? transaction.entries.map((entry, index) => (
-              <React.Fragment key={index}>
-                {(entry.itemType === 'rani' || entry.itemType === 'rupu') && entry.type === 'purchase' ? (
-                  <>
-                    <View style={styles.entryRow}>
-                      <Text variant="bodySmall" style={styles.entryType}>
-                        ↙️ {getItemDisplayName(entry)}{(() => {
-                          const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
-                            e.itemType === entry.itemType && e.type === entry.type
-                          );
-                          const totalCount = transaction.entries.filter(e => 
-                            e.itemType === entry.itemType && e.type === entry.type
-                          ).length;
-                          if (totalCount > 1) {
-                            return ` ${sameTypeEntries.length}`;
-                          }
-                          return '';
-                        })()}
-                      </Text>
-                      <Text variant="bodySmall" style={styles.entryDetails}>
-                        {(() => {
-                          const weight = entry.weight || 0;
-                          const touch = entry.touch || 100;
-                          const cut = entry.cut || 0;
-                          const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                          const pureWeight = (weight * effectiveTouch) / 100;
-                          const formattedPureWeight = entry.itemType === 'rani' 
-                            ? formatPureGoldPrecise(pureWeight)
-                            : customFormatPureSilver(weight, effectiveTouch);
-                          
-                          return `${weight.toFixed(entry.itemType === 'rani' ? 3 : 1)}g, ${touch}%${entry.itemType === 'rani' && cut > 0 ? ` (-${cut}%)` : ''}, ${formattedPureWeight.toFixed(entry.itemType === 'rani' ? 3 : 1)}g`;
-                        })()}
-                      </Text>
-                    </View>
-                    {entry.itemType === 'rani' && (entry as any).actualGoldGiven && (
-                      <View style={styles.subEntryRow}>
-                        <Text variant="bodySmall" style={styles.subEntryLabel}>
-                          └ Return Gold
-                        </Text>
-                        <Text variant="bodySmall" style={styles.subEntryValue}>
-                          {(entry as any).actualGoldGiven.toFixed(3)}g
-                        </Text>
-                      </View>
-                    )}
-                    {entry.itemType === 'rupu' && (entry as any).rupuReturnType === 'silver' && (entry as any).silverWeight && (
-                      <View style={styles.subEntryRow}>
-                        <Text variant="bodySmall" style={styles.subEntryLabel}>
-                          └ Return Silver
-                        </Text>
-                        <Text variant="bodySmall" style={styles.subEntryValue}>
-                          {Math.floor((entry as any).silverWeight).toFixed(1)}g
-                        </Text>
-                      </View>
-                    )}
-                  </>
-                ) : entry.type === 'money' ? (
-                  <View style={styles.entryRow}>
-                    <Text variant="bodySmall" style={styles.entryType}>
-                      {entry.moneyType === 'give' ? '💸 Money Given' : '💰 Money Received'}
-                    </Text>
-                    <Text variant="bodySmall" style={styles.entryDetails}>
-                      ₹{formatIndianNumber(entry.amount || 0)}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.entryRow}>
-                    <Text variant="bodySmall" style={styles.entryType}>
-                      {entry.type === 'sell' ? '↗️' : '↙️'} {getItemDisplayName(entry)}{(() => {
-                        const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
-                          e.itemType === entry.itemType && e.type === entry.type
-                        );
-                        const totalCount = transaction.entries.filter(e => 
-                          e.itemType === entry.itemType && e.type === entry.type
-                        ).length;
-                        if (totalCount > 1) {
-                          return ` ${sameTypeEntries.length}`;
-                        }
-                        return '';
-                      })()}
-                    </Text>
-                    <Text variant="bodySmall" style={styles.entryDetails}>
-                      {entry.weight?.toFixed(entry.itemType.includes('gold') || entry.itemType === 'rani' ? 3 : 1) || '0'}g
-                      {!entry.metalOnly && ` • ₹${formatIndianNumber(entry.subtotal)}`}
-                    </Text>
-                  </View>
-                )}
-              </React.Fragment>
-            )) : null}
+                    return (
+                      <>
+                        {/* Item Row */}
+                        <View style={styles.receiptRow}>
+                          <View style={styles.itemNameRow}>
+                            <View style={[styles.iconBox, iconStyle]}>
+                              <MaterialCommunityIcons name={iconName} size={14} color={iconColor} />
+                            </View>
+                            <Text style={styles.itemNameText}>
+                              {entry.displayName}
+                            </Text>
+                          </View>
+                    
+                          {/* Line 1: Weight / Details */}
+                          <Text style={styles.itemVal}>
+                              {line1}
+                          </Text>
+                        </View>
+
+                        {/* Line 2: Price / Subtotal (if applicable) */}
+                        {line2 !== '' && (
+                           <View style={[styles.receiptRow, { marginTop: -4 }]}>
+                              <View /> 
+                              <Text style={[styles.itemVal, { fontSize: 13, opacity: 0.8 }]}>
+                                 {line2}
+                              </Text>
+                           </View>
+                        )}
+                      </>
+                    );
+                  })()}
+                </View>
+            ))}
+
+            {/* Dividers & Totals */}
+            {!isMetalOnly && processedEntries.length > 0 && <View style={styles.divider} />}
             
+            {/* Total Row or Money-Only Label */}
             {!isMetalOnly && (
-              <>
-                <Divider style={styles.totalDivider} />
+              processedEntries.length === 0 ? (
                 <View style={styles.totalRow}>
-                  <Text variant="bodySmall" style={styles.totalLabel}>
-                    Total
-                  </Text>
-                  <Text variant="bodySmall" style={[styles.totalValue, { color: getAmountColor(transaction) }]}>
+                  <Text style={styles.totalLabel}>Money-Only</Text>
+                </View>
+              ) : (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={[styles.totalAmount ]}>
                     ₹{formatIndianNumber(Math.abs(transaction.total))}
                   </Text>
                 </View>
-              </>
+              )
             )}
-            
-            <View style={styles.paymentRow}>
-              {!isMetalOnly && transaction.amountPaid !== 0 && (
-                <Text variant="bodySmall" style={styles.paymentLabel}>
-                  {transaction.entries.length === 0 ? (transaction.amountPaid > 0 ? 'Received' : 'Given') 
-                  : (transaction.total > 0 ? 'Amount Received' : 'Amount Given')}: ₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
-                </Text>
-              )}
-              {(!(!isMetalOnly && transaction.amountPaid !== 0)) && <View style={{ flex: 1 }} />}
-              <Text variant="bodySmall" style={[styles.transactionBalance, { color: transactionBalanceColor }]}>
-                {transactionBalanceLabel}
-              </Text>
-            </View>
+
+            {/* Divider */}
+            {!isMetalOnly && <View style={styles.divider} />}
+
+            {/* Payment/Balance Row */}
+            {!isMetalOnly && (
+               <View style={[styles.receiptRow, styles.footerRow]}>
+                 <Text style={styles.footerLabel}>
+                   {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
+                 </Text>
+                 <Text style={[styles.footerAmount, { color: transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary }]}>
+                   {transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
+                 </Text>
+                 <View style={{ flex: 1 }} />
+                 <View>
+                   <Text style={[styles.balanceLabel, { color: transactionBalanceColor }]}>
+                     {transactionBalanceLabel}
+                   </Text>
+                 </View>
+               </View>
+            )}
+        </View>
+
+        {/* Note Section */}
+        {transaction.note && transaction.note.trim() !== '' && (
+          <View style={styles.noteRow}>
+            <Text style={styles.noteLabel}>NOTE</Text>
+            <Text style={styles.noteText}>{transaction.note}</Text>
           </View>
-        </Card.Content>
-      </Card>
+        )}
+      </View>
     );
   };
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Surface style={styles.appTitleBar} elevation={1}>
-          <View style={styles.appTitleContent}>
-            <IconButton
-              icon="arrow-left"
-              size={20}
-              onPress={navigateToSettings}
-              style={styles.backButton}
-            />
-            <Text variant="titleLarge" style={styles.appTitle}>
-              Recycle Bin
-            </Text>
-            <View style={{ width: 40 }} />
-          </View>
-        </Surface>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text variant="bodyLarge" style={styles.loadingText}>
-            Loading deleted transactions...
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
-      <Surface style={styles.appTitleBar} elevation={1}>
-        <View style={styles.appTitleContent}>
-          <IconButton
-            icon="arrow-left"
-            size={20}
-            onPress={navigateToSettings}
-            style={styles.backButton}
-          />
-          <Text variant="titleLarge" style={styles.appTitle}>
-            Recycle Bin
-          </Text>
-          <View style={{ width: 40 }} />
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Recycle Bin</Text>
         </View>
-      </Surface>
+      </View>
 
       <View style={styles.content}>
-        <Searchbar
-          placeholder="Search by customer name"
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={styles.searchBar}
-        />
+        {/* Search Box */}
+        <View style={styles.toolbarIsland}>
+          <View style={styles.searchContainer}>
+            <MaterialCommunityIcons name="magnify" size={24} color={theme.colors.onSurfaceVariant} style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search deleted transactions..."
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
+        </View>
 
         {error ? (
           <View style={styles.errorContainer}>
-            <Text variant="bodyMedium" style={styles.errorText}>
+            <Text style={styles.errorText}>
               {error}
             </Text>
           </View>
@@ -516,8 +569,8 @@ export const RecycleBinScreen: React.FC = () => {
             contentContainerStyle={styles.listContainer}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Text variant="bodyLarge" style={styles.emptyText}>
-                  No deleted transactions
+                <Text style={styles.emptyText}>
+                  {isLoading ? 'Loading...' : 'No deleted transactions'}
                 </Text>
               </View>
             }
@@ -539,164 +592,245 @@ export const RecycleBinScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F2F4F7',
   },
-  appTitleBar: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: theme.spacing.xs,
+  // Header
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F2F4F7',
+    zIndex: 10,
   },
-  appTitleContent: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.sm,
-  },
-  appTitle: {
-    color: theme.colors.primary,
-    fontFamily: 'Outfit_700Bold',
+    gap: 16,
   },
   backButton: {
-    marginRight: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F2F5', // --surface-container
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 28,
+    color: '#1B1B1F',
+    letterSpacing: -1,
   },
   content: {
     flex: 1,
-    paddingHorizontal: theme.spacing.sm,
   },
-  searchBar: {
-    marginVertical: theme.spacing.md,
-    marginHorizontal: theme.spacing.md,
-    backgroundColor: theme.colors.surfaceVariant,
+  // Search Box
+  toolbarIsland: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    height: 50,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 16,
+    color: theme.colors.onSurface,
   },
   listContainer: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xl,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
-  transactionCard: {
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.md,
-    borderRadius: 12,
-    backgroundColor: '#FAFAFA',
-  },
-  cardContent: {
-    padding: theme.spacing.md,
+  // Transaction Card
+  historyCard: {
+    backgroundColor: theme.colors.surfaceContainerHigh || '#F0F2F5', 
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 3, 
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: theme.spacing.sm,
+    marginBottom: 12,
   },
-  customerInfo: {
+  infoBlock: {
     flex: 1,
   },
   customerName: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 18,
     color: theme.colors.onSurface,
-    fontFamily: 'Outfit_500Medium',
   },
   transactionDate: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 12,
     color: theme.colors.onSurfaceVariant,
-    marginTop: 2,
   },
-  rightSection: {
-    flex: 1,
+  amountBlock: {
     alignItems: 'flex-end',
-    justifyContent: 'flex-start',
-    gap: theme.spacing.xs,
   },
-  amount: {
+  mainAmount: {
     fontFamily: 'Outfit_700Bold',
-    textAlign: 'right',
+    fontSize: 18,
+    marginBottom: 4,
   },
-  expandedContent: {
-    marginTop: theme.spacing.sm,
-    gap: theme.spacing.xs,
+  balanceLabel: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 12,
+    textTransform: 'uppercase',
   },
-  expandedDivider: {
-    marginBottom: theme.spacing.sm,
+  receiptSection: {
+    backgroundColor: theme.colors.surface, // Lighter inner card for depth
+    borderRadius: 16,
+    padding: 12,
   },
-  entryRow: {
+  entryWrapper: {
+    marginBottom: 6,
+  },
+  receiptRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: theme.spacing.xs / 2,
   },
-  entryType: {
-    flex: 1,
+  itemName: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 14,
     color: theme.colors.onSurface,
   },
-  entryDetails: {
-    textAlign: 'right',
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  iconSell: {
+    backgroundColor: '#E8F5E9', // Light Green
+  },
+  iconPurchase: {
+    backgroundColor: '#E3F2FD', // Light Blue
+  },
+  iconMoney: {
+    backgroundColor: '#FFF8E1', // Light Orange
+  },
+  itemNameText: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 14,
+    color: theme.colors.onSurface,
+  },
+  itemVal: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 14,
     color: theme.colors.onSurfaceVariant,
   },
-  subEntryRow: {
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    marginVertical: 8,
+  },
+  footerLabel: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 13,
+    color: theme.colors.onSurface,
+  },
+  footerRow: {
+    justifyContent: 'flex-start',
+  },
+  footerAmount: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 14,
+    color: theme.colors.onSurface,
+    marginLeft: 4,
+  },
+  // Actions
+  cardTopActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 2,
-    paddingLeft: theme.spacing.md,
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  subEntryLabel: {
-    flex: 1,
-    color: theme.colors.onSurfaceVariant,
-    fontSize: 11,
+  actionPill: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  subEntryValue: {
-    flex: 1,
-    textAlign: 'right',
-    color: theme.colors.onSurface,
-    fontSize: 11,
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  totalDivider: {
-    marginVertical: theme.spacing.sm,
+  btnDelete: {
+    backgroundColor: theme.colors.errorContainer,
+  },
+  btnRestore: {
+    backgroundColor: theme.colors.primaryContainer,
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: theme.spacing.xs,
   },
   totalLabel: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 13,
     color: theme.colors.onSurface,
-    fontFamily: 'Outfit_500Medium',
   },
-  totalValue: {
-    fontFamily: 'Outfit_700Bold',
-    fontSize: 12,
+  totalAmount: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 14,
+    color: theme.colors.onSurface,
   },
-  paymentRow: {
+  noteRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: theme.spacing.xs,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: theme.colors.outline + '20',
-    marginTop: theme.spacing.xs,
+    borderTopColor: 'rgba(0,0,0,0.05)',
   },
-  paymentLabel: {
+  noteLabel: {
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 13,
     color: theme.colors.onSurfaceVariant,
-    fontFamily: 'Outfit_500Medium',
   },
-  transactionBalance: {
-    fontFamily: 'Outfit_500Medium',
-    fontSize: 11,
-  },
-  editButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: theme.spacing.xs,
-    marginTop: theme.spacing.xs,
-    marginBottom: theme.spacing.xs,
-  },
-  iconContainer: {
-    flexDirection: 'row',
-    gap: theme.spacing.xs,
-  },
-  loadingContainer: {
+  noteText: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 13,
+    color: theme.colors.onSurface,
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: theme.spacing.md,
-    color: theme.colors.onBackground,
+    textAlign: 'right',
   },
   errorContainer: {
     flex: 1,
@@ -710,18 +844,48 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: theme.spacing.xl * 2,
+    paddingVertical: 60,
   },
   emptyText: {
     color: theme.colors.onSurfaceVariant,
+    fontFamily: 'Outfit_500Medium',
+    fontSize: 16,
+  },
+  deletedInfoContainer: {
+    flex: 1,
   },
   deletedOnText: {
     color: theme.colors.onSurfaceVariant,
     fontSize: 11,
-    marginTop: 2,
+    fontFamily: 'Outfit_400Regular',
   },
   warningText: {
     color: theme.colors.error,
     fontFamily: 'Outfit_500Medium',
+  },
+  warningPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    gap: 6,
+    marginBottom: 12,
+  },
+  warningPillNormal: {
+    backgroundColor: '#FFF8E1', // Light orange background
+  },
+  warningPillUrgent: {
+    backgroundColor: '#FFEBEE', // Light red background (matching red)
+  },
+  warningPillText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_700Bold',
+  },
+  warningPillTextNormal: {
+    color: '#F57F17', // Dark orange
+  },
+  warningPillTextUrgent: {
+    color: '#D32F2F', // Dark red (matching red)
   },
 });

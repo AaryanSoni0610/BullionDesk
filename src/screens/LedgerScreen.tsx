@@ -166,105 +166,6 @@ export const LedgerScreen: React.FC = () => {
     setShowOnlyRaniRupu(false);
   }, [selectedInventory]);
 
-  // Log opening balances and ledger entries from 2025-12-27 to current date
-  const logOpeningBalancesAndLedgerEntries = async () => {
-    try {
-      const db = DatabaseService.getDatabase();
-      const startDate = '2025-12-27';
-      const currentDate = new Date().toISOString().split('T')[0];
-
-      console.log(`\n📊 OPENING BALANCES AND LEDGER ENTRIES FROM ${startDate} TO ${currentDate}`);
-      console.log('='.repeat(80));
-
-      // 1. Log Opening Balances
-      console.log('\n📅 OPENING BALANCES:');
-      console.log('-'.repeat(50));
-
-      const openingBalances = await db.getAllAsync<{
-        date: string;
-        gold999: number;
-        gold995: number;
-        silver: number;
-        rani: number;
-        rupu: number;
-        money: number;
-      }>('SELECT * FROM daily_opening_balances WHERE date >= ? AND date <= ? ORDER BY date ASC', [startDate, currentDate]);
-
-      if (openingBalances.length > 0) {
-        openingBalances.forEach(balance => {
-          console.log(`📅 ${balance.date}:`, {
-            gold999: balance.gold999.toFixed(2),
-            gold995: balance.gold995.toFixed(2),
-            silver: balance.silver.toFixed(2),
-            rani: balance.rani.toFixed(2),
-            rupu: balance.rupu.toFixed(2),
-            money: balance.money.toFixed(2)
-          });
-        });
-        console.log(`📊 Total opening balance records: ${openingBalances.length}`);
-      } else {
-        console.log('📊 No opening balances found in the date range');
-      }
-
-      // 2. Log Ledger Entries
-      console.log('\n📋 LEDGER ENTRIES:');
-      console.log('-'.repeat(50));
-
-      const ledgerEntries = await db.getAllAsync<{
-        id: string;
-        transactionId: string;
-        customerId: string;
-        customerName: string;
-        date: string;
-        amountReceived: number;
-        amountGiven: number;
-        deleted_on: string | null;
-        createdAt: string;
-      }>(`
-        SELECT * FROM ledger_entries
-        WHERE date >= ? AND date <= ?
-        ORDER BY date ASC, createdAt ASC
-      `, [startDate, currentDate]);
-
-      if (ledgerEntries.length > 0) {
-        console.log(`📊 Total ledger entries: ${ledgerEntries.length}`);
-
-        // Group by date for better readability
-        const entriesByDate = new Map<string, typeof ledgerEntries>();
-
-        for (const entry of ledgerEntries) {
-          if (!entriesByDate.has(entry.date)) {
-            entriesByDate.set(entry.date, []);
-          }
-          entriesByDate.get(entry.date)!.push(entry);
-        }
-
-        for (const [date, entries] of entriesByDate) {
-          console.log(`\n📅 ${date} (${entries.length} entries):`);
-
-          for (const entry of entries) {
-            const status = entry.deleted_on ? '❌ DELETED' : '✅ ACTIVE';
-            console.log(`   ${status} ${entry.customerName} (${entry.customerId})`);
-            console.log(`      Transaction: ${entry.transactionId}`);
-            console.log(`      Received: ₹${entry.amountReceived || 0}, Given: ₹${entry.amountGiven || 0}`);
-            console.log(`      Created: ${entry.createdAt}`);
-            if (entry.deleted_on) {
-              console.log(`      Deleted: ${entry.deleted_on}`);
-            }
-          }
-        }
-      } else {
-        console.log(`📋 No ledger entries found from ${startDate} to ${currentDate}`);
-      }
-
-      console.log('\n' + '='.repeat(80));
-      console.log('📊 LOGGING COMPLETE');
-
-    } catch (error) {
-      console.error('Error logging opening balances and ledger entries:', error);
-    }
-  };
-
   // Handle hardware back button - navigate to home screen
   useFocusEffect(
     useCallback(() => {
@@ -275,9 +176,6 @@ export const LedgerScreen: React.FC = () => {
       };
 
       BackHandler.addEventListener('hardwareBackPress', onBackPress);
-
-      // Log opening balances and ledger entries when screen comes into focus
-      logOpeningBalancesAndLedgerEntries();
 
       return () => {
         BackHandler.removeEventListener('hardwareBackPress', onBackPress);

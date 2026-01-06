@@ -46,9 +46,7 @@ export const RateCutScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    if (selectedCustomer) {
-      loadHistory();
-    }
+    loadHistory();
   }, [selectedCustomer]);
 
   // Determine available metals based on customer balance
@@ -83,9 +81,20 @@ export const RateCutScreen: React.FC = () => {
   }, [availableMetals, metalType]);
 
   const loadHistory = async () => {
-    if (!selectedCustomer) return;
-    const data = await RateCutService.getRateCutHistory(selectedCustomer.id);
-    setHistory(data);
+    try {
+      let data: RateCutRecord[];
+      if (selectedCustomer) {
+        // Load history for specific customer
+        data = await RateCutService.getRateCutHistory(selectedCustomer.id);
+      } else {
+        // Load all history
+        data = await RateCutService.getAllRateCutHistory();
+      }
+      setHistory(data);
+    } catch (error) {
+      console.error('Error loading rate cut history:', error);
+      setHistory([]);
+    }
   };
 
   const handleApply = async () => {
@@ -179,15 +188,25 @@ export const RateCutScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.formContainer}>
           {/* Customer Select */}
-          <TouchableOpacity 
-            style={styles.customerSelect}
-            onPress={() => setShowCustomerModal(true)}
-          >
-            <Text style={styles.customerSelectText}>
-              {selectedCustomer ? selectedCustomer.name : 'Select Customer'}
-            </Text>
-            <MaterialCommunityIcons name="menu-down" size={24} color="#44474F" />
-          </TouchableOpacity>
+          <View style={styles.customerSelectContainer}>
+            <TouchableOpacity 
+              style={styles.customerSelect}
+              onPress={() => setShowCustomerModal(true)}
+            >
+              <Text style={styles.customerSelectText}>
+                {selectedCustomer ? selectedCustomer.name : 'Select Customer (All History)'}
+              </Text>
+              <MaterialCommunityIcons name="menu-down" size={24} color="#44474F" />
+            </TouchableOpacity>
+            {selectedCustomer && (
+              <TouchableOpacity 
+                style={styles.clearCustomerBtn}
+                onPress={() => setSelectedCustomer(null)}
+              >
+                <MaterialCommunityIcons name="close" size={20} color="#44474F" />
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Metal Segment */}
           {selectedCustomer && availableMetals.length > 0 ? (
@@ -277,7 +296,9 @@ export const RateCutScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionTitle}>Recent History</Text>
+        <Text style={styles.sectionTitle}>
+          {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
+        </Text>
         
         <View style={styles.historyList}>
           {history.map((item) => {
@@ -319,7 +340,9 @@ export const RateCutScreen: React.FC = () => {
             );
           })}
           {history.length === 0 && (
-            <Text style={styles.emptyHistoryText}>No rate cut history found</Text>
+            <Text style={styles.emptyHistoryText}>
+              {selectedCustomer ? `No rate cut history found for ${selectedCustomer.name}` : 'No rate cut history found'}
+            </Text>
           )}
         </View>
       </ScrollView>
@@ -333,7 +356,6 @@ export const RateCutScreen: React.FC = () => {
         }}
         onCreateCustomer={() => {}}
         allowCreateCustomer={false}
-        filterFn={hasMetalBalance}
       />
 
       {/* Error Alert */}
@@ -428,6 +450,11 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   // Customer Select
+  customerSelectContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   customerSelect: {
     backgroundColor: '#F0F2F5', // --surface-container
     paddingVertical: 14,
@@ -436,11 +463,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flex: 1,
   },
   customerSelectText: {
     fontSize: 16,
     fontFamily: 'Outfit_500Medium',
     color: '#1B1B1F',
+  },
+  clearCustomerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F2F5', // --surface-container
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Metal Segment
   metalSegment: {

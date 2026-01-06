@@ -105,12 +105,9 @@ export const HistoryScreen: React.FC = () => {
     const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
     if (isMetalOnly) return false;
 
-    if (!transaction.lastUpdatedAt) return false;
-    const timeSinceUpdate = Date.now() - new Date(transaction.lastUpdatedAt).getTime();
-    const isOld = timeSinceUpdate > (24 * 60 * 60 * 1000);
     const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
     const isSettled = remainingBalance <= 0;
-    return isSettled && isOld;
+    return isSettled;
   };
 
   const handleDeleteTransaction = async (transaction: Transaction) => {
@@ -189,7 +186,8 @@ export const HistoryScreen: React.FC = () => {
       const start = new Date(date); start.setHours(0,0,0,0);
       const end = new Date(date); end.setHours(23,59,59,999);
       
-      const txs = await TransactionService.getTransactionsByDateRange(start.toISOString(), end.toISOString());
+      // Use getTransactionsWithActivityByDateRange to include transactions with payments on this date
+      const txs = await TransactionService.getTransactionsWithActivityByDateRange(start.toISOString(), end.toISOString());
       const validTxs = txs.filter(t => t.customerName.toLowerCase() !== 'adjust');
       
       if (validTxs.length === 0) {
@@ -225,6 +223,16 @@ export const HistoryScreen: React.FC = () => {
           const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
           displayName = `${displayName} ${itemIndex}`;
         }
+      } else if (entry.type === 'money' && entry.createdAt) {
+        // Format date as DD/MM HH:MM am/pm
+        const date = new Date(entry.createdAt);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const hours = date.getHours();
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'pm' : 'am';
+        const hour12 = hours % 12 || 12;
+        displayName = `Money (${day}/${month} ${hour12}:${minutes} ${ampm})`;
       }
       return { ...entry, displayName };
     });
@@ -288,8 +296,12 @@ export const HistoryScreen: React.FC = () => {
         
         <div class="receipt-section">
           ${processedEntries.map(entry => {
-             const isSell = entry.type === 'sell';
-             const isPurchase = entry.type === 'purchase';
+             // Logic for money entries: 'give' -> like sell (top-right), 'receive' -> like purchase (bottom-left)
+             const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
+             const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
+
+             const isSell = entry.type === 'sell' || isMoneyGive;
+             const isPurchase = entry.type === 'purchase' || isMoneyReceive;
              const iconChar = isSell ? '↗' : isPurchase ? '↙' : '₹';
              const iconBg = isSell ? '#E8F5E9' : isPurchase ? '#E3F2FD' : '#FFF8E1';
              const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
@@ -390,7 +402,7 @@ export const HistoryScreen: React.FC = () => {
               .receipt-section { background-color: #FFFFFF; border-radius: 8px; padding: 8px; }
               .entry-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
               .item-name-row { display: flex; align-items: center; }
-              .icon-box { width: 20px; height: 20px; border-radius: 4px; margin-right: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+              .icon-box { width: 10px; height: 10px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; margin-right: 6px; }
               .item-name { font-size: 12px; font-weight: 500; color: #1A1C1E; }
               .item-val { font-size: 12px; color: #444746; font-weight: 400; }
               .divider { height: 1px; background-color: rgba(0,0,0,0.05); margin: 6px 0; }
@@ -649,6 +661,9 @@ export const HistoryScreen: React.FC = () => {
          } else {
              line1 = weightStr;
          }
+    } else if (entry.type === 'money') {
+        // Money Entry (Payment)
+        line1 = `₹${formatIndianNumber(Math.abs(entry.amount || 0))}`;
     }
 
     return { line1, line2 };
@@ -668,6 +683,16 @@ export const HistoryScreen: React.FC = () => {
           const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
           displayName = `${displayName} ${itemIndex}`;
         }
+      } else if (entry.type === 'money' && entry.createdAt) {
+        // Format date as DD/MM HH:MM am/pm
+        const date = new Date(entry.createdAt);
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const hours = date.getHours();
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'pm' : 'am';
+        const hour12 = hours % 12 || 12;
+        displayName = `Money (${day}/${month} ${hour12}:${minutes} ${ampm})`;
       }
       return { ...entry, displayName };
     });
@@ -775,8 +800,13 @@ export const HistoryScreen: React.FC = () => {
             {processedEntries.map((entry, index) => (
                 <View key={index} style={styles.entryWrapper}>
                   {(() => {
-                    const isSell = entry.type === 'sell';
-                    const isPurchase = entry.type === 'purchase';
+                    // Logic for money entries: 'give' -> like sell (top-right), 'receive' -> like purchase (bottom-left)
+                    const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
+                    const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
+
+                    const isSell = entry.type === 'sell' || isMoneyGive;
+                    const isPurchase = entry.type === 'purchase' || isMoneyReceive;
+                    
                     const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
                     const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
                     const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;

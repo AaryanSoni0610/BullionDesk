@@ -59,7 +59,7 @@ export const TradeScreen: React.FC = () => {
             try {
               const result = await TradeService.deleteTrade(trade.id);
               if (result) {
-                showAlert('Success', 'Trade deleted successfully');
+                showAlert('Success', 'Trade deleted successfully', undefined, 'check-circle');
                 loadTrades(); // Refresh the list
               } else {
                 showAlert('Error', 'Failed to delete trade');
@@ -169,7 +169,7 @@ export const TradeScreen: React.FC = () => {
 
       TradeService.addTrade(tradeData).then(success => {
         if (success) {
-          showAlert('Success', 'Trade added successfully');
+          showAlert('Success', 'Trade added successfully', undefined, 'check-circle');
           loadTrades(); // Refresh the list
         } else {
           showAlert('Error', 'Failed to add trade');

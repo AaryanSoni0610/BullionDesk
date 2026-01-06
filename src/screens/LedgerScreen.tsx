@@ -1109,8 +1109,17 @@ export const LedgerScreen: React.FC = () => {
       });
 
     } else {
+      // Check for relevant entries for opening stock display condition
+      const hasRelevantEntries = filteredTransactions.some(t => 
+        t.entries.some(e => {
+          if (selectedInventory === 'gold') return e.itemType === 'gold999' || e.itemType === 'gold995';
+          if (selectedInventory === 'silver') return e.itemType === 'silver';
+          return false;
+        })
+      );
+
       // Add opening stock entry for gold and silver subledgers (not for rani/rupu)
-      if (inventoryData && !showOnlyRaniRupu && filteredTransactions.length > 0) {
+      if (inventoryData && !showOnlyRaniRupu && hasRelevantEntries) {
         // Calculate opening balances by reversing transactions in the current period
         const goldOpeningBalances = {
           gold999: inventoryData.goldInventory.gold999,
@@ -1220,7 +1229,11 @@ export const LedgerScreen: React.FC = () => {
           let includeEntry = false;
           
           if (selectedInventory === 'gold') {
-            includeEntry = extEntry.itemType.startsWith('gold') || extEntry.itemType === 'rani';
+            if (showOnlyRaniRupu) {
+              includeEntry = extEntry.itemType === 'rani';
+            } else {
+              includeEntry = extEntry.itemType.startsWith('gold') || extEntry.itemType === 'rani';
+            }
             
             // Add rani return (actualGoldGiven) as a separate sell entry
             if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
@@ -1239,7 +1252,11 @@ export const LedgerScreen: React.FC = () => {
             }
           }
           else if (selectedInventory === 'silver') {
-            includeEntry = extEntry.itemType.startsWith('silver') || extEntry.itemType === 'rupu';
+            if (showOnlyRaniRupu) {
+              includeEntry = extEntry.itemType === 'rupu';
+            } else {
+              includeEntry = extEntry.itemType.startsWith('silver') || extEntry.itemType === 'rupu';
+            }
             
             // Add rupu silver returns as separate sell entries
             if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
@@ -1760,10 +1777,10 @@ export const LedgerScreen: React.FC = () => {
             <View style={styles.emptyState}>
               <Icon name="book-open-outline" size={72} color={theme.colors.onSurfaceVariant} />
               <Text variant="headlineSmall" style={styles.emptyStateText}>
-                Ledger for {selectedInventory} is empty
+                Ledger for {showOnlyRaniRupu ? (selectedInventory === "gold" ? 'rani' : 'rupu') : selectedInventory} is empty
               </Text>
               <Text variant="bodyLarge" style={styles.emptyStateSubtext}>
-                No transactions found for {selectedInventory} in the selected period.
+                No transactions found for {showOnlyRaniRupu ? (selectedInventory === "gold" ? 'rani' : 'rupu') : selectedInventory} in the selected period.
               </Text>
             </View>
           )}
@@ -1909,6 +1926,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 100,
   },
   emptyStateContainer: {
     flexGrow: 1,

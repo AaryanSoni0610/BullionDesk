@@ -158,4 +158,17 @@ export class RateCutService {
       return [];
     }
   }
+
+  static async getAllRateCutHistory(): Promise<RateCutRecord[]> {
+    try {
+      await this.ensureTableExists();
+      const db = DatabaseService.getDatabase();
+      return await db.getAllAsync<RateCutRecord>(
+        'SELECT * FROM rate_cut_history ORDER BY cut_date DESC, created_at DESC'
+      );
+    } catch (error) {
+      console.error('Error getting all rate cut history:', error);
+      return [];
+    }
+  }
 }

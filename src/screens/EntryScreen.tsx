@@ -927,6 +927,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceContainer,
     padding: 4,
     borderRadius: 100,
+    paddingBottom: 50,
   },
   tab: {
     flex: 1,

@@ -369,6 +369,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
                     style={styles.createButton}
                     loading={isCreatingCustomer}
                     disabled={isCreatingCustomer || !!validationError}
+                    rippleColor="transparent"
                   >
                     {isCreatingCustomer ? 'Creating...' : `Create "${searchQuery}"`}
                   </Button>
@@ -548,6 +549,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 10,
     marginBottom: 10,
+    minWidth: 250,
+    alignSelf: 'center',
+    height: 48,
+    alignContent: 'center',
+    justifyContent: 'center',
+    borderRadius: 100,
   },
   noResults: {
     textAlign: 'center',

@@ -55,6 +55,7 @@ export const CustomerListScreen: React.FC = () => {
   const [deleteAlertVisible, setDeleteAlertVisible] = useState(false);
   const [deleteAlertTitle, setDeleteAlertTitle] = useState('');
   const [deleteAlertMessage, setDeleteAlertMessage] = useState('');
+  const [deleteAlertIcon, setDeleteAlertIcon] = useState<string | undefined>(undefined);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
 
   const { navigateToSettings, showAlert } = useAppContext();
@@ -720,6 +721,7 @@ export const CustomerListScreen: React.FC = () => {
       setCustomerToDelete(customer);
       setDeleteAlertTitle('Delete Customer');
       setDeleteAlertMessage(`Are you sure you want to delete "${customer.name}"? This action cannot be undone.`);
+      setDeleteAlertIcon('delete-outline');
       setDeleteAlertVisible(true);
     } catch (error) {
       console.error('Error checking customer transactions:', error);
@@ -748,12 +750,14 @@ export const CustomerListScreen: React.FC = () => {
     } finally {
       // Close the alert
       setDeleteAlertVisible(false);
+      setDeleteAlertIcon(undefined);
       setCustomerToDelete(null);
     }
   };
 
   const handleDeleteCancel = () => {
     setDeleteAlertVisible(false);
+    setDeleteAlertIcon(undefined);
     setCustomerToDelete(null);
   };
 
@@ -1071,6 +1075,7 @@ export const CustomerListScreen: React.FC = () => {
         visible={deleteAlertVisible}
         title={deleteAlertTitle}
         message={deleteAlertMessage}
+        icon={deleteAlertIcon}
         buttons={[
           {
             text: 'Cancel',

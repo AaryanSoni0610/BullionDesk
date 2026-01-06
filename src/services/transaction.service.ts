@@ -287,6 +287,27 @@ export class TransactionService {
           lastUpdatedAt: entry.lastUpdatedAt,
         }));
 
+        // Fetch ledger money entries (payments)
+        if (!itemTypes || itemTypes.includes('money')) {
+          const moneyEntries = await DatabaseService.getAllAsyncBatch<any>(
+            'SELECT * FROM ledger_entries WHERE transactionId = ? AND itemType = "money" ORDER BY date ASC',
+            [trans.id]
+          );
+
+          const mappedMoneyEntries: TransactionEntry[] = moneyEntries.map(entry => ({
+            id: entry.id,
+            type: 'money',
+            itemType: 'money',
+            moneyType: entry.type === 'receive' ? 'receive' : 'give',
+            amount: entry.amount,
+            subtotal: entry.amount,
+            createdAt: entry.date,
+            metalOnly: false
+          }));
+
+          mappedEntries.push(...mappedMoneyEntries);
+        }
+
         result.push({
           id: trans.id,
           deviceId: trans.deviceId || undefined,
@@ -310,6 +331,105 @@ export class TransactionService {
       return result;
     } catch (error) {
       console.error('Error getting transactions by date range:', error);
+      return [];
+    }
+  }
+
+  // Get transactions by date range OR by ledger activity date range
+  static async getTransactionsWithActivityByDateRange(
+    startDate: string, 
+    endDate: string
+  ): Promise<Transaction[]> {
+    try {
+      // DISTINCT is crucial here because a transaction might satisfy both conditions 
+      // (created today AND paid today) or have multiple ledger entries today.
+      // We join ledger_entries to check if any payments happened in the range.
+      const query = `
+        SELECT DISTINCT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+        FROM transactions t
+        LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
+        LEFT JOIN ledger_entries le ON t.id = le.transactionId
+        WHERE 
+          (t.deleted_on IS NULL) AND
+          (
+            (t.date >= ? AND t.date <= ?) 
+            OR 
+            (le.date >= ? AND le.date <= ? AND le.deleted_on IS NULL)
+          )
+        ORDER BY t.date DESC
+      `;
+      
+      // Pass the date range twice: once for transaction date, once for ledger date
+      const params = [startDate, endDate, startDate, endDate];
+
+      const transactions = await DatabaseService.getAllAsyncBatch<any>(query, params);
+      const result: Transaction[] = [];
+
+      for (const trans of transactions) {
+        let entriesQuery = 'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC';
+        const entries = await DatabaseService.getAllAsyncBatch<any>(entriesQuery, [trans.id]);
+
+        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
+             id: entry.id,
+             type: entry.type,
+             itemType: entry.itemType,
+             weight: entry.weight,
+             price: entry.price,
+             touch: entry.touch,
+             cut: entry.cut,
+             extraPerKg: entry.extraPerKg,
+             pureWeight: entry.pureWeight,
+             moneyType: entry.moneyType,
+             amount: entry.amount,
+             metalOnly: entry.metalOnly === 1,
+             stock_id: entry.stock_id,
+             subtotal: entry.subtotal,
+             createdAt: entry.createdAt,
+             lastUpdatedAt: entry.lastUpdatedAt,
+        }));
+
+        // Fetch ledger money entries
+        const moneyEntries = await DatabaseService.getAllAsyncBatch<any>(
+            'SELECT * FROM ledger_entries WHERE transactionId = ? AND itemType = "money" ORDER BY date ASC',
+            [trans.id]
+        );
+
+        const mappedMoneyEntries: TransactionEntry[] = moneyEntries.map(entry => ({
+            id: entry.id,
+            type: 'money',
+            itemType: 'money',
+            moneyType: entry.type === 'receive' ? 'receive' : 'give',
+            amount: entry.amount,
+            subtotal: entry.amount,
+            createdAt: entry.date,
+            metalOnly: false
+        }));
+
+        mappedEntries.push(...mappedMoneyEntries);
+
+        result.push({
+            id: trans.id,
+            deviceId: trans.deviceId || undefined,
+            customerId: trans.customerId,
+            customerName: trans.customerName,
+            date: trans.date,
+            entries: mappedEntries,
+            total: trans.total,
+            amountPaid: trans.amountPaid,
+            note: trans.note,
+            createdAt: trans.createdAt,
+            lastUpdatedAt: trans.lastUpdatedAt,
+            customerLockDates: {
+                gold999: trans.last_gold999_lock_date || 0,
+                gold995: trans.last_gold995_lock_date || 0,
+                silver: trans.last_silver_lock_date || 0,
+            }
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error getting transactions with activity:', error);
       return [];
     }
   }

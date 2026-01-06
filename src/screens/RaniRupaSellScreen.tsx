@@ -359,7 +359,7 @@ export const RaniRupaSellScreen: React.FC = () => {
       }
 
       // Transaction created successfully - stock was automatically removed by DatabaseService
-      showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`);
+      showAlert('Success', `Sold ${selectedItems.size} ${selectedType} item(s) to ${customer.name}. Transaction and stock updated.`, undefined, 'check-circle');
 
       // Reset state
       setSelectedItems(new Set());
@@ -497,7 +497,7 @@ export const RaniRupaSellScreen: React.FC = () => {
                         </Text>
                     </View>
                     <TouchableOpacity style={styles.editBtn} onPress={() => handleEditItem(item)}>
-                        <MaterialCommunityIcons name="pencil" size={20} color="#44474F" />
+                      <MaterialCommunityIcons name="pencil" size={20} color={theme.colors.primary} />
                     </TouchableOpacity>
                 </TouchableOpacity>
             );
@@ -525,7 +525,7 @@ export const RaniRupaSellScreen: React.FC = () => {
         <View style={styles.inputRow}>
             {selectedType === 'rani' && (
                 <RNTextInput
-                    placeholder="Cut (e.g. 0.5)"
+                    placeholder="Cut (e.g. 0.2)"
                     value={cutValue}
                     onChangeText={(value) => {
                         const num = parseFloat(value);

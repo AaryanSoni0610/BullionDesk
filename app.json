@@ -3,14 +3,14 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "51.0.0",
-    "version": "7.1.5",
+    "version": "7.3.5",
     "orientation": "portrait",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff",
+      "backgroundColor": "#173460",
       "duration": 2000
     },
     "ios": {
@@ -27,9 +27,6 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
       ]
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
     },
     "experiments": {
       "typedRoutes": true

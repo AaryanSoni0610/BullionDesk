@@ -313,6 +313,22 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   // Calculate total received from payments
   const totalReceived = payments.reduce((sum, p) => sum + (p.type === 'receive' ? p.amount : -p.amount), 0);
 
+  // Apply discount/extra to net amount
+  const adjustedNetAmount = netAmount;
+
+  // Calculate full amount excluding last payment
+  const fullAmount = payments.length <= 1 
+    ? Math.abs(adjustedNetAmount)
+    : (() => {
+        const receivedExclLast = payments.slice(0, -1)
+          .filter(p => p.type === 'receive')
+          .reduce((sum, p) => sum + p.amount, 0);
+        const givenExclLast = payments.slice(0, -1)
+          .filter(p => p.type === 'give')
+          .reduce((sum, p) => sum + p.amount, 0);
+        return Math.abs(adjustedNetAmount) - Math.abs(receivedExclLast - givenExclLast);
+      })();
+
   // Safety feature: Lock entry modifications for transactions created on previous dates
   const isOldTransaction = transactionCreatedAt
     ? (() => {
@@ -333,11 +349,8 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
 
   // Show FAB for non-money-only transactions or when editing money-only transactions
   const shouldShowFAB = !isMoneyOnlyTransaction || isEditing;
-  
-  // Apply discount/extra to net amount
-  const adjustedNetAmount = netAmount;
 
-  const handleAddPayment = () => {
+  const handleAddPayment = (initialAmount?: number) => {
     // If money-only transaction, use the selected save date as default
     const defaultDate = isMoneyOnlyTransaction ? selectedSaveDate.toISOString() : new Date().toISOString();
     
@@ -360,7 +373,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     }
 
     setPayments([...payments, {
-      amount: 0,
+      amount: initialAmount || 0,
       date: defaultDate,
       type: defaultType
     }]);
@@ -416,13 +429,20 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       // Validations
       if (!isMoneyOnlyTransaction) {
         // Calculate new total received including the new changes
-        const newTotalReceived = finalPayments.reduce((sum, p) => sum + (p.type === 'receive' ? p.amount : -p.amount), 0);
+        const totalReceivedAmount = finalPayments
+          .filter(p => p.type === 'receive')
+          .reduce((sum, p) => sum + p.amount, 0);
         
-        // Strict validation: Net adjustment (difference between payments and transaction total) cannot exceed transaction total
-        // This handles both new transactions and edited money-only transactions
-        const netAdjustment = Math.abs(newTotalReceived - adjustedNetAmount);
-        if (netAdjustment > Math.abs(adjustedNetAmount) + 1) { // +1 tolerance
-            setPaymentError(`Net settlement amount (₹${formatIndianNumber(netAdjustment)}) cannot exceed transaction total (₹${formatIndianNumber(Math.abs(adjustedNetAmount))})`);
+        const totalGivenAmount = finalPayments
+          .filter(p => p.type === 'give')
+          .reduce((sum, p) => sum + p.amount, 0);
+
+        const netSettlement = Math.abs(totalReceivedAmount - totalGivenAmount);
+        const transactionTotal = Math.abs(adjustedNetAmount);
+        
+        // Strict validation: Net settlement (difference between received and given) cannot exceed transaction total
+        if (netSettlement > transactionTotal + 1) { // +1 tolerance
+            setPaymentError(`Net settlement amount (₹${formatIndianNumber(netSettlement)}) cannot exceed transaction total (₹${formatIndianNumber(transactionTotal)})`);
             return;
         }
       }
@@ -602,7 +622,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                    <Text style={styles.cardLabel}>Payments</Text>
-                   <Button mode="contained" compact onPress={handleAddPayment} icon="plus" disabled={(isMoneyOnlyTransaction && !isEditing) || payments.some(p => p.amount === 0) || finalBalance === 0}>Add</Button>
+                   <Button mode="contained" compact onPress={() => handleAddPayment()} icon="plus" disabled={(isMoneyOnlyTransaction && !isEditing) || payments.some(p => p.amount === 0) || finalBalance === 0}>Add</Button>
                 </View>
                 
                 {paymentError ? <Text style={{ color: 'red', fontSize: 12, marginHorizontal: 4 }}>{paymentError}</Text> : null}
@@ -649,7 +669,47 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
                   display="default"
                   onChange={handlePaymentDateChange}
                   maximumDate={new Date()}
+                  minimumDate={
+                    editingPaymentDateIndex === 0
+                      ? selectedSaveDate
+                      : new Date(payments[editingPaymentDateIndex - 1].date)
+                  }
                 />
+              )}
+
+              {/* Full Amount Chip */}
+              {!isMoneyOnlyTransaction && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Chip
+                    mode="outlined"
+                    style={styles.fullChip}
+                    textStyle={styles.fullChipText}
+                    onPress={() => {
+                      const editablePayments = payments.filter(p => !p.id);
+                      if (editablePayments.length > 0) {
+                        const lastEditableIndex = payments.lastIndexOf(editablePayments[editablePayments.length - 1]);
+                        handleUpdatePayment(lastEditableIndex, 'amount', fullAmount);
+                      } else {
+                        handleAddPayment(fullAmount);
+                      }
+                    }}
+                  >
+                    Full: ₹{formatIndianNumber(fullAmount)}
+                  </Chip>
+                  <Chip
+                    mode="outlined"
+                    style={styles.clearChip}
+                    textStyle={styles.clearChipText}
+                    onPress={() => {
+                      if (payments.length > 0) {
+                        const lastIndex = payments.length - 1;
+                        handleUpdatePayment(lastIndex, 'amount', 0);
+                      }
+                    }}
+                  >
+                    Clear
+                  </Chip>
+                </View>
               )}
 
               {/* Note Input */}
@@ -694,9 +754,9 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
             <Text style={styles.btnSecondaryText}>Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.btnPrimary, (isSaving || !!paymentError) && { opacity: 0.7 }]}
+            style={[styles.btnPrimary, (isSaving || !!paymentError || (payments.length > 0 && payments[payments.length - 1].amount === 0)) && { opacity: 0.75 }]}
             onPress={handleSaveTransaction}
-            disabled={isSaving || !!paymentError}
+            disabled={isSaving || !!paymentError || (payments.length > 0 && payments[payments.length - 1].amount === 0)}
           >
             {isSaving ? (
               <Text style={styles.btnPrimaryText}>{isEditing ? 'Updating...' : 'Saving...'}</Text>
@@ -945,6 +1005,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Outfit_400Regular',
     paddingHorizontal: 0,
+  },
+  fullChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E2E5',
+  },
+  fullChipText: {
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
+  },
+  clearChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E2E5',
+  },
+  clearChipText: {
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
   },
   settleFooter: {
     paddingVertical: 12,

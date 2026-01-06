@@ -41,6 +41,7 @@ export const RecycleBinScreen: React.FC = () => {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertButtons, setAlertButtons] = useState<Array<{ text: string; style?: 'cancel' | 'default' | 'destructive'; onPress?: () => void }>>([]);
+  const [alertIcon, setAlertIcon] = useState<string | undefined>(undefined);
 
   // Handle hardware back button
   useFocusEffect(
@@ -74,6 +75,7 @@ export const RecycleBinScreen: React.FC = () => {
               await loadTransactions(true);
               setAlertTitle('Success');
               setAlertMessage('Transaction deleted permanently');
+              setAlertIcon('check-circle');
               setAlertButtons([{ text: 'OK' }]);
               setAlertVisible(true);
             } else {
@@ -110,6 +112,7 @@ export const RecycleBinScreen: React.FC = () => {
               await loadTransactions(true);
               setAlertTitle('Success');
               setAlertMessage('Transaction restored successfully');
+              setAlertIcon('check-circle');
               setAlertButtons([{ text: 'OK' }]);
               setAlertVisible(true);
             } else {
@@ -582,8 +585,12 @@ export const RecycleBinScreen: React.FC = () => {
         visible={alertVisible}
         title={alertTitle}
         message={alertMessage}
+        icon={alertIcon}
         buttons={alertButtons}
-        onDismiss={() => setAlertVisible(false)}
+        onDismiss={() => {
+          setAlertVisible(false);
+          setAlertIcon(undefined);
+        }}
       />
     </SafeAreaView>
   );

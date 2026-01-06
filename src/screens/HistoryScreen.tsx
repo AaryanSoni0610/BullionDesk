@@ -253,7 +253,7 @@ export const HistoryScreen: React.FC = () => {
         else if (isBalance) transactionBalanceColor = theme.colors.success;
       }
     } else {
-      const transactionRemaining = transaction.amountPaid - transaction.total + transaction.discountExtraAmount;
+      const transactionRemaining = transaction.amountPaid - transaction.total;
       const hasRemainingBalance = Math.abs(transactionRemaining) >= 1;
       const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
 
@@ -637,7 +637,7 @@ export const HistoryScreen: React.FC = () => {
          line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
          
          if (!isMetalOnly && entry.price && entry.price > 0) {
-             line2 = `${formatCurrency(entry.price)} : ${formatCurrency(entry.subtotal || 0)}`;
+             line2 = `${formatCurrency(entry.price)} (${formatCurrency(entry.subtotal || 0)})`;
          }
     } else if (isGoldSilver) {
          const isGold = entry.itemType.includes('gold');
@@ -645,16 +645,7 @@ export const HistoryScreen: React.FC = () => {
          
          if (!isMetalOnly && entry.price && entry.price > 0) {
              line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
-             
-             // Subtotal Logic
-             const hasRaniRupaEntry = transaction.entries.some(e => ['rani', 'rupu'].includes(e.itemType));
-             if (!hasRaniRupaEntry) {
-                 // Normal Gold/Silver only
-                 line2 = `(${formatCurrency(entry.subtotal || 0)})`;
-             } else {
-                 // Mixed case -> No subtotal
-                 line2 = '';
-             }
+             line2 = `(${formatCurrency(entry.subtotal || 0)})`;
          } else {
              line1 = weightStr;
          }
@@ -706,7 +697,7 @@ export const HistoryScreen: React.FC = () => {
       }
     } else {
       // Money Transaction Logic
-      const transactionRemaining = transaction.amountPaid - transaction.total + transaction.discountExtraAmount;
+      const transactionRemaining = transaction.amountPaid - transaction.total;
       const hasRemainingBalance = Math.abs(transactionRemaining) >= 1; // Tolerance
       const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
 
@@ -855,7 +846,7 @@ export const HistoryScreen: React.FC = () => {
                    {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
                  </Text>
                  <Text style={[styles.footerAmount, { color: transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary }]}>
-                   {transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
+                   {' '}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                  </Text>
                  <View style={{ flex: 1 }} />
                  <View>

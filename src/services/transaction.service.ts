@@ -1,4 +1,4 @@
-import { Transaction, TransactionEntry, Customer } from '../types';
+import { Transaction, TransactionEntry, Customer, PaymentInput } from '../types';
 import { DatabaseService } from './database.sqlite';
 import { CustomerService } from './customer.service';
 import { LedgerService } from './ledger.service';
@@ -63,12 +63,8 @@ export class TransactionService {
           customerId: string;
           customerName: string;
           date: string;
-          discountExtraAmount: number;
           total: number;
           amountPaid: number;
-          lastGivenMoney: number;
-          lastToLastGivenMoney: number;
-          settlementType: string;
           note?: string;
           createdAt: string;
           lastUpdatedAt: string;
@@ -83,12 +79,8 @@ export class TransactionService {
           customerId: string;
           customerName: string;
           date: string;
-          discountExtraAmount: number;
           total: number;
           amountPaid: number;
-          lastGivenMoney: number;
-          lastToLastGivenMoney: number;
-          settlementType: string;
           note?: string;
           createdAt: string;
           lastUpdatedAt: string;
@@ -133,12 +125,8 @@ export class TransactionService {
           customerName: trans.customerName,
           date: trans.date,
           entries: mappedEntries,
-          discountExtraAmount: trans.discountExtraAmount,
           total: trans.total,
           amountPaid: trans.amountPaid,
-          lastGivenMoney: trans.lastGivenMoney,
-          lastToLastGivenMoney: trans.lastToLastGivenMoney,
-          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
@@ -205,12 +193,8 @@ export class TransactionService {
           customerName: trans.customerName,
           date: trans.date,
           entries: mappedEntries,
-          discountExtraAmount: trans.discountExtraAmount,
           total: trans.total,
           amountPaid: trans.amountPaid,
-          lastGivenMoney: trans.lastGivenMoney,
-          lastToLastGivenMoney: trans.lastToLastGivenMoney,
-          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
@@ -310,12 +294,8 @@ export class TransactionService {
           customerName: trans.customerName,
           date: trans.date,
           entries: mappedEntries,
-          discountExtraAmount: trans.discountExtraAmount,
           total: trans.total,
           amountPaid: trans.amountPaid,
-          lastGivenMoney: trans.lastGivenMoney,
-          lastToLastGivenMoney: trans.lastToLastGivenMoney,
-          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
@@ -377,12 +357,8 @@ export class TransactionService {
         customerName: trans.customerName,
         date: trans.date,
         entries: mappedEntries,
-        discountExtraAmount: trans.discountExtraAmount,
         total: trans.total,
         amountPaid: trans.amountPaid,
-        lastGivenMoney: trans.lastGivenMoney,
-        lastToLastGivenMoney: trans.lastToLastGivenMoney,
-        settlementType: trans.settlementType as 'full' | 'partial' | 'none',
         note: trans.note,
         createdAt: trans.createdAt,
         lastUpdatedAt: trans.lastUpdatedAt,
@@ -448,12 +424,8 @@ export class TransactionService {
           customerName: trans.customerName,
           date: trans.date,
           entries: mappedEntries,
-          discountExtraAmount: trans.discountExtraAmount,
           total: trans.total,
           amountPaid: trans.amountPaid,
-          lastGivenMoney: trans.lastGivenMoney,
-          lastToLastGivenMoney: trans.lastToLastGivenMoney,
-          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
           note: trans.note,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
@@ -482,9 +454,8 @@ export class TransactionService {
   static async saveTransaction(
     customer: Customer,
     entries: TransactionEntry[],
-    receivedAmount: number = 0,
+    payments: PaymentInput[],
     existingTransactionId?: string,
-    discountExtraAmount: number = 0,
     saveDate?: Date | null,
     note?: string
   ): Promise<{ success: boolean; transactionId?: string; error?: string }> {
@@ -495,6 +466,12 @@ export class TransactionService {
       if (!customer) {
         return { success: false, error: 'Invalid customer data' };
       }
+
+      // Calculate total amount paid from payments
+      const receivedAmount = payments.reduce((sum, p) => {
+        // For 'receive', we add. For 'give', we subtract (or treat as negative payment).
+        return sum + (p.type === 'receive' ? p.amount : -p.amount);
+      }, 0);
 
       // Use provided saveDate or current date
       const transactionDate = saveDate ? saveDate.toISOString() : new Date().toISOString();
@@ -524,7 +501,7 @@ export class TransactionService {
         // Remaining: netAmount - receivedAmount = what customer still owes (negative balance)
         // For purchases: merchant should pay netAmount, they paid receivedAmount
         // Remaining: netAmount - receivedAmount = what merchant still owes (positive balance)
-        finalBalance = receivedAmount - netAmount + discountExtraAmount;
+        finalBalance = receivedAmount - netAmount;
       }
 
       // Special case for 'adjust' and 'expense(kharch)' customers - always zero balance
@@ -533,7 +510,6 @@ export class TransactionService {
       }
 
       let transactionId: string;
-      let previousAmountPaid = 0;
       let oldBalanceEffect = 0;
       let existingTransaction: Transaction | null | undefined;
       let earliestAffectedDate = transactionDate; // Default to new date
@@ -557,7 +533,6 @@ export class TransactionService {
           }
 
           transactionId = existingTransactionId!;
-          previousAmountPaid = existingTransaction.lastGivenMoney;
           
           // Calculate old balance effect
           const isOldMoneyOnly = existingTransaction.entries.length === 0;
@@ -569,8 +544,8 @@ export class TransactionService {
           } else if (!isOldMetalOnly) {
             const oldNetAmount = existingTransaction.total;
             const oldReceivedAmount = existingTransaction.amountPaid;
-            // Inverted formula: receivedAmount - netAmount + discount
-            oldBalanceEffect = oldReceivedAmount - oldNetAmount + existingTransaction.discountExtraAmount;
+            // Inverted formula: receivedAmount - netAmount
+            oldBalanceEffect = oldReceivedAmount - oldNetAmount;
           }
 
           // REVERSE old metal balances
@@ -644,19 +619,14 @@ export class TransactionService {
           
           await db.runAsync(
             `UPDATE transactions 
-             SET customerName = ?, date = ?, discountExtraAmount = ?, total = ?, 
-                 amountPaid = ?, lastGivenMoney = ?, lastToLastGivenMoney = ?, 
-                 settlementType = ?, note = ?, lastUpdatedAt = ?
+             SET customerName = ?, date = ?, total = ?, 
+                 amountPaid = ?, note = ?, lastUpdatedAt = ?
              WHERE id = ?`,
             [
               customer.name.trim(),
               newDate,
-              discountExtraAmount,
               netAmount,
               receivedAmount,
-              receivedAmount,
-              previousAmountPaid,
-              finalBalance === 0 ? 'full' : 'partial',
               note || null,
               now,
               transactionId
@@ -694,21 +664,17 @@ export class TransactionService {
           // Insert transaction
           await db.runAsync(
             `INSERT INTO transactions 
-             (id, deviceId, customerId, customerName, date, discountExtraAmount, total, 
-              amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, note, createdAt, lastUpdatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, deviceId, customerId, customerName, date, total, 
+              amountPaid, note, createdAt, lastUpdatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               transactionId,
               deviceId,
               customer.id,
               customer.name.trim(),
               transactionDate,
-              discountExtraAmount,
               netAmount,
               receivedAmount,
-              receivedAmount,
-              0,
-              finalBalance === 0 ? 'full' : 'partial',
               note || null,
               transactionDate,
               now
@@ -809,32 +775,15 @@ export class TransactionService {
           );
         }
 
-        // Create ledger entry when there's a payment change
-        // For updates, calculate delta from previous amount; for new transactions, use full amount
-        const deltaAmount = isUpdate ? (receivedAmount - previousAmountPaid) : receivedAmount;
-        
-        if (deltaAmount !== 0) {
-          let ledgerTimestamp = transactionDate;
-          // Only align ledger timestamp with entries for NEW transactions
-          // For updates, we want the ledger entry to reflect the payment time (now)
-          // If saveDate is provided, we respect it and don't override with entry timestamps (which might be 'now' from UI creation)
-          if (!isUpdate && !isMoneyOnlyTransaction && !saveDate) {
-            const entryTimestamps = entries
-              .map(entry => entry.createdAt)
-              .filter((timestamp): timestamp is string => timestamp !== undefined)
-              .sort();
-            if (entryTimestamps.length > 0) {
-              ledgerTimestamp = entryTimestamps[0];
-            }
-          }
-          
-          // Get the full transaction object to pass to ledger service
-          const fullTransaction = await this.getTransactionById(transactionId);
-          if (fullTransaction) {
-            // Pass netAmount to help determine ledger direction
-            await LedgerService.createLedgerEntry(fullTransaction, deltaAmount, ledgerTimestamp, netAmount);
-          }
+        // Sync Metal Ledger Entries
+        const fullTransaction = await this.getTransactionById(transactionId);
+        if (fullTransaction) {
+          const syncDate = saveDate ? saveDate.toISOString() : (isUpdate ? now : transactionDate);
+          await LedgerService.syncMetalLedgerEntries(fullTransaction, syncDate);
         }
+
+        // Sync Money Ledger Entries (Payments)
+        await LedgerService.syncMoneyLedgerEntries(transactionId, customer, payments);
 
         // Update customer balance
         const isMetalOnly = entries.some(entry => entry.metalOnly === true);
@@ -951,9 +900,8 @@ export class TransactionService {
       } else if (!isMetalOnly) {
         const netAmount = transaction.total;
         const receivedAmount = transaction.amountPaid;
-        const discountExtraAmount = transaction.discountExtraAmount;
-        // Inverted formula: receivedAmount - netAmount + discount
-        balanceEffect = receivedAmount - netAmount + discountExtraAmount;
+        // Inverted formula: receivedAmount - netAmount
+        balanceEffect = receivedAmount - netAmount;
       }
 
       // Special case for 'adjust' and 'expense(kharch)' customers - always zero balance
@@ -1048,12 +996,8 @@ export class TransactionService {
         customerId: string;
         customerName: string;
         date: string;
-        discountExtraAmount: number;
         total: number;
         amountPaid: number;
-        lastGivenMoney: number;
-        lastToLastGivenMoney: number;
-        settlementType: string;
         note: string | null;
         deleted_on: string;
         createdAt: string;
@@ -1094,12 +1038,8 @@ export class TransactionService {
           customerName: trans.customerName,
           date: trans.date,
           entries: mappedEntries,
-          discountExtraAmount: trans.discountExtraAmount,
           total: trans.total,
           amountPaid: trans.amountPaid,
-          lastGivenMoney: trans.lastGivenMoney,
-          lastToLastGivenMoney: trans.lastToLastGivenMoney,
-          settlementType: trans.settlementType as 'full' | 'partial' | 'none',
           deleted_on: trans.deleted_on,
           note: trans.note || undefined,
           createdAt: trans.createdAt,
@@ -1147,9 +1087,8 @@ export class TransactionService {
       } else if (!isMetalOnly) {
         const netAmount = transaction.total;
         const receivedAmount = transaction.amountPaid;
-        const discountExtraAmount = transaction.discountExtraAmount;
-        // Inverted formula: receivedAmount - netAmount + discount
-        balanceEffect = receivedAmount - netAmount + discountExtraAmount;
+        // Inverted formula: receivedAmount - netAmount
+        balanceEffect = receivedAmount - netAmount;
         
         updatedCustomer.balance += balanceEffect;
         console.log('Restored money balance effect:', balanceEffect);

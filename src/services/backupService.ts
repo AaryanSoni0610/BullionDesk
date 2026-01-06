@@ -44,8 +44,6 @@ interface BackupData {
       gold999: number;
       gold995: number;
       silver: number;
-      rani: number;
-      rupu: number;
       money: number;
     };
     raniRupaStock: RaniRupaStock[];
@@ -741,52 +739,49 @@ export class BackupService {
     for (const ledgerEntry of records.ledger) {
       if (!ledgerMap.has(ledgerEntry.id)) {
         try {
-          // 1. Insert the Ledger Entry Header directly using backup values
-          await db.runAsync(
-            `INSERT INTO ledger_entries 
-             (id, transactionId, customerId, customerName, date, amountReceived, amountGiven, createdAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              ledgerEntry.id,
-              ledgerEntry.transactionId,
-              ledgerEntry.customerId,
-              ledgerEntry.customerName,
-              ledgerEntry.date,
-              ledgerEntry.amountReceived || 0, // USE VALUE FROM BACKUP
-              ledgerEntry.amountGiven || 0,    // USE VALUE FROM BACKUP
-              ledgerEntry.createdAt
-            ]
-          );
-
-          // 2. Insert the Ledger Items directly
+          // Check if it's an old format entry (has entries array)
           if (ledgerEntry.entries && Array.isArray(ledgerEntry.entries)) {
-            for (const item of ledgerEntry.entries) {
-              await db.runAsync(
-                `INSERT INTO ledger_entry_items 
-                 (id, ledger_entry_id, type, itemType, weight, price, touch, cut, extraPerKg, 
-                  pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             // Convert old format to new flattened format
+             // 1. Handle Money
+             const amountReceived = ledgerEntry.amountReceived || 0;
+             const amountGiven = ledgerEntry.amountGiven || 0;
+             if (amountReceived > 0 || amountGiven > 0) {
+                 const moneyId = `${ledgerEntry.id}_money`;
+                 const amount = amountReceived + amountGiven;
+                 const type = amountReceived > 0 ? 'receive' : 'give';
+                 await db.runAsync(
+                    `INSERT INTO ledger_entries (id, transactionId, customerId, customerName, date, type, itemType, amount, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [moneyId, ledgerEntry.transactionId, ledgerEntry.customerId, ledgerEntry.customerName, ledgerEntry.date, type, 'money', amount, ledgerEntry.createdAt]
+                 );
+             }
+             // 2. Handle Items
+             for (const item of ledgerEntry.entries) {
+                 const itemId = item.id || `ledger_item_${Date.now()}_${Math.random()}`;
+                 await db.runAsync(
+                    `INSERT INTO ledger_entries (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [itemId, ledgerEntry.transactionId, ledgerEntry.customerId, ledgerEntry.customerName, ledgerEntry.date, item.type, item.itemType, item.weight || 0, item.touch || 0, item.createdAt || ledgerEntry.createdAt]
+                 );
+             }
+          } else {
+             // New format - insert directly
+             await db.runAsync(
+                `INSERT INTO ledger_entries 
+                 (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, amount, createdAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                  item.id,
-                  ledgerEntry.id, // Link to parent ID
-                  item.type,
-                  item.itemType,
-                  item.weight || null,
-                  item.price || null,
-                  item.touch || null,
-                  item.cut || null,
-                  item.extraPerKg || null,
-                  item.pureWeight || null,
-                  item.moneyType || null,
-                  item.amount || null,
-                  item.metalOnly ? 1 : 0,
-                  item.stock_id || null,
-                  item.subtotal,
-                  item.createdAt || ledgerEntry.createdAt,
-                  item.lastUpdatedAt || ledgerEntry.createdAt
+                  ledgerEntry.id,
+                  ledgerEntry.transactionId,
+                  ledgerEntry.customerId,
+                  ledgerEntry.customerName,
+                  ledgerEntry.date,
+                  ledgerEntry.type,
+                  ledgerEntry.itemType,
+                  ledgerEntry.weight || 0,
+                  ledgerEntry.touch || 0,
+                  ledgerEntry.amount || 0,
+                  ledgerEntry.createdAt
                 ]
-              );
-            }
+             );
           }
         } catch (error) {
           console.error(`Error importing ledger entry ${ledgerEntry.id}:`, error);
@@ -865,21 +860,17 @@ export class BackupService {
       // Insert transaction
       await db.runAsync(
         `INSERT OR REPLACE INTO transactions 
-         (id, deviceId, customerId, customerName, date, discountExtraAmount, total, 
-          amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, createdAt, lastUpdatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, deviceId, customerId, customerName, date, total, 
+          amountPaid, createdAt, lastUpdatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           transaction.id,
           transaction.deviceId || null,
           transaction.customerId,
           transaction.customerName,
           transaction.date,
-          transaction.discountExtraAmount || 0,
           transaction.total,
           transaction.amountPaid,
-          transaction.lastGivenMoney,
-          transaction.lastToLastGivenMoney,
-          transaction.settlementType || 'partial',
           transaction.createdAt,
           transaction.lastUpdatedAt
         ]
@@ -922,8 +913,8 @@ export class BackupService {
         // For regular transactions: apply the transaction's balance effect
         // Transaction.total is from merchant's perspective (positive = customer owes merchant)
         // But customer.balance is positive when customer has credit (merchant owes customer)
-        // So we need to negate the transaction total
-        newBalance = customer.balance - transaction.total;
+        // So we need to negate the transaction total and add amount paid
+        newBalance = customer.balance - transaction.total + (transaction.amountPaid || 0);
       }
 
       const updatedCustomer: Customer = {
@@ -932,6 +923,31 @@ export class BackupService {
         lastTransaction: transaction.createdAt,
         metalBalances: customer.metalBalances || {},
       };
+
+      // Handle legacy payment migration (if restoring from old backup)
+      const legacyTransaction = transaction as any;
+      if ((legacyTransaction.lastGivenMoney !== undefined || legacyTransaction.lastToLastGivenMoney !== undefined) && (transaction.amountPaid || 0) > 0) {
+          // This is an old backup. We need to create a ledger entry for the payment.
+          const paymentType = transaction.total >= 0 ? 'receive' : 'give';
+          const paymentId = `payment_${transaction.id}_imported`;
+          
+          await db.runAsync(
+              `INSERT OR IGNORE INTO ledger_entries 
+               (id, transactionId, customerId, customerName, date, type, itemType, amount, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                  paymentId,
+                  transaction.id,
+                  transaction.customerId,
+                  transaction.customerName,
+                  transaction.date,
+                  paymentType,
+                  'money',
+                  transaction.amountPaid,
+                  transaction.createdAt
+              ]
+          );
+      }
 
       // Apply metal balances for metal-only entries
       if (isMetalOnly) {

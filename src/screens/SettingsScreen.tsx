@@ -207,8 +207,6 @@ export const SettingsScreen: React.FC = () => {
         gold999: updatedData.gold999 !== undefined ? updatedData.gold999 : 0,
         gold995: updatedData.gold995 !== undefined ? updatedData.gold995 : 0,
         silver: updatedData.silver !== undefined ? updatedData.silver : 0,
-        rani: 0, // Rani stock is tracked separately
-        rupu: 0, // Rupu stock is tracked separately
         money: updatedData.money !== undefined ? updatedData.money : 0
       };
 
@@ -760,7 +758,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v6.5.5"
+              description="v7.1.5"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -902,7 +900,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v6.5.5
+        message={`BullionDesk v7.1.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

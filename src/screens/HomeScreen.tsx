@@ -222,8 +222,8 @@ export const HomeScreen = ({ navigation }: any) => {
       }
     } else {
       // Money Transaction Logic
-      // Formula: amountPaid - total + discount
-      const transactionRemaining = item.amountPaid - item.total + (item.discountExtraAmount || 0);
+      // Formula: amountPaid - total
+      const transactionRemaining = item.amountPaid - item.total;
       const hasRemaining = Math.abs(transactionRemaining) >= 1; // Tolerance of 1
 
       if (hasRemaining) {

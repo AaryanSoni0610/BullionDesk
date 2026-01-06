@@ -32,13 +32,24 @@ import { useAppContext } from '../context/AppContext';
 import * as FileSystem from 'expo-file-system';
 import CustomAlert from '../components/CustomAlert';
 
+// Define a local interface for display purposes
+interface CustomerLedgerItem {
+  id: string;
+  transactionId: string;
+  date: string;
+  receivedAmount: number;
+  givenAmount: number;
+  entries: any[]; // Using any[] to accommodate TransactionEntry structure
+  note?: string;
+}
+
 export const CustomerListScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string>('');
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
-  const [ledgerCache, setLedgerCache] = useState<Map<string, { data: LedgerEntry[], timestamp: number }>>(new Map());
+  const [ledgerCache, setLedgerCache] = useState<Map<string, { data: CustomerLedgerItem[], timestamp: number }>>(new Map());
   const [customersWithTransactions, setCustomersWithTransactions] = useState<Set<string>>(new Set());
   const [areTransactionsChecked, setAreTransactionsChecked] = useState(false);
   const [deleteAlertVisible, setDeleteAlertVisible] = useState(false);
@@ -509,10 +520,10 @@ export const CustomerListScreen: React.FC = () => {
                 const date = formatFullDate(entry.date);
                 
                 let moneyHtml = '';
-                if (entry.amountReceived > 0) {
-                    moneyHtml = `<span style="color: #2e7d32;">↙️ ₹${formatIndianNumber(entry.amountReceived)}</span>`; // Green
-                } else if (entry.amountGiven > 0) {
-                    moneyHtml = `<span style="color: #1976d2;">↗️ ₹${formatIndianNumber(entry.amountGiven)}</span>`; // Blue
+                if (entry.receivedAmount > 0) {
+                    moneyHtml = `<span style="color: #2e7d32;">↙️ ₹${formatIndianNumber(entry.receivedAmount)}</span>`; // Green
+                } else if (entry.givenAmount > 0) {
+                    moneyHtml = `<span style="color: #1976d2;">↗️ ₹${formatIndianNumber(entry.givenAmount)}</span>`; // Blue
                 }
 
                 const metalEntries = entry.entries.filter(e => e.type !== 'money');
@@ -623,106 +634,74 @@ export const CustomerListScreen: React.FC = () => {
     }
   };
 
-  const fetchCustomerLedger = async (customerId: string): Promise<LedgerEntry[]> => {
+  const fetchCustomerLedger = async (customerId: string): Promise<CustomerLedgerItem[]> => {
     const now = Date.now();
-    // Removed cache check to ensure fresh data
     
     try {
-      // Fetch both ledger entries and transactions for this customer directly from database
-      const [moneyLedgerEntries, customerTransactions] = await Promise.all([
+      const [ledgerEntries, customerTransactions] = await Promise.all([
         LedgerService.getLedgerEntriesByCustomerId(customerId),
         TransactionService.getTransactionsByCustomerId(customerId)
       ]);
 
-      // Create a map of transactions for easy lookup
       const transactionMap = new Map(customerTransactions.map(t => [t.id, t]));
+      const groupedItems = new Map<string, CustomerLedgerItem>();
 
-      // Enrich money ledger entries with note and fallback amounts
-      const enrichedMoneyEntries = moneyLedgerEntries.map(entry => {
-        const transaction = transactionMap.get(entry.transactionId);
+      // Process ledger entries
+      ledgerEntries.forEach(entry => {
+        // Create a unique key for grouping: transactionId + date
+        const key = `${entry.transactionId}_${entry.date}`;
         
-        let amountReceived = entry.amountReceived;
-        let amountGiven = entry.amountGiven;
+        if (!groupedItems.has(key)) {
+          groupedItems.set(key, {
+            id: key,
+            transactionId: entry.transactionId,
+            date: entry.date,
+            receivedAmount: 0,
+            givenAmount: 0,
+            entries: [],
+            note: transactionMap.get(entry.transactionId)?.note
+          });
+        }
 
-        // Fallback to transaction data if ledger amounts are 0 but transaction has money flow
-        if (amountReceived === 0 && amountGiven === 0 && transaction) {
-            if (transaction.amountPaid > 0) {
-                amountReceived = transaction.amountPaid;
-            } else if (transaction.amountPaid < 0) {
-                amountGiven = Math.abs(transaction.amountPaid);
+        const group = groupedItems.get(key)!;
+
+        if (entry.itemType === 'money') {
+          if (entry.type === 'receive') {
+            group.receivedAmount += entry.amount || 0;
+          } else if (entry.type === 'give') {
+            group.givenAmount += entry.amount || 0;
+          }
+        } else {
+            // It's a metal entry. 
+            // If this group corresponds to the transaction date, we can populate entries from the transaction.
+            const transaction = transactionMap.get(entry.transactionId);
+            if (transaction && transaction.date === entry.date) {
+                // Only populate once
+                if (group.entries.length === 0) {
+                    group.entries = transaction.entries.filter(e => e.itemType !== 'money');
+                }
+            } else {
+                // Fallback if dates don't match exactly or transaction missing
+                group.entries.push({
+                    type: entry.type,
+                    itemType: entry.itemType,
+                    weight: entry.weight,
+                    touch: entry.touch,
+                    pureWeight: (entry.weight || 0) * (entry.touch || 0) / 100
+                });
             }
         }
-
-        return {
-            ...entry,
-            amountReceived,
-            amountGiven,
-            note: transaction?.note
-        };
       });
 
-      // Get metal transactions and convert them to ledger-like entries
-      const metalLedgerEntries: (LedgerEntry & { note?: string })[] = [];
-
-      // Create a set of transaction IDs that are already in moneyLedgerEntries
-      const existingTransactionIds = new Set(moneyLedgerEntries.map(entry => entry.transactionId));
-
-      customerTransactions.forEach(transaction => {
-        // Skip if this transaction is already represented in moneyLedgerEntries
-        if (existingTransactionIds.has(transaction.id)) {
-            return;
-        }
-
-        // Only include transactions that have entries (exclude money-only)
-        // OR if they have a note (to show empty transactions with notes)
-        const hasEntries = transaction.entries && transaction.entries.length > 0;
-        const hasNote = transaction.note && transaction.note.trim().length > 0;
-
-        if (hasEntries || hasNote) {
-          // Create a ledger-like entry for transactions with entries
-          const metalEntry: LedgerEntry & { note?: string } = {
-            id: `metal_${transaction.id}`,
-            transactionId: transaction.id,
-            customerId: transaction.customerId,
-            customerName: transaction.customerName,
-            date: transaction.date,
-            amountReceived: 0, // Metal transactions don't involve money
-            amountGiven: 0,
-            entries: transaction.entries || [], // Include all transaction entries
-            createdAt: transaction.createdAt,
-            note: transaction.note
-          };
-
-          metalLedgerEntries.push(metalEntry);
-        }
-      });
-
-      // Combine money and metal entries
-      const allCustomerEntries = [...enrichedMoneyEntries, ...metalLedgerEntries];
-
-      // Sort by date (newest first), then by type (metal before money)
-      const sortedEntries = allCustomerEntries.sort((a, b) => {
+      // Convert map to array and sort
+      const sortedItems = Array.from(groupedItems.values()).sort((a, b) => {
         const dateA = new Date(a.date).getTime();
         const dateB = new Date(b.date).getTime();
-
-        if (dateA !== dateB) {
-          return dateB - dateA; // Newest first
-        }
-
-        // Within same date, prioritize metal entries over money entries
-        const aHasMetal = a.entries.some(entry => entry.type !== 'money');
-        const bHasMetal = b.entries.some(entry => entry.type !== 'money');
-
-        if (aHasMetal && !bHasMetal) return -1;
-        if (!aHasMetal && bHasMetal) return 1;
-
-        return 0;
+        return dateB - dateA; // Newest first
       });
 
-      // Cache the result
-      setLedgerCache(prev => new Map(prev.set(customerId, { data: sortedEntries, timestamp: now })));
-
-      return sortedEntries;
+      setLedgerCache(prev => new Map(prev.set(customerId, { data: sortedItems, timestamp: now })));
+      return sortedItems;
     } catch (error) {
       console.error('Error fetching customer ledger:', error);
       return [];
@@ -790,29 +769,17 @@ export const CustomerListScreen: React.FC = () => {
     setExpandedCards(newExpanded);
   };
 
-  const renderLedgerEntry = (entry: LedgerEntry & { note?: string }) => {
+  const renderLedgerEntry = (entry: CustomerLedgerItem) => {
     const date = formatFullDate(entry.date);
     
-    // Calculate amounts if they are 0 but money entries exist (Fallback for display)
-    let amountReceived = entry.amountReceived;
-    let amountGiven = entry.amountGiven;
-
-    if (amountReceived === 0 && amountGiven === 0) {
-        const moneyEntries = entry.entries.filter(e => e.type === 'money');
-        moneyEntries.forEach(e => {
-            if (e.moneyType === 'receive') {
-                amountReceived += e.amount || 0;
-            } else if (e.moneyType === 'give') {
-                amountGiven += e.amount || 0;
-            }
-        });
-    }
+    const receivedAmount = entry.receivedAmount;
+    const givenAmount = entry.givenAmount;
 
     // Money Column Logic
     let moneyContent = <Text style={styles.dashText}>-</Text>;
     let hasMoney = false;
     
-    if (amountReceived > 0) {
+    if (receivedAmount > 0) {
       hasMoney = true;
       moneyContent = (
         <View style={styles.moneyCellContent}>
@@ -820,11 +787,11 @@ export const CustomerListScreen: React.FC = () => {
              <MaterialCommunityIcons name="arrow-bottom-left" size={16} color="#146C2E" />
           </View>
           <Text style={[styles.moneyText, { color: '#146C2E' }]}>
-            ₹{formatIndianNumber(amountReceived)}
+            ₹{formatIndianNumber(receivedAmount)}
           </Text>
         </View>
       );
-    } else if (amountGiven > 0) {
+    } else if (givenAmount > 0) {
       hasMoney = true;
       moneyContent = (
         <View style={styles.moneyCellContent}>
@@ -832,7 +799,7 @@ export const CustomerListScreen: React.FC = () => {
              <MaterialCommunityIcons name="arrow-top-right" size={16} color="#005AC1" />
           </View>
           <Text style={[styles.moneyText, { color: '#005AC1' }]}>
-            ₹{formatIndianNumber(amountGiven)}
+            ₹{formatIndianNumber(givenAmount)}
           </Text>
         </View>
       );
@@ -842,9 +809,9 @@ export const CustomerListScreen: React.FC = () => {
     const bullionEntries: React.ReactNode[] = [];
     
     // Filter and sort entries: Sell first, then Purchase
-    const metalEntries = entry.entries.filter(e => e.type !== 'money');
-    const sellEntries = metalEntries.filter(e => e.type === 'sell');
-    const purchaseEntries = metalEntries.filter(e => e.type === 'purchase');
+    // Note: entry.entries already excludes money entries based on fetchCustomerLedger logic
+    const sellEntries = entry.entries.filter(e => e.type === 'sell');
+    const purchaseEntries = entry.entries.filter(e => e.type === 'purchase');
     
     const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
 

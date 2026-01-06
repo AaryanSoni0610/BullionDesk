@@ -199,21 +199,17 @@ export class MigrationService {
         // Insert transaction directly to preserve IDs and timestamps
         await db.runAsync(
           `INSERT INTO transactions 
-           (id, deviceId, customerId, customerName, date, discountExtraAmount, total, 
-            amountPaid, lastGivenMoney, lastToLastGivenMoney, settlementType, createdAt, lastUpdatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, deviceId, customerId, customerName, date, total, 
+            amountPaid, createdAt, lastUpdatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             transaction.id,
             transaction.deviceId || null,
             transaction.customerId,
             transaction.customerName,
             transaction.date,
-            transaction.discountExtraAmount || 0,
             transaction.total,
             transaction.amountPaid,
-            transaction.lastGivenMoney,
-            transaction.lastToLastGivenMoney,
-            transaction.settlementType || 'partial',
             transaction.createdAt,
             transaction.lastUpdatedAt
           ]
@@ -247,6 +243,30 @@ export class MigrationService {
             ]
           );
         }
+
+        // Handle legacy payment migration
+        const legacyTransaction = transaction as any;
+        if ((legacyTransaction.lastGivenMoney !== undefined || legacyTransaction.lastToLastGivenMoney !== undefined) && (transaction.amountPaid || 0) > 0) {
+            const paymentType = transaction.total >= 0 ? 'receive' : 'give';
+            const paymentId = `payment_${transaction.id}_migrated`;
+            
+            await db.runAsync(
+                `INSERT OR IGNORE INTO ledger_entries 
+                 (id, transactionId, customerId, customerName, date, type, itemType, amount, createdAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    paymentId,
+                    transaction.id,
+                    transaction.customerId,
+                    transaction.customerName,
+                    transaction.date,
+                    paymentType,
+                    'money',
+                    transaction.amountPaid,
+                    transaction.createdAt
+                ]
+            );
+        }
       }
 
       // Migrate last transaction ID
@@ -279,52 +299,58 @@ export class MigrationService {
       const ledgerEntries: LedgerEntry[] = JSON.parse(ledgerJson);
       const db = DatabaseService.getDatabase();
 
-      for (const entry of ledgerEntries) {
-        // Insert ledger entry
-        await db.runAsync(
-          `INSERT INTO ledger_entries 
-           (id, transactionId, customerId, customerName, date, amountReceived, amountGiven, createdAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            entry.id,
-            entry.transactionId,
-            entry.customerId,
-            entry.customerName,
-            entry.date,
-            entry.amountReceived || 0,
-            entry.amountGiven || 0,
-            entry.createdAt
-          ]
-        );
+      const ledgerEntriesAny: any[] = ledgerEntries; // Cast to any to handle old structure
 
-        // Insert ledger entry items
-        for (const item of entry.entries) {
-          const itemId = item.id || `ledger_item_${Date.now()}_${Math.random()}`;
-          await db.runAsync(
-            `INSERT INTO ledger_entry_items 
-             (id, ledger_entry_id, type, itemType, weight, price, touch, cut, extraPerKg, 
-              pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              itemId,
-              entry.id,
-              item.type,
-              item.itemType,
-              item.weight || null,
-              item.price || null,
-              item.touch || null,
-              item.cut || null,
-              item.extraPerKg || null,
-              item.pureWeight || null,
-              item.moneyType || null,
-              item.amount || null,
-              item.metalOnly ? 1 : 0,
-              item.stock_id || null,
-              item.subtotal,
-              item.createdAt || entry.createdAt,
-              item.lastUpdatedAt || entry.createdAt
-            ]
-          );
+      for (const entry of ledgerEntriesAny) {
+        // 1. Handle Money (Amount Received / Given)
+        const amountReceived = entry.amountReceived || 0;
+        const amountGiven = entry.amountGiven || 0;
+        
+        if (amountReceived > 0 || amountGiven > 0) {
+             const moneyId = `${entry.id}_money`;
+             const amount = amountReceived + amountGiven;
+             const type = amountReceived > 0 ? 'receive' : 'give';
+             
+             await db.runAsync(
+                `INSERT INTO ledger_entries
+                (id, transactionId, customerId, customerName, date, type, itemType, amount, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    moneyId,
+                    entry.transactionId,
+                    entry.customerId,
+                    entry.customerName,
+                    entry.date,
+                    type,
+                    'money',
+                    amount,
+                    entry.createdAt
+                ]
+             );
+        }
+
+        // 2. Handle Items
+        if (entry.entries && Array.isArray(entry.entries)) {
+            for (const item of entry.entries) {
+                const itemId = item.id || `ledger_item_${Date.now()}_${Math.random()}`;
+                await db.runAsync(
+                    `INSERT INTO ledger_entries
+                    (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, createdAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        itemId,
+                        entry.transactionId,
+                        entry.customerId,
+                        entry.customerName,
+                        entry.date,
+                        item.type,
+                        item.itemType,
+                        item.weight || 0,
+                        item.touch || 0,
+                        item.createdAt || entry.createdAt
+                    ]
+                );
+            }
         }
       }
 
@@ -357,6 +383,10 @@ export class MigrationService {
         delete inventory.silver98;
         delete inventory.silver96;
       }
+
+      // Remove unused columns
+      if (inventory.rani !== undefined) delete inventory.rani;
+      if (inventory.rupu !== undefined) delete inventory.rupu;
 
       await InventoryService.setBaseInventory(inventory);
 

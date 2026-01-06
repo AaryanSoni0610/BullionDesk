@@ -18,7 +18,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { formatWeight, formatIndianNumber } from '../utils/formatting';
-import { Customer, TransactionEntry } from '../types';
+import { Customer, TransactionEntry, PaymentInput } from '../types';
+import { LedgerService } from '../services/ledger.service';
 import CustomAlert from '../components/CustomAlert';
 import { useAppContext } from '../context/AppContext';
 
@@ -29,9 +30,8 @@ interface SettlementSummaryScreenProps {
   onAddMoreEntry: () => void;
   onDeleteEntry: (entryId: string) => void;
   onEditEntry: (entryId: string) => void;
-  onSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null, note?: string) => void;
+  onSaveTransaction: (payments: PaymentInput[], saveDate?: Date | null, note?: string) => void;
   editingTransactionId?: string | null;
-  lastGivenMoney?: number;
   transactionCreatedAt?: string | null;
   transactionLastUpdatedAt?: string | null;
   initialNote?: string;
@@ -46,37 +46,46 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   onEditEntry,
   onSaveTransaction,
   editingTransactionId,
-  lastGivenMoney = 0,
   transactionCreatedAt,
   initialNote = '',
 }) => {
   const { pendingMoneyAmount, setPendingMoneyAmount, pendingMoneyType } = useAppContext();
   
-  // Initialize receivedAmount with pending money or lastGivenMoney
-  const [receivedAmount, setReceivedAmount] = useState(() => {
-    if (pendingMoneyAmount !== 0) {
-      return pendingMoneyAmount.toString();
-    }
-    return lastGivenMoney !== 0 ? lastGivenMoney.toString() : '';
-  });
+  const [payments, setPayments] = useState<PaymentInput[]>([]);
   
-  // Clear pending money amount when component mounts
+  // Load payments
   React.useEffect(() => {
-    if (pendingMoneyAmount !== 0) {
-      // Clear it after using it
-      setPendingMoneyAmount(0);
-    }
-  }, []);
+    const loadPayments = async () => {
+      if (editingTransactionId) {
+        const ledgerEntries = await LedgerService.getLedgerEntriesByTransactionId(editingTransactionId);
+        const moneyEntries = ledgerEntries.filter(l => l.itemType === 'money');
+        const loadedPayments = moneyEntries.map(l => ({
+          id: l.id,
+          amount: l.amount || 0,
+          date: l.date,
+          type: l.type as 'receive' | 'give'
+        })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setPayments(loadedPayments);
+      } else if (pendingMoneyAmount !== 0) {
+         setPayments([{
+           amount: pendingMoneyAmount,
+           date: new Date().toISOString(),
+           type: pendingMoneyType
+         }]);
+         setPendingMoneyAmount(0);
+      }
+    };
+    loadPayments();
+  }, [editingTransactionId]);
   
   const [paymentError, setPaymentError] = useState('');
-  const [discountExtra, setDiscountExtra] = useState('');
   const [note, setNote] = useState(initialNote);
   const [isSaving, setIsSaving] = useState(false);
-  const [hasPaymentInteracted, setHasPaymentInteracted] = useState(false);
   const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
   const [showSaveDatePicker, setShowSaveDatePicker] = useState(false);
   const [pendingSaveDate, setPendingSaveDate] = useState<Date | null>(null);
   const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);
+  const [editingPaymentDateIndex, setEditingPaymentDateIndex] = useState<number | null>(null);
   const isEditing = !!editingTransactionId;
 
   // Format date for display in DD Mon YYYY format
@@ -128,6 +137,15 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
       } else {
         // Today selected, no warning needed
         setSelectedSaveDate(selectedDate);
+        
+        // If money-only transaction, update payment dates to match
+        if (isMoneyOnlyTransaction) {
+            const newPayments = payments.map(p => ({
+                ...p,
+                date: selectedDate.toISOString()
+            }));
+            setPayments(newPayments);
+        }
       }
     } else if (event.type === 'dismissed') {
       // User cancelled, don't change anything
@@ -139,6 +157,16 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const handleDateWarningContinue = () => {
     if (pendingSaveDate) {
       setSelectedSaveDate(pendingSaveDate);
+      
+      // If money-only transaction, update payment dates to match
+      if (isMoneyOnlyTransaction) {
+          const newPayments = payments.map(p => ({
+              ...p,
+              date: pendingSaveDate.toISOString()
+          }));
+          setPayments(newPayments);
+      }
+      
       setPendingSaveDate(null);
     }
     setShowDateWarningAlert(false);
@@ -149,42 +177,18 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     setPendingSaveDate(null);
     setShowDateWarningAlert(false);
   };
-  
-  // Input filtering function for discount/extra
-  const filterDiscountExtraInput = (value: string): string => {
-    // Remove any non-numeric characters except decimal point
-    let filtered = value.replace(/[^0-9.]/g, '');
-    
-    // Handle multiple decimal points - keep only the first one
-    const parts = filtered.split('.');
-    if (parts.length > 2) {
-      filtered = parts[0] + '.' + parts.slice(1).join('');
-    }
-    
-    // Check length restrictions
-    const beforeDecimal = parts[0] || '';
-    
-    if (beforeDecimal.length > 3) {
-      filtered = beforeDecimal.slice(0, 3) + (parts[1] ? '.' + parts[1] : '');
-    }
-    
-    // If 3 digits, must be exactly "100" (no decimal allowed)
-    if (beforeDecimal.length === 3) {
-      if (beforeDecimal !== '100') {
-        filtered = beforeDecimal.slice(0, 2) + (parts[1] ? '.' + parts[1] : '');
-      } else {
-        filtered = '100'; // Remove any decimal part for 100
-      }
-    }
-    
-    // If 2 digits, allow decimal but limit to reasonable precision
-    if (beforeDecimal.length <= 2 && parts[1]) {
-      filtered = beforeDecimal + '.' + parts[1].slice(0, 2);
-    }
-    
-    return filtered;
-  };
 
+  const handlePaymentDateChange = (event: any, selectedDate?: Date) => {
+    const isConfirmed = event.type === 'set';
+    // On Android, the picker closes automatically. On iOS, we might need to handle it.
+    // But for simplicity, let's assume standard behavior.
+    
+    if (isConfirmed && selectedDate && editingPaymentDateIndex !== null) {
+      handleUpdatePayment(editingPaymentDateIndex, 'date', selectedDate.toISOString());
+    }
+    setEditingPaymentDateIndex(null);
+  };
+  
   const getItemDisplayName = (entry: TransactionEntry): string => {
     if (entry.type === 'money') {
       return 'Money';
@@ -305,9 +309,10 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   };
 
   const { netAmount, giveItems, takeItems, isMetalOnly } = calculateTotals();
-  const received = parseFloat(receivedAmount) || 0;
-  const discountExtraAmount = parseFloat(discountExtra) || 0;
   
+  // Calculate total received from payments
+  const totalReceived = payments.reduce((sum, p) => sum + (p.type === 'receive' ? p.amount : -p.amount), 0);
+
   // Safety feature: Lock entry modifications for transactions created on previous dates
   const isOldTransaction = transactionCreatedAt
     ? (() => {
@@ -330,31 +335,49 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const shouldShowFAB = !isMoneyOnlyTransaction || isEditing;
   
   // Apply discount/extra to net amount
-  const adjustedNetAmount = netAmount > 0 
-    ? netAmount - discountExtraAmount  // Customer owes: subtract discount
-    : netAmount + discountExtraAmount; // Merchant owes: add extra
+  const adjustedNetAmount = netAmount;
+
+  const handleAddPayment = () => {
+    // If money-only transaction, use the selected save date as default
+    const defaultDate = isMoneyOnlyTransaction ? selectedSaveDate.toISOString() : new Date().toISOString();
+    
+    // Auto-determine payment type based on remaining balance
+    // If we have received more than net amount, we need to give back (give)
+    // If we have received less than net amount, we need to receive more (receive)
+    // For purchase (negative netAmount): if we gave more (more negative), receive back. If we gave less, give more.
+    let defaultType: 'receive' | 'give' = 'receive';
+    
+    // Logic: 
+    // Target = adjustedNetAmount
+    // Current = totalReceived
+    // Gap = Target - Current.
+    // If Gap > 0, we need positive flow (receive).
+    // If Gap < 0, we need negative flow (give).
+    if (!isMoneyOnlyTransaction) {
+        const gap = adjustedNetAmount - totalReceived;
+        if (gap < 0) defaultType = 'give';
+        else defaultType = 'receive';
+    }
+
+    setPayments([...payments, {
+      amount: 0,
+      date: defaultDate,
+      type: defaultType
+    }]);
+  };
+
+  const handleUpdatePayment = (index: number, field: keyof PaymentInput, value: any) => {
+    const newPayments = [...payments];
+    newPayments[index] = { ...newPayments[index], [field]: value };
+    setPayments(newPayments);
+  };
 
   // Enhanced save transaction with validation
   const handleSaveTransaction = async () => {
     
     setIsSaving(true);
+    setPaymentError('');
     try {
-      // Calculate effective received amount including discount/extra (signed)
-      // For money-only: received already has correct sign (positive = receive, negative = give)
-      // For sell: merchant receives money (positive)
-      // For purchase: merchant gives money (negative)
-      let effectiveReceived: number;
-      if (isMoneyOnlyTransaction) {
-        // Money-only: received already has correct sign from EntryScreen
-        effectiveReceived = received;
-      } else if (netAmount > 0) {
-        // Sell: merchant receives amountPaid (positive)
-        effectiveReceived = received;
-      } else {
-        // Purchase: merchant gives amountPaid + extra (negative)
-        effectiveReceived = -(received + discountExtraAmount);
-      }
-      
       // Determine save date: null for today (use current date/time), or selected date with random time
       const today = new Date();
       const isTodaySelected = selectedSaveDate.getFullYear() === today.getFullYear() &&
@@ -370,7 +393,41 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         saveDate.setHours(randomHour, randomMinute, 0, 0);
       }
       
-      await onSaveTransaction(effectiveReceived, discountExtraAmount, saveDate, note);
+      // For money-only transactions, ensure payment dates match the transaction date if they are different
+      // This fixes the issue where transaction date and ledger entry date are out of sync
+      let finalPayments = [...payments];
+      if (isMoneyOnlyTransaction && saveDate) {
+          finalPayments = payments.map(p => {
+              // If the payment date is just "today" (default) or different from saveDate, sync it
+              // We preserve the time if possible, or use the saveDate time
+              const pDate = new Date(p.date);
+              const sDate = new Date(saveDate!);
+              
+              // Check if dates (YMD) are different
+              if (pDate.getFullYear() !== sDate.getFullYear() || 
+                  pDate.getMonth() !== sDate.getMonth() || 
+                  pDate.getDate() !== sDate.getDate()) {
+                      return { ...p, date: saveDate!.toISOString() };
+                  }
+              return p;
+          });
+      }
+
+      // Validations
+      if (!isMoneyOnlyTransaction) {
+        // Calculate new total received including the new changes
+        const newTotalReceived = finalPayments.reduce((sum, p) => sum + (p.type === 'receive' ? p.amount : -p.amount), 0);
+        
+        // Strict validation: Net adjustment (difference between payments and transaction total) cannot exceed transaction total
+        // This handles both new transactions and edited money-only transactions
+        const netAdjustment = Math.abs(newTotalReceived - adjustedNetAmount);
+        if (netAdjustment > Math.abs(adjustedNetAmount) + 1) { // +1 tolerance
+            setPaymentError(`Net settlement amount (₹${formatIndianNumber(netAdjustment)}) cannot exceed transaction total (₹${formatIndianNumber(Math.abs(adjustedNetAmount))})`);
+            return;
+        }
+      }
+
+      await onSaveTransaction(finalPayments, saveDate, note);
     } catch (error) {
       console.error('Failed to save transaction:', error);
     } finally {
@@ -385,14 +442,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
     // For money-only transactions (INVERTED SIGN CONVENTION):
     // Positive received = merchant receives money = customer has balance/credit
     // Negative received = merchant gives money = customer has debt
-    finalBalance = received;
+    finalBalance = totalReceived;
   } else {
     // For sell/purchase transactions (INVERTED SIGN CONVENTION):
     // Positive balance = merchant owes customer (credit)
     // Negative balance = customer owes merchant (debt)
-    // received is always positive in UI, but represents merchant receiving (positive) or giving (negative)
-    const signedReceived = adjustedNetAmount > 0 ? received : -received;
-    finalBalance = signedReceived - adjustedNetAmount;
+    finalBalance = totalReceived - adjustedNetAmount;
   }
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => {
@@ -408,7 +463,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
           {entry.type === 'money' ? 'Money' : `${entry.type === 'sell' ? 'Sell' : 'Purchase'} - ${getItemDisplayName(entry)}`}
         </Text>
         <TouchableOpacity onPress={() => onEditEntry(entry.id)} disabled={isEntryLocked}>
-           <MaterialCommunityIcons name="pencil" size={20} color={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.onSurfaceVariant} />
+           <MaterialCommunityIcons name="pencil" size={20} color={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
         </TouchableOpacity>
       </View>
       <Text style={styles.entryDetails}>{formatEntryDetails(entry)}</Text>
@@ -531,99 +586,71 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
               <Text style={styles.settleHeaderLabel}>
                 {isMoneyOnlyTransaction 
                   ? (pendingMoneyType === 'receive' ? 'Customer Pays:' : 'Customer Gets:')
-                  : (adjustedNetAmount > 0 ? 'Customer Pays:' : 'Customer Gets:')
+                  : ((adjustedNetAmount - totalReceived) > 0 ? 'Customer Pays:' : 'Customer Gets:')
                 }
               </Text>
               <Text style={styles.heroAmount}>
                 ₹{formatIndianNumber(isMoneyOnlyTransaction 
                   ? 0
-                  : Math.abs(adjustedNetAmount)
+                  : Math.abs(adjustedNetAmount - totalReceived)
                 )}
               </Text>
             </View>
 
             <View style={styles.settleBody}>
-              {/* Merchant Pays Input */}
-              <TextInput
-                value={(() => {
-                  const val = Math.abs(parseFloat(receivedAmount || '0'));
-                  return val === 0 ? '' : val.toString();
-                })()}
-                onChangeText={(text) => {
-                  if (!isMoneyOnlyTransaction) {
-                    setReceivedAmount(text);
-                    setHasPaymentInteracted(true);
-                  } else {
-                    const numericValue = parseFloat(text) || 0;
-                    const signedValue = pendingMoneyType === 'receive' ? numericValue : -numericValue;
-                    setReceivedAmount(signedValue.toString());
-                    setHasPaymentInteracted(true);
-                  }
-                }}
-                label = {isMoneyOnlyTransaction 
-                  ? (pendingMoneyType === 'receive' ? "Customer Pays (₹)" : "Merchant Pays (₹)")
-                  : (adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)")
-                }
-                mode="outlined"
-                keyboardType="numeric"
-                editable={!isMoneyOnlyTransaction}
-                style={styles.textInput}
-                theme={{ roundness: 12, fonts: { regular: { fontFamily: 'Outfit_400Regular' } } }}
-                placeholder={isMoneyOnlyTransaction 
-                  ? (pendingMoneyType === 'receive' ? "Customer Pays (₹)" : "Merchant Pays (₹)")
-                  : (adjustedNetAmount > 0 ? "Customer Pays (₹)" : "Merchant Pays (₹)")
-                }
-              />
+              {/* Payments List */}
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <Text style={styles.cardLabel}>Payments</Text>
+                   <Button mode="contained" compact onPress={handleAddPayment} icon="plus" disabled={(isMoneyOnlyTransaction && !isEditing) || payments.some(p => p.amount === 0) || finalBalance === 0}>Add</Button>
+                </View>
+                
+                {paymentError ? <Text style={{ color: 'red', fontSize: 12, marginHorizontal: 4 }}>{paymentError}</Text> : null}
 
-              {/* Extra Input */}
-              <TextInput
-                value={discountExtra}
-                onChangeText={(text) => {
-                  const filtered = filterDiscountExtraInput(text);
-                  setDiscountExtra(filtered);
-                }}
-                label={netAmount > 0 ? "Discount (₹)" : "Extra (₹)"}
-                mode="outlined"
-                keyboardType="numeric"
-                style={styles.textInput}
-                theme={{ roundness: 12, fonts: { regular: { fontFamily: 'Outfit_400Regular' } } }}
-                placeholder={netAmount > 0 ? "Discount (₹)" : "Extra (₹)"}
-                disabled={isMoneyOnlyTransaction}
-              />
-
-              {/* Chips */}
-              <View style={styles.chipsRow}>
-                <TouchableOpacity 
-                  style={styles.chip}
-                  onPress={() => {
-                    if (!isMoneyOnlyTransaction) {
-                      setReceivedAmount(Math.abs(adjustedNetAmount).toString());
-                    }
-                  }}
-                >
-                  <Text style={styles.chipText}>Full: ₹{formatIndianNumber(Math.abs(adjustedNetAmount))}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.chip}
-                  onPress={() => {
-                    if (!isMoneyOnlyTransaction) {
-                      setReceivedAmount((Math.abs(adjustedNetAmount) / 2).toString());
-                    }
-                  }}
-                >
-                  <Text style={styles.chipText}>Half: ₹{formatIndianNumber(Math.abs(adjustedNetAmount) / 2)}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.chip}
-                  onPress={() => {
-                    if (!isMoneyOnlyTransaction) {
-                      setReceivedAmount('');
-                    }
-                  }}
-                >
-                  <Text style={styles.chipText}>Clear</Text>
-                </TouchableOpacity>
+                {payments.map((payment, index) => (
+                  <View key={index} style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      value={payment.amount === 0 ? '' : payment.amount.toString()}
+                      onChangeText={!!payment.id ? undefined : (text) => handleUpdatePayment(index, 'amount', parseFloat(text) || 0)}
+                      label={payment.type === 'receive' ? "Receive" : "Give"}
+                      mode="outlined"
+                      keyboardType="numeric"
+                      editable={!payment.id}
+                      style={[styles.textInput, { flex: 1 }]}
+                      theme={{ roundness: 12, fonts: { regular: { fontFamily: 'Outfit_400Regular' } } }}
+                    />
+                    
+                    <TouchableOpacity 
+                      onPress={!!payment.id ? undefined : () => setEditingPaymentDateIndex(index)} 
+                      disabled={!!payment.id}
+                      style={[styles.dateBtnProminent, { paddingHorizontal: 12, paddingVertical: 8 }]}
+                    >
+                       <Text style={styles.dateText}>{formatDateDisplay(new Date(payment.date))}</Text>
+                    </TouchableOpacity>
+                    {!payment.id && (
+                      <IconButton icon="close" size={20} onPress={() => {
+                        const newPayments = [...payments];
+                        newPayments.splice(index, 1);
+                        setPayments(newPayments);
+                      }} />
+                    )}
+                  </View>
+                ))}
+                {payments.length === 0 && (
+                   <Text style={{ textAlign: 'center', color: '#666', fontStyle: 'italic' }}>No payments added</Text>
+                )}
               </View>
+
+              {/* Payment Date Picker */}
+              {editingPaymentDateIndex !== null && (
+                <DateTimePicker
+                  value={new Date(payments[editingPaymentDateIndex].date)}
+                  mode="date"
+                  display="default"
+                  onChange={handlePaymentDateChange}
+                  maximumDate={new Date()}
+                />
+              )}
 
               {/* Note Input */}
               <TextInput
@@ -727,7 +754,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   customerBar: {
-    backgroundColor: '#FFFFFF', // --surface
+    backgroundColor: 'rgba(240, 242, 245, 0.5)', // --surface
     paddingHorizontal: 20,
     paddingVertical: 12,
     flexDirection: 'row',

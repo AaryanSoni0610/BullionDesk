@@ -1,74 +1,14 @@
-import { LedgerEntry, Transaction } from '../types';
+import { LedgerEntry, Transaction, PaymentInput, Customer } from '../types';
 import { DatabaseService } from './database.sqlite';
 
 export class LedgerService {
   // Get all ledger entries
   static async getAllLedgerEntries(): Promise<LedgerEntry[]> {
     try {
-
-      // Optimized query with JOIN and soft delete filtering
-      const rows = await DatabaseService.getAllAsyncBatch<any>(
-        `SELECT
-          le.id, le.transactionId, le.customerId, le.customerName, le.date,
-          le.amountReceived, le.amountGiven, le.createdAt,
-          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
-          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
-          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
-          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
-        FROM ledger_entries le
-        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
-        JOIN transactions t ON le.transactionId = t.id
-        WHERE le.deleted_on IS NULL
-          AND t.deleted_on IS NULL
-        ORDER BY le.date DESC, lei.createdAt ASC`
+      const rows = await DatabaseService.getAllAsyncBatch<LedgerEntry>(
+        `SELECT * FROM ledger_entries WHERE deleted_on IS NULL ORDER BY date DESC`
       );
-
-      // Group results by ledger entry ID
-      const entryMap = new Map<string, LedgerEntry>();
-
-      for (const row of rows) {
-        const entryId = row.id;
-
-        if (!entryMap.has(entryId)) {
-          // Create new ledger entry
-          entryMap.set(entryId, {
-            id: row.id,
-            transactionId: row.transactionId,
-            customerId: row.customerId,
-            customerName: row.customerName,
-            date: row.date,
-            amountReceived: row.amountReceived || 0,
-            amountGiven: row.amountGiven || 0,
-            entries: [],
-            createdAt: row.createdAt,
-          });
-        }
-
-        // Add item to the entry (if it exists)
-        if (row.item_id) {
-          const entry = entryMap.get(entryId)!;
-          entry.entries.push({
-            id: row.item_id,
-            type: row.type,
-            itemType: row.itemType,
-            weight: row.weight,
-            price: row.price,
-            touch: row.touch,
-            cut: row.cut,
-            extraPerKg: row.extraPerKg,
-            pureWeight: row.pureWeight,
-            moneyType: row.moneyType,
-            amount: row.amount,
-            metalOnly: row.metalOnly === 1,
-            stock_id: row.stock_id,
-            subtotal: row.subtotal,
-            createdAt: row.item_createdAt,
-            lastUpdatedAt: row.item_lastUpdatedAt,
-          });
-        }
-      }
-
-      return Array.from(entryMap.values());
+      return rows;
     } catch (error) {
       console.error('Error getting ledger entries:', error);
       return [];
@@ -77,148 +17,22 @@ export class LedgerService {
 
   // Get ledger entries by date range
   static async getLedgerEntriesByDate(startDate: Date, endDate: Date): Promise<LedgerEntry[]> {
-    try {
-
-      // Optimized query with JOIN and soft delete filtering
-      const rows = await DatabaseService.getAllAsyncBatch<any>(
-        `SELECT
-          le.id, le.transactionId, le.customerId, le.customerName, le.date,
-          le.amountReceived, le.amountGiven, le.createdAt,
-          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
-          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
-          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
-          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
-        FROM ledger_entries le
-        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
-        JOIN transactions t ON le.transactionId = t.id
-        WHERE le.date >= ? AND le.date <= ?
-          AND le.deleted_on IS NULL
-          AND t.deleted_on IS NULL
-        ORDER BY le.date DESC, lei.createdAt ASC`,
-        [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]]
-      );
-
-      // Group results by ledger entry ID
-      const entryMap = new Map<string, LedgerEntry>();
-
-      for (const row of rows) {
-        const entryId = row.id;
-
-        if (!entryMap.has(entryId)) {
-          // Create new ledger entry
-          entryMap.set(entryId, {
-            id: row.id,
-            transactionId: row.transactionId,
-            customerId: row.customerId,
-            customerName: row.customerName,
-            date: row.date,
-            amountReceived: row.amountReceived || 0,
-            amountGiven: row.amountGiven || 0,
-            entries: [],
-            createdAt: row.createdAt,
-          });
-        }
-
-        // Add item to the entry (if it exists)
-        if (row.item_id) {
-          const entry = entryMap.get(entryId)!;
-          entry.entries.push({
-            id: row.item_id,
-            type: row.type,
-            itemType: row.itemType,
-            weight: row.weight,
-            price: row.price,
-            touch: row.touch,
-            cut: row.cut,
-            extraPerKg: row.extraPerKg,
-            pureWeight: row.pureWeight,
-            moneyType: row.moneyType,
-            amount: row.amount,
-            metalOnly: row.metalOnly === 1,
-            stock_id: row.stock_id,
-            subtotal: row.subtotal,
-            createdAt: row.item_createdAt,
-            lastUpdatedAt: row.item_lastUpdatedAt,
-          });
-        }
-      }
-
-      return Array.from(entryMap.values());
-    } catch (error) {
-      console.error('Error getting ledger entries by date:', error);
-      return [];
-    }
+    return this.getLedgerEntriesByDateRange(
+      startDate.toISOString().split('T')[0],
+      endDate.toISOString().split('T')[0]
+    );
   }
 
   // Get ledger entries by date range (string-based for consistency)
   static async getLedgerEntriesByDateRange(startDate: string, endDate: string): Promise<LedgerEntry[]> {
     try {
-
-      // Optimized query with JOIN and soft delete filtering
-      const rows = await DatabaseService.getAllAsyncBatch<any>(
-        `SELECT
-          le.id, le.transactionId, le.customerId, le.customerName, le.date,
-          le.amountReceived, le.amountGiven, le.createdAt,
-          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
-          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
-          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
-          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
-        FROM ledger_entries le
-        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
-        JOIN transactions t ON le.transactionId = t.id
-        WHERE le.date >= ? AND le.date <= ?
-          AND le.deleted_on IS NULL
-          AND t.deleted_on IS NULL
-        ORDER BY le.date DESC, lei.createdAt ASC`,
+      const rows = await DatabaseService.getAllAsyncBatch<LedgerEntry>(
+        `SELECT * FROM ledger_entries 
+         WHERE date >= ? AND date <= ? AND deleted_on IS NULL 
+         ORDER BY date DESC`,
         [startDate, endDate]
       );
-
-      // Group results by ledger entry ID
-      const entryMap = new Map<string, LedgerEntry>();
-
-      for (const row of rows) {
-        const entryId = row.id;
-
-        if (!entryMap.has(entryId)) {
-          // Create new ledger entry
-          entryMap.set(entryId, {
-            id: row.id,
-            transactionId: row.transactionId,
-            customerId: row.customerId,
-            customerName: row.customerName,
-            date: row.date,
-            amountReceived: row.amountReceived || 0,
-            amountGiven: row.amountGiven || 0,
-            entries: [],
-            createdAt: row.createdAt,
-          });
-        }
-
-        // Add item to the entry (if it exists)
-        if (row.item_id) {
-          const entry = entryMap.get(entryId)!;
-          entry.entries.push({
-            id: row.item_id,
-            type: row.type,
-            itemType: row.itemType,
-            weight: row.weight,
-            price: row.price,
-            touch: row.touch,
-            cut: row.cut,
-            extraPerKg: row.extraPerKg,
-            pureWeight: row.pureWeight,
-            moneyType: row.moneyType,
-            amount: row.amount,
-            metalOnly: row.metalOnly === 1,
-            stock_id: row.stock_id,
-            subtotal: row.subtotal,
-            createdAt: row.item_createdAt,
-            lastUpdatedAt: row.item_lastUpdatedAt,
-          });
-        }
-      }
-
-      return Array.from(entryMap.values());
+      return rows;
     } catch (error) {
       console.error('Error getting ledger entries by date range:', error);
       return [];
@@ -228,72 +42,13 @@ export class LedgerService {
   // Get ledger entries by transaction ID
   static async getLedgerEntriesByTransactionId(transactionId: string): Promise<LedgerEntry[]> {
     try {
-
-      // Optimized query with JOIN and soft delete filtering
-      const rows = await DatabaseService.getAllAsyncBatch<any>(
-        `SELECT
-          le.id, le.transactionId, le.customerId, le.customerName, le.date,
-          le.amountReceived, le.amountGiven, le.createdAt,
-          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
-          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
-          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
-          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
-        FROM ledger_entries le
-        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
-        JOIN transactions t ON le.transactionId = t.id
-        WHERE le.transactionId = ?
-          AND le.deleted_on IS NULL
-          AND t.deleted_on IS NULL
-        ORDER BY le.date DESC, lei.createdAt ASC`,
+      const rows = await DatabaseService.getAllAsyncBatch<LedgerEntry>(
+        `SELECT * FROM ledger_entries 
+         WHERE transactionId = ? AND deleted_on IS NULL 
+         ORDER BY date DESC`,
         [transactionId]
       );
-
-      // Group results by ledger entry ID
-      const entryMap = new Map<string, LedgerEntry>();
-
-      for (const row of rows) {
-        const entryId = row.id;
-
-        if (!entryMap.has(entryId)) {
-          // Create new ledger entry
-          entryMap.set(entryId, {
-            id: row.id,
-            transactionId: row.transactionId,
-            customerId: row.customerId,
-            customerName: row.customerName,
-            date: row.date,
-            amountReceived: row.amountReceived || 0,
-            amountGiven: row.amountGiven || 0,
-            entries: [],
-            createdAt: row.createdAt,
-          });
-        }
-
-        // Add item to the entry (if it exists)
-        if (row.item_id) {
-          const entry = entryMap.get(entryId)!;
-          entry.entries.push({
-            id: row.item_id,
-            type: row.type,
-            itemType: row.itemType,
-            weight: row.weight,
-            price: row.price,
-            touch: row.touch,
-            cut: row.cut,
-            extraPerKg: row.extraPerKg,
-            pureWeight: row.pureWeight,
-            moneyType: row.moneyType,
-            amount: row.amount,
-            metalOnly: row.metalOnly === 1,
-            stock_id: row.stock_id,
-            subtotal: row.subtotal,
-            createdAt: row.item_createdAt,
-            lastUpdatedAt: row.item_lastUpdatedAt,
-          });
-        }
-      }
-
-      return Array.from(entryMap.values());
+      return rows;
     } catch (error) {
       console.error('Error getting ledger entries by transaction ID:', error);
       return [];
@@ -303,205 +58,238 @@ export class LedgerService {
   // Get ledger entries by customer ID
   static async getLedgerEntriesByCustomerId(customerId: string): Promise<LedgerEntry[]> {
     try {
-
-      // Optimized query with JOIN and soft delete filtering
-      const rows = await DatabaseService.getAllAsyncBatch<any>(
-        `SELECT
-          le.id, le.transactionId, le.customerId, le.customerName, le.date,
-          le.amountReceived, le.amountGiven, le.createdAt,
-          lei.id as item_id, lei.type, lei.itemType, lei.weight, lei.price,
-          lei.touch, lei.cut, lei.extraPerKg, lei.pureWeight, lei.moneyType,
-          lei.amount, lei.metalOnly, lei.stock_id, lei.subtotal,
-          lei.createdAt as item_createdAt, lei.lastUpdatedAt as item_lastUpdatedAt
-        FROM ledger_entries le
-        LEFT JOIN ledger_entry_items lei ON le.id = lei.ledger_entry_id
-        JOIN transactions t ON le.transactionId = t.id
-        WHERE le.customerId = ?
-          AND le.deleted_on IS NULL
-          AND t.deleted_on IS NULL
-        ORDER BY le.date DESC, lei.createdAt ASC`,
+      const rows = await DatabaseService.getAllAsyncBatch<LedgerEntry>(
+        `SELECT * FROM ledger_entries 
+         WHERE customerId = ? AND deleted_on IS NULL 
+         ORDER BY date DESC`,
         [customerId]
       );
-
-      // Group results by ledger entry ID
-      const entryMap = new Map<string, LedgerEntry>();
-
-      for (const row of rows) {
-        const entryId = row.id;
-
-        if (!entryMap.has(entryId)) {
-          // Create new ledger entry
-          entryMap.set(entryId, {
-            id: row.id,
-            transactionId: row.transactionId,
-            customerId: row.customerId,
-            customerName: row.customerName,
-            date: row.date,
-            amountReceived: row.amountReceived || 0,
-            amountGiven: row.amountGiven || 0,
-            entries: [],
-            createdAt: row.createdAt,
-          });
-        }
-
-        // Add item to the entry (if it exists)
-        if (row.item_id) {
-          const entry = entryMap.get(entryId)!;
-          entry.entries.push({
-            id: row.item_id,
-            type: row.type,
-            itemType: row.itemType,
-            weight: row.weight,
-            price: row.price,
-            touch: row.touch,
-            cut: row.cut,
-            extraPerKg: row.extraPerKg,
-            pureWeight: row.pureWeight,
-            moneyType: row.moneyType,
-            amount: row.amount,
-            metalOnly: row.metalOnly === 1,
-            stock_id: row.stock_id,
-            subtotal: row.subtotal,
-            createdAt: row.item_createdAt,
-            lastUpdatedAt: row.item_lastUpdatedAt,
-          });
-        }
-      }
-
-      return Array.from(entryMap.values());
+      return rows;
     } catch (error) {
       console.error('Error getting ledger entries by customer ID:', error);
       return [];
     }
   }
 
-  // Create ledger entry
-  static async createLedgerEntry(
-    transaction: Transaction,
-    deltaAmount: number,
-    timestamp: string,
-    netAmount?: number
-  ): Promise<boolean> {
+  // Delete ledger entries by transaction ID (Soft Delete)
+  static async deleteLedgerEntryByTransactionId(transactionId: string): Promise<boolean> {
     try {
       const db = DatabaseService.getDatabase();
-      
-      const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Determine ledger direction based on transaction type and deltaAmount
-      // For money-only transactions (netAmount === 0 or undefined), use deltaAmount sign:
-      //   - positive deltaAmount = merchant receives money = amountReceived
-      //   - negative deltaAmount = merchant gives money = amountGiven
-      // For regular transactions, check netAmount (transaction total):
-      //   - netAmount > 0 (sell/inward): positive deltaAmount = received, negative = refund (given)
-      //   - netAmount < 0 (purchase/outward): positive deltaAmount = given more, negative = refund (received)
-      const isMoneyOnly = netAmount === undefined || netAmount === 0;
-      let amountReceived = 0;
-      let amountGiven = 0;
-      
-      if (isMoneyOnly) {
-        // Money-only transaction: deltaAmount sign determines direction
-        amountReceived = deltaAmount > 0 ? Math.abs(deltaAmount) : 0;
-        amountGiven = deltaAmount < 0 ? Math.abs(deltaAmount) : 0;
-      } else {
-        // Regular transaction: use deltaAmount sign to determine direction
-        // Positive deltaAmount = merchant receives money = amountReceived
-        // Negative deltaAmount = merchant gives money = amountGiven
-        if (deltaAmount > 0) {
-          amountReceived = Math.abs(deltaAmount);
-          amountGiven = 0;
-        } else {
-          amountReceived = 0;
-          amountGiven = Math.abs(deltaAmount);
-        }
-      }
-      
-      // Insert ledger entry
       await db.runAsync(
-        `INSERT INTO ledger_entries 
-         (id, transactionId, customerId, customerName, date, amountReceived, amountGiven, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          ledgerId,
-          transaction.id,
-          transaction.customerId,
-          transaction.customerName,
-          timestamp,
-          amountReceived,
-          amountGiven,
-          timestamp
-        ]
+        `UPDATE ledger_entries SET deleted_on = ? WHERE transactionId = ?`,
+        [new Date().toISOString().split('T')[0], transactionId]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error deleting ledger entries by transaction ID:', error);
+      return false;
+    }
+  }
+
+  // Sync metal entries to ledger
+  static async syncMetalLedgerEntries(
+    transaction: Transaction,
+    saveDate: string
+  ): Promise<boolean> {
+    const db = DatabaseService.getDatabase();
+    try {
+      // Delete existing metal entries for this transaction
+      await db.runAsync(
+        `DELETE FROM ledger_entries WHERE transactionId = ? AND itemType != 'money'`,
+        [transaction.id]
       );
 
-      // Insert ledger entry items
+      // Insert new metal entries based on current transaction state
       for (const entry of transaction.entries) {
-        const itemId = `ledger_item_${Date.now()}_${Math.random()}`;
-        
+        if (entry.itemType !== 'money') {
+          const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          await db.runAsync(
+            `INSERT INTO ledger_entries 
+             (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, amount, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              ledgerId,
+              transaction.id,
+              transaction.customerId,
+              transaction.customerName,
+              transaction.date, // Use Transaction Date for historical accuracy
+              entry.type,
+              entry.itemType,
+              entry.pureWeight || entry.weight || 0, // Use pure weight if available, else weight
+              entry.touch || 0,
+              0, // Amount is 0 for metal entries in this schema context (value is in weight)
+              saveDate // Created at is now
+            ]
+          );
+        }
+      }
+      return true;
+    } catch (error) {
+      console.error('Error syncing metal ledger entries:', error);
+      return false;
+    }
+  }
+
+  // Sync money entries to ledger (Explicit Payments)
+  static async syncMoneyLedgerEntries(
+    transactionId: string,
+    customer: Customer,
+    payments: PaymentInput[]
+  ): Promise<boolean> {
+    const db = DatabaseService.getDatabase();
+    try {
+      // 1. Get existing ledger entries for this transaction (money only)
+      const existingLedgerEntries = await this.getLedgerEntriesByTransactionId(transactionId);
+      const existingMoneyEntries = existingLedgerEntries.filter(l => l.itemType === 'money');
+      
+      const paymentIdsToKeep = new Set<string>();
+
+      // 2. Upsert (Update or Insert) Payments
+      for (const payment of payments) {
+        if (payment.id) {
+          // UPDATE existing ledger entry
+          paymentIdsToKeep.add(payment.id);
+          await db.runAsync(
+            `UPDATE ledger_entries 
+             SET amount = ?, date = ?, type = ?
+             WHERE id = ?`,
+            [
+              payment.amount,
+              payment.date, // User defined date
+              payment.type,
+              payment.id
+            ]
+          );
+        } else {
+          // INSERT new ledger entry
+          const newLedgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          await db.runAsync(
+            `INSERT INTO ledger_entries 
+             (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, amount, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              newLedgerId,
+              transactionId,
+              customer.id,
+              customer.name,
+              payment.date, // User defined date
+              payment.type, // 'receive' or 'give'
+              'money',
+              0,
+              0,
+              payment.amount,
+              new Date().toISOString()
+            ]
+          );
+        }
+      }
+
+      // 3. Delete Removed Payments
+      for (const existing of existingMoneyEntries) {
+        if (!paymentIdsToKeep.has(existing.id)) {
+          await db.runAsync('DELETE FROM ledger_entries WHERE id = ?', [existing.id]);
+        }
+      }
+      return true;
+    } catch (error) {
+      console.error('Error syncing money ledger entries:', error);
+      return false;
+    }
+  }
+
+  // Sync transaction to ledger (Atomic Sync)
+  static async syncTransactionToLedger(
+    transaction: Transaction,
+    amountPaid: number,
+    saveDate: string
+  ): Promise<boolean> {
+    const db = DatabaseService.getDatabase();
+    
+    try {
+      // 1. Metal Logic (State-Based)
+      // Delete existing metal entries for this transaction
+      await db.runAsync(
+        `DELETE FROM ledger_entries WHERE transactionId = ? AND itemType != 'money'`,
+        [transaction.id]
+      );
+
+      // Insert new metal entries based on current transaction state
+      for (const entry of transaction.entries) {
+        if (entry.itemType !== 'money') {
+          const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          await db.runAsync(
+            `INSERT INTO ledger_entries 
+             (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, amount, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              ledgerId,
+              transaction.id,
+              transaction.customerId,
+              transaction.customerName,
+              transaction.date, // Use Transaction Date for historical accuracy
+              entry.type,
+              entry.itemType,
+              entry.pureWeight || entry.weight || 0, // Use pure weight if available, else weight
+              entry.touch || 0,
+              0, // Amount is 0 for metal entries in this schema context (value is in weight)
+              saveDate // Created at is now
+            ]
+          );
+        }
+      }
+
+      // 2. Money Logic (Event-Based / Delta)
+      // Calculate total recorded money for this transaction so far
+      const moneyRows = await db.getAllAsync<{ amount: number; type: string }>(
+        `SELECT amount, type FROM ledger_entries WHERE transactionId = ? AND itemType = 'money' AND deleted_on IS NULL`,
+        [transaction.id]
+      );
+
+      let totalRecorded = 0;
+      for (const row of moneyRows) {
+        if (row.type === 'receive') {
+          totalRecorded += row.amount;
+        } else if (row.type === 'give') {
+          totalRecorded -= row.amount;
+        }
+      }
+
+      // Calculate difference
+      // amountPaid is the target total paid.
+      // If amountPaid > totalRecorded, we received more money.
+      // If amountPaid < totalRecorded, we gave back money (or corrected a mistake).
+      const difference = amountPaid - totalRecorded;
+
+      if (Math.abs(difference) > 0.001) { // Use epsilon for float comparison
+        const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const type = difference > 0 ? 'receive' : 'give';
+        const amount = Math.abs(difference);
+
         await db.runAsync(
-          `INSERT INTO ledger_entry_items 
-           (id, ledger_entry_id, type, itemType, weight, price, touch, cut, extraPerKg, 
-            pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO ledger_entries 
+           (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, amount, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            itemId,
             ledgerId,
-            entry.type,
-            entry.itemType,
-            entry.weight || null,
-            entry.price || null,
-            entry.touch || null,
-            entry.cut || null,
-            entry.extraPerKg || null,
-            entry.pureWeight || null,
-            entry.moneyType || null,
-            entry.amount || null,
-            entry.metalOnly ? 1 : 0,
-            entry.stock_id || null,
-            entry.subtotal,
-            timestamp,
-            entry.lastUpdatedAt || timestamp
+            transaction.id,
+            transaction.customerId,
+            transaction.customerName,
+            saveDate, // Use current event time for money movement
+            type,
+            'money',
+            0,
+            0,
+            amount,
+            saveDate
           ]
         );
       }
 
       return true;
     } catch (error) {
-      console.error('Error creating ledger entry:', error);
-      return false;
-    }
-  }
-
-  // Delete ledger entry (soft delete)
-  static async deleteLedgerEntry(ledgerId: string): Promise<boolean> {
-    try {
-      const db = DatabaseService.getDatabase();
-
-      // Soft delete the ledger entry
-      await db.runAsync('UPDATE ledger_entries SET deleted_on = ? WHERE id = ?', [
-        new Date().toISOString().split('T')[0],
-        ledgerId
-      ]);
-
-      return true;
-    } catch (error) {
-      console.error('Error soft deleting ledger entry:', error);
-      return false;
-    }
-  }
-
-  // Delete ledger entries by transaction ID (soft delete)
-  static async deleteLedgerEntryByTransactionId(transactionId: string): Promise<boolean> {
-    try {
-      const db = DatabaseService.getDatabase();
-
-      // Soft delete all ledger entries for this transaction
-      await db.runAsync('UPDATE ledger_entries SET deleted_on = ? WHERE transactionId = ?', [
-        new Date().toISOString().split('T')[0],
-        transactionId
-      ]);
-
-      return true;
-    } catch (error) {
-      console.error('Error soft deleting ledger entries by transaction ID:', error);
+      console.error('Error syncing transaction to ledger:', error);
       return false;
     }
   }

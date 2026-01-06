@@ -319,7 +319,6 @@ const AppContent: React.FC<AppContentProps> = ({
     currentEntries,
     editingEntryId,
     editingTransactionId,
-    lastGivenMoney,
     transactionCreatedAt,
     transactionLastUpdatedAt,
     customerModalVisible,
@@ -378,7 +377,6 @@ const AppContent: React.FC<AppContentProps> = ({
               onEditEntry={handleEditEntry}
               onSaveTransaction={handleSaveTransaction}
               editingTransactionId={editingTransactionId}
-              lastGivenMoney={lastGivenMoney}
               transactionCreatedAt={transactionCreatedAt}
               transactionLastUpdatedAt={transactionLastUpdatedAt}
             />

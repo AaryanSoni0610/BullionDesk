@@ -348,9 +348,8 @@ export const RaniRupaSellScreen: React.FC = () => {
       const result = await TransactionService.saveTransaction(
         customer,
         entries,
-        0, // receivedAmount
+        [], // payments
         undefined, // existingTransactionId
-        0, // discountExtraAmount
         saveDate
       );
 

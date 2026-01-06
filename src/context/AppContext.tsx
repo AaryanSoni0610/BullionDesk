@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Customer, TransactionEntry, ItemType } from '../types';
+import { Customer, TransactionEntry, ItemType, PaymentInput } from '../types';
 import { CustomerService } from '../services/customer.service';
 import { TransactionService } from '../services/transaction.service';
 
@@ -24,7 +24,6 @@ interface AppContextType {
   setEditingEntryId: (id: string | null) => void;
   editingTransactionId: string | null;
   setEditingTransactionId: (id: string | null) => void;
-  lastGivenMoney: number;
   pendingMoneyAmount: number;
   setPendingMoneyAmount: (amount: number) => void;
   pendingMoneyType: 'give' | 'receive';
@@ -84,7 +83,7 @@ interface AppContextType {
   handleAddEntry: (entry: TransactionEntry) => void;
   handleEditEntry: (entryId: string) => void;
   handleDeleteEntry: (entryId: string) => void;
-  handleSaveTransaction: (receivedAmount?: number, discountExtraAmount?: number, saveDate?: Date | null, note?: string) => Promise<void>;
+  handleSaveTransaction: (payments: PaymentInput[], saveDate?: Date | null, note?: string) => Promise<void>;
   loadTransactionForEdit: (transactionId: string) => Promise<void>;
 }
 
@@ -119,7 +118,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
-  const [lastGivenMoney, setLastGivenMoney] = useState<number>(0);
   const [pendingMoneyAmount, setPendingMoneyAmount] = useState<number>(0);
   const [pendingMoneyType, setPendingMoneyType] = useState<'give' | 'receive'>('receive');
   const [transactionCreatedAt, setTransactionCreatedAt] = useState<string | null>(null);
@@ -158,7 +156,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setCurrentEntries([]);
     setEditingEntryId(null);
     setEditingTransactionId(null);
-    setLastGivenMoney(0);
     setPendingMoneyAmount(0);
     setPendingMoneyType('receive');
     setTransactionCreatedAt(null);
@@ -197,7 +194,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     } else {
       // Clear editing transaction ID for new transactions
       setEditingTransactionId(null);
-      setLastGivenMoney(0);
       setTransactionCreatedAt(null);
       setTransactionLastUpdatedAt(null);
       navigateToEntry(customer);
@@ -221,7 +217,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     } else {
       // Clear editing transaction ID for new transactions
       setEditingTransactionId(null);
-      setLastGivenMoney(0);
       setTransactionCreatedAt(null);
       setTransactionLastUpdatedAt(null);
       navigateToEntry(newCustomer);
@@ -269,7 +264,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   };
 
-  const handleSaveTransaction = async (receivedAmount: number = 0, discountExtraAmount: number = 0, saveDate?: Date | null, note?: string) => {
+  const handleSaveTransaction = async (payments: PaymentInput[], saveDate?: Date | null, note?: string) => {
     // Guard against concurrent saves
     if (isSavingTransaction) {
       return;
@@ -287,9 +282,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       const result = await TransactionService.saveTransaction(
         currentCustomer, 
         currentEntries, 
-        receivedAmount,
+        payments,
         editingTransactionId || undefined,
-        discountExtraAmount,
         saveDate,
         note
       );
@@ -340,11 +334,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         return;
       }
 
-      // Set the current customer, entries, transaction ID, and last given money
+      // Set the current customer, entries, transaction ID
       setCurrentCustomer(customer);
       setCurrentEntries(transaction.entries);
       setEditingTransactionId(transactionId);
-      setLastGivenMoney(transaction.lastGivenMoney || transaction.amountPaid || 0);
       setTransactionCreatedAt(transaction.createdAt || transaction.date);
       setTransactionLastUpdatedAt(transaction.lastUpdatedAt || transaction.date);
 
@@ -378,7 +371,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setEditingEntryId,
     editingTransactionId,
     setEditingTransactionId,
-    lastGivenMoney,
     pendingMoneyAmount,
     setPendingMoneyAmount,
     pendingMoneyType,

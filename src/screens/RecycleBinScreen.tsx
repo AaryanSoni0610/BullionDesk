@@ -367,7 +367,7 @@ export const RecycleBinScreen: React.FC = () => {
         transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
         transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
       } else {
-        const transactionRemaining = transaction.amountPaid - transaction.total + transaction.discountExtraAmount;
+        const transactionRemaining = transaction.amountPaid - transaction.total;
         
         if (transactionRemaining === 0) {
           transactionBalanceLabel = 'Settled';

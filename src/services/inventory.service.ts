@@ -27,33 +27,35 @@ export class InventoryService {
         gold999: number;
         gold995: number;
         silver: number;
-        rani: number;
-        rupu: number;
         money: number;
-      }>('SELECT gold999, gold995, silver, rani, rupu, money FROM base_inventory WHERE id = 1');
+      }>('SELECT gold999, gold995, silver, money FROM base_inventory WHERE id = 1');
 
       if (inventory) {
-        return inventory;
+        return {
+          ...inventory,
+          rani: 0,
+          rupu: 0
+        };
       }
 
       // Return default if not found
       return {
-        gold999: 300,
-        gold995: 100,
-        silver: 10000,
+        gold999: 0,
+        gold995: 0,
+        silver: 0,
         rani: 0,
         rupu: 0,
-        money: 3000000
+        money: 0
       };
     } catch (error) {
       console.error('Error getting base inventory:', error);
       return {
-        gold999: 300,
-        gold995: 100,
-        silver: 10000,
+        gold999: 0,
+        gold995: 0,
+        silver: 0,
         rani: 0,
         rupu: 0,
-        money: 3000000
+        money: 0
       };
     }
   }
@@ -65,13 +67,6 @@ export class InventoryService {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-  }
-
-  // Helper to get UTC ISO string for the start of a local day (YYYY-MM-DD)
-  private static getUtcStartOfDay(dateStr: string): string {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const date = new Date(y, m - 1, d); // Local Midnight
-    return date.toISOString();
   }
 
   // Get Opening Balance for a specific date (Read Strategy)
@@ -215,15 +210,16 @@ export class InventoryService {
     // ---------------------------------------------------------
     const ledgerRows = await DatabaseService.getAllAsyncBatch<{
       date: string;
-      amountReceived: number;
-      amountGiven: number;
+      type: string;
+      amount: number;
     }>(`
-      SELECT le.date, le.amountReceived, le.amountGiven
+      SELECT le.date, le.type, le.amount
       FROM ledger_entries le
       JOIN transactions t ON le.transactionId = t.id
       WHERE le.date >= ? 
         AND le.deleted_on IS NULL 
         AND t.deleted_on IS NULL
+        AND le.itemType = 'money'
       ORDER BY le.date ASC
     `, [startIso]);
 
@@ -347,8 +343,11 @@ export class InventoryService {
       
       // A. Ledger Entries
       for (const row of events.ledger) {
-        dailyMoneyChange += Number(row.amountReceived || 0);
-        dailyMoneyChange -= Number(row.amountGiven || 0);
+        if (row.type === 'receive') {
+          dailyMoneyChange += Number(row.amount || 0);
+        } else if (row.type === 'give') {
+          dailyMoneyChange -= Number(row.amount || 0);
+        }
       }
 
       // B. Money Items (Direct adjustments)
@@ -417,19 +416,22 @@ export class InventoryService {
 
       // Calculate money effects from ledger_entries (includes money-only transactions)
       const moneyEntries = await DatabaseService.getAllAsyncBatch<{
-        amountReceived: number;
-        amountGiven: number;
+        type: string;
+        amount: number;
       }>(`
-        SELECT le.amountReceived, le.amountGiven
+        SELECT le.type, le.amount
         FROM ledger_entries le
-        WHERE le.deleted_on IS NULL
+        WHERE le.deleted_on IS NULL AND le.itemType = 'money'
       `);
 
       moneyEntries.forEach(entry => {
-        // amountReceived = merchant receives money (inflow) = positive effect
-        // amountGiven = merchant gives money (outflow) = negative effect
-        effects.money += entry.amountReceived;
-        effects.money -= entry.amountGiven;
+        // receive = merchant receives money (inflow) = positive effect
+        // give = merchant gives money (outflow) = negative effect
+        if (entry.type === 'receive') {
+          effects.money += entry.amount;
+        } else if (entry.type === 'give') {
+          effects.money -= entry.amount;
+        }
       });
 
       // Calculate effects from transaction_entries table for item transactions
@@ -482,37 +484,20 @@ export class InventoryService {
     gold999: number;
     gold995: number;
     silver: number;
-    rani: number;
-    rupu: number;
     money: number;
   }): Promise<boolean> {
     try {
       const db = DatabaseService.getDatabase();
       
-      // Get old base inventory to calculate delta
-      const oldBase = await this.getBaseInventory();
-
-      // Calculate delta
-      const delta = {
-        gold999: inventory.gold999 - oldBase.gold999,
-        gold995: inventory.gold995 - oldBase.gold995,
-        silver: inventory.silver - oldBase.silver,
-        rani: inventory.rani - oldBase.rani,
-        rupu: inventory.rupu - oldBase.rupu,
-        money: inventory.money - oldBase.money
-      };
-
       // Direct update of base inventory
       await db.runAsync(
         `UPDATE base_inventory 
-         SET gold999 = ?, gold995 = ?, silver = ?, rani = ?, rupu = ?, money = ? 
+         SET gold999 = ?, gold995 = ?, silver = ?, money = ? 
          WHERE id = 1`,
         [
           inventory.gold999,
           inventory.gold995,
           inventory.silver,
-          inventory.rani,
-          inventory.rupu,
           inventory.money
         ]
       );
@@ -520,26 +505,6 @@ export class InventoryService {
       return true;
     } catch (error) {
       console.error('Error setting base inventory:', error);
-      return false;
-    }
-  }
-
-  // Reset base inventory to defaults
-  static async resetBaseInventory(): Promise<boolean> {
-    try {
-      const defaultInventory = {
-        gold999: 300,
-        gold995: 100,
-        silver: 10000,
-        rani: 0,
-        rupu: 0,
-        money: 3000000
-      };
-      
-      await this.setBaseInventory(defaultInventory);
-      return true;
-    } catch (error) {
-      console.error('Error resetting base inventory:', error);
       return false;
     }
   }

@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Platform, BackHandler } from 'react-native';
 import {
-  Surface,
   Text,
   Button,
   ActivityIndicator,
-  Chip,
-  IconButton,
-  FAB
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -23,9 +19,8 @@ import { TransactionService } from '../services/transaction.service';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
 import { InventoryService } from '../services/inventory.service';
-import { DatabaseService } from '../services/database.sqlite';
 import { RaniRupaStockService } from '../services/raniRupaStock.service';
-import { Transaction, Customer, LedgerEntry } from '../types';
+import { Transaction, Customer, LedgerEntry, PaymentInput } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 
@@ -391,9 +386,8 @@ export const LedgerScreen: React.FC = () => {
         const result = await TransactionService.saveTransaction(
           adjustCustomer,
           entries,
-          0, // receivedAmount
-          undefined, // existingTransactionId
-          0 // discountExtraAmount
+          [], // payments
+          undefined // existingTransactionId
         );
 
         if (!result.success) {
@@ -420,12 +414,17 @@ export const LedgerScreen: React.FC = () => {
           lastUpdatedAt: new Date().toISOString(),
         });
         
+        const payments: PaymentInput[] = [{
+          amount: Math.abs(moneyValue),
+          type: moneyValue > 0 ? 'receive' : 'give',
+          date: new Date().toISOString()
+        }];
+
         const resultNew = await TransactionService.saveTransaction(
           adjustCustomer,
           entriesNew,
-          moneyValue, // receivedAmount - Pass the money value to create ledger entry
-          undefined, // existingTransactionId
-          0 // discountExtraAmount
+          payments, // payments
+          undefined // existingTransactionId
         );
         if (!resultNew.success) {
           console.error('Failed to save money adjustment transaction:', resultNew.error);
@@ -572,8 +571,13 @@ export const LedgerScreen: React.FC = () => {
 
     // Calculate actual money inventory
     // Opening Balance Money + Day's In - Day's Out
-    const dayMoneyReceived = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountReceived, 0);
-    const dayMoneyGiven = dayLedgerEntries.reduce((sum, entry) => sum + entry.amountGiven, 0);
+    const dayMoneyReceived = dayLedgerEntries
+      .filter(e => e.itemType === 'money' && e.type === 'receive')
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+      
+    const dayMoneyGiven = dayLedgerEntries
+      .filter(e => e.itemType === 'money' && e.type === 'give')
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0);
     
     const actualMoneyInventory = Math.round(openingBalance.money + dayMoneyReceived - dayMoneyGiven);
 
@@ -698,12 +702,16 @@ export const LedgerScreen: React.FC = () => {
 
       // Money entries
       filteredLedger.forEach(ledgerEntry => {
-        if (ledgerEntry.amountReceived > 0 || ledgerEntry.amountGiven > 0) {
+        if (ledgerEntry.itemType === 'money' && (ledgerEntry.amount || 0) > 0) {
           moneyEntries.push({
             transactionId: ledgerEntry.transactionId,
             customerName: ledgerEntry.customerName,
             entry: {
-              ...ledgerEntry.entries[0],
+              id: ledgerEntry.id,
+              type: 'money',
+              itemType: 'money',
+              amount: ledgerEntry.amount,
+              subtotal: ledgerEntry.amount || 0,
               _ledgerEntry: ledgerEntry,
             },
             date: ledgerEntry.date
@@ -1002,8 +1010,10 @@ export const LedgerScreen: React.FC = () => {
             <tbody>
               ${moneyEntries.map(entry => {
                 const ledgerEntry = entry.entry._ledgerEntry;
-                const receivedAmount = ledgerEntry?.amountReceived || 0;
-                const givenAmount = ledgerEntry?.amountGiven || 0;
+                const amount = ledgerEntry?.amount || 0;
+                const type = ledgerEntry?.type;
+                const receivedAmount = type === 'receive' ? amount : 0;
+                const givenAmount = type === 'give' ? amount : 0;
                 return `
                   <tr>
                     <td>${entry.customerName}</td>
@@ -1072,26 +1082,27 @@ export const LedgerScreen: React.FC = () => {
     const outEntries: EntryData[] = [];
     
     if (selectedInventory === 'money') {
-      // For money subledger: use ledger entries (one row per payment/update or receivable/payable)
+      // For money subledger: use ledger entries
       filteredLedgerEntries.forEach(ledgerEntry => {
-        // Only include if there's actual money movement or receivable/payable
-        if (ledgerEntry.amountReceived > 0 || ledgerEntry.amountGiven > 0) {
+        // Only include money entries
+        if (ledgerEntry.itemType === 'money' && (ledgerEntry.amount || 0) > 0) {
           const entryData: EntryData = {
             transactionId: ledgerEntry.transactionId,
             customerName: ledgerEntry.customerName,
             entry: {
-              ...ledgerEntry.entries[0], // Use first entry as placeholder
-              _ledgerEntry: ledgerEntry, // Store full ledger entry for money display
+              id: ledgerEntry.id,
+              type: 'money',
+              itemType: 'money',
+              amount: ledgerEntry.amount,
+              subtotal: ledgerEntry.amount || 0,
+              _ledgerEntry: ledgerEntry,
             },
             date: ledgerEntry.date
           };
           
-          // Determine if it's in or out based on money flow
-          const receivedAmount = ledgerEntry.amountReceived || 0;
-          const givenAmount = ledgerEntry.amountGiven || 0;
-          if (receivedAmount > 0) {
+          if (ledgerEntry.type === 'receive') {
             inEntries.push(entryData);
-          } else if (givenAmount > 0) {
+          } else if (ledgerEntry.type === 'give') {
             outEntries.push(entryData);
           }
         }
@@ -1336,8 +1347,17 @@ export const LedgerScreen: React.FC = () => {
 
       if (selectedInventory === 'money') {
         const ledgerEntry = entry._ledgerEntry;
-        const receivedAmount = ledgerEntry?.amountReceived || 0;
-        const givenAmount = ledgerEntry?.amountGiven || 0;
+        
+        let receivedAmount = 0;
+        let givenAmount = 0;
+
+        if (ledgerEntry) {
+            if (ledgerEntry.type === 'receive') {
+                receivedAmount = ledgerEntry.amount || 0;
+            } else if (ledgerEntry.type === 'give') {
+                givenAmount = ledgerEntry.amount || 0;
+            }
+        }
         
         if (receivedAmount > 0) {
           displayValue = formatCurrency(receivedAmount);
@@ -2292,6 +2312,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
+    marginRight: 2,
   },
   // Stats Grid Styles
   statsGrid: {

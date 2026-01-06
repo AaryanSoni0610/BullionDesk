@@ -14,6 +14,13 @@ export interface Customer {
   avatar?: string;
 }
 
+export interface PaymentInput {
+  id?: string;
+  amount: number;
+  date: string;
+  type: 'receive' | 'give';
+}
+
 export interface Transaction {
   id: string;
   deviceId?: string; // Device ID for conflict-free merging
@@ -21,12 +28,8 @@ export interface Transaction {
   customerName: string;
   date: string;
   entries: TransactionEntry[];
-  discountExtraAmount: number; // Amount of discount (sell) or extra (purchase) applied
   total: number;
   amountPaid: number;
-  lastGivenMoney: number; // Current total paid by customer
-  lastToLastGivenMoney: number; // Previous total paid (for calculating delta)
-  settlementType: 'full' | 'partial' | 'none';
   deleted_on?: string; // Date when transaction was deleted (soft delete)
   note?: string; // Optional note for the transaction
   createdAt: string; // ISO datetime when transaction was created
@@ -81,9 +84,11 @@ export interface LedgerEntry {
   customerId: string;
   customerName: string;
   date: string; // ISO datetime - serves as primary sorting key
-  amountReceived: number; // Money received from customer (positive)
-  amountGiven: number; // Money given to customer (positive)
-  entries: TransactionEntry[]; // Copy of transaction entries at this point
+  type: 'sell' | 'purchase' | 'receive' | 'give';
+  itemType: 'gold999' | 'gold995' | 'rani' | 'silver' | 'rupu' | 'money';
+  weight?: number;
+  touch?: number;
+  amount?: number; // For money entries
   createdAt: string; // Same as date for ledger entries
 }
 

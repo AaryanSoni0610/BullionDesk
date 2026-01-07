@@ -776,7 +776,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         </View>
 
         {/* Spacer for bottom bar */}
-        <View style={{ height: 100 }} />
+        <View style={{ height: 175 }} />
       </ScrollView>
 
       {/* Bottom Actions */}
@@ -927,7 +927,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceContainer,
     padding: 4,
     borderRadius: 100,
-    paddingBottom: 50,
   },
   tab: {
     flex: 1,

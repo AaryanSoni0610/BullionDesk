@@ -774,9 +774,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         <View style={styles.formContainer}>
           {renderDynamicFields()}
         </View>
-
-        {/* Spacer for bottom bar */}
-        <View style={{ height: 175 }} />
       </ScrollView>
 
       {/* Bottom Actions */}
@@ -965,6 +962,7 @@ const styles = StyleSheet.create({
   formContainer: {
     paddingHorizontal: 20,
     gap: 16,
+    paddingBottom: 175,
   },
   input: {
     backgroundColor: theme.colors.surface,

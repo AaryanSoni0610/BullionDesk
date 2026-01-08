@@ -325,8 +325,9 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
         dismissable={true}
       >
         <KeyboardAvoidingView 
-           behavior={Platform.OS === "ios" ? "padding" : "height"}
+           behavior={Platform.OS === "ios" ? "padding" : undefined}
            style={styles.keyboardAvoidingView}
+           enabled={Platform.OS === "ios"}
         >
             <Animated.View style={[styles.modalContent, { transform: [{ translateY: slideAnim }] }]}>
               {/* Header */}

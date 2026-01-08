@@ -8,14 +8,16 @@ import {
   BackHandler,
   TextInput,
   RefreshControl,
-  Modal
+  Modal,
+  Pressable
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Text,
   Divider,
   ActivityIndicator,
-  Surface
+  Surface,
+  Button
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -31,10 +33,22 @@ import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
 
+// Filter Options
+const ITEM_FILTER_OPTIONS = [
+  { label: 'Gold 999', value: 'gold999' },
+  { label: 'Gold 995', value: 'gold995' },
+  { label: 'Rani', value: 'rani' },
+  { label: 'Silver', value: 'silver' },
+  { label: 'Rupu', value: 'rupu' },
+  { label: 'Money Only', value: 'money' },
+];
+
 export const HistoryScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [itemFilters, setItemFilters] = useState<string[]>([]);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'today' | 'last7days' | 'last30days' | 'custom'>('today');
@@ -67,12 +81,7 @@ export const HistoryScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'capturing' | 'generating' | 'cleaning'>('idle');
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
-  const [exportTransactions, setExportTransactions] = useState<Transaction[]>([]);
-  // Removed unused refs for direct HTML generation
-  // const [currentExportIndex, setCurrentExportIndex] = useState(-1);
-  // const capturedImagesRef = useRef<{uri: string, height: number}[]>([]);
-  // const exportViewRef = useRef<View>(null);
-  // const currentContentHeight = useRef(0);
+
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-IN', {
@@ -104,6 +113,9 @@ export const HistoryScreen: React.FC = () => {
     
     const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
     if (isMetalOnly) return false;
+
+    const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
+    if (isMoneyOnly) return false;
 
     const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
     const isSettled = remainingBalance <= 0;
@@ -524,20 +536,40 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
-  const performSearch = useCallback((query: string) => {
+  const toggleItemFilter = (value: string) => {
+    setItemFilters(prev => {
+      if (prev.includes(value)) return prev.filter(v => v !== value);
+      return [...prev, value];
+    });
+  };
+
+  const applyFilters = useCallback(() => {
     setIsSearching(true);
-    let filtered = transactions;
-    if (query.trim()) {
-      const searchTerm = query.trim().toLowerCase();
-      filtered = filtered.filter(transaction => {
+    let result = transactions;
+
+    if (itemFilters.length > 0) {
+      result = result.filter(tx => {
+        const isMoneyOnly = !tx.entries || tx.entries.length === 0;
+        if (itemFilters.includes('money') && isMoneyOnly) return true;
+        if (!isMoneyOnly) {
+           const hasMatch = tx.entries.some(entry => itemFilters.includes(entry.itemType));
+           if (hasMatch) return true;
+        }
+        return false;
+      });
+    }
+
+    if (searchQuery.trim()) {
+      const searchTerm = searchQuery.trim().toLowerCase();
+      result = result.filter(transaction => {
         const customerMatch = transaction.customerName.trim().toLowerCase().includes(searchTerm);
         const itemMatch = transaction.entries.some(entry => getItemDisplayName(entry).toLowerCase().includes(searchTerm));
         return customerMatch || itemMatch;
       });
     }
-    setFilteredTransactions(filtered);
+    setFilteredTransactions(result);
     setIsSearching(false);
-  }, [transactions]);
+  }, [transactions, itemFilters, searchQuery]);
 
   const handleFilterChange = (filter: typeof selectedFilter) => {
     if (filter === 'custom') {
@@ -569,8 +601,7 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
-  useEffect(() => { performSearch(searchQuery); }, [performSearch, searchQuery]);
-  useEffect(() => { if (transactions.length > 0) performSearch(searchQuery); }, [transactions.length]);
+  useEffect(() => { applyFilters(); }, [applyFilters]);
   useFocusEffect(useCallback(() => { loadTransactions(); }, [selectedFilter, customStartDate, customEndDate]));
   useFocusEffect(useCallback(() => {
       const onBackPress = () => { (navigation as any).navigate('Home'); return true; };
@@ -970,36 +1001,70 @@ export const HistoryScreen: React.FC = () => {
 
       {/* 3. Filter Carousel */}
       <View style={styles.filterCarouselContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterCarousel}>
-          {['today', 'last7days', 'last30days', 'custom'].map((f) => {
-            let label = '';
-            if (f === 'today') label = 'Today';
-            else if (f === 'last7days') label = 'Last 7 Days';
-            else if (f === 'last30days') label = 'Last 30 Days';
-            else {
-                if (customStartDate && customEndDate) {
-                    const startStr = formatDate(customStartDate);
-                    const endStr = formatDate(customEndDate);
-                    if (startStr === endStr) label = startStr;
-                    else label = `${startStr} - ${endStr}`;
-                } else {
-                    label = 'Custom Range';
-                }
-            }
-            
-            return (
-              <TouchableOpacity
-                key={f}
-                style={[styles.filterPill, selectedFilter === f && styles.filterPillActive]}
-                onPress={() => handleFilterChange(f as any)}
-              >
-                <Text style={[styles.filterPillText, selectedFilter === f && styles.filterPillTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[
+              styles.filterPill, 
+              itemFilters.length > 0 && styles.filterPillActive, 
+              { marginRight: 8, borderStyle: itemFilters.length === 0 ? 'dashed' : 'solid', 
+                borderColor: itemFilters.length > 0 ? theme.colors.primary : 'rgba(0,0,0,0.2)',
+                paddingHorizontal: 8, }
+            ]}
+            onPress={() => setShowFilterSheet(true)}
+          >
+             <View style={{flexDirection:'row', alignItems:'center', gap: 6}}>
+               <Icon 
+                 name="filter-variant" 
+                 size={18} 
+                 color={itemFilters.length > 0 ? theme.colors.onPrimary : theme.colors.primary} 
+               />
+               <Text style={[
+                 styles.filterPillText, 
+                 itemFilters.length > 0 && styles.filterPillTextActive,
+               ]}>
+                 {itemFilters.length === 0 ? 'All Items' : itemFilters.length === 1 ? ITEM_FILTER_OPTIONS.find(o => o.value === itemFilters[0])?.label : `${itemFilters.length} Items`}
+               </Text>
+               <Icon 
+                 name="chevron-down" 
+                 size={16} 
+                 color={itemFilters.length > 0 ? theme.colors.onPrimary : theme.colors.onSurfaceVariant} 
+               />
+            </View>
+          </TouchableOpacity>
+
+          <View style={{ width: 1, height: 24, backgroundColor: theme.colors.onSurfaceVariant, marginRight: 8 }} />
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterCarousel}>
+            {['today', 'last7days', 'last30days', 'custom'].map((f) => {
+              let label = '';
+              if (f === 'today') label = 'Today';
+              else if (f === 'last7days') label = 'Last 7 Days';
+              else if (f === 'last30days') label = 'Last 30 Days';
+              else {
+                  if (customStartDate && customEndDate) {
+                      const startStr = formatDate(customStartDate);
+                      const endStr = formatDate(customEndDate);
+                      if (startStr === endStr) label = startStr;
+                      else label = `${startStr} - ${endStr}`;
+                  } else {
+                      label = 'Custom Range';
+                  }
+              }
+              
+              return (
+                <TouchableOpacity
+                  key={f}
+                  style={[styles.filterPill, selectedFilter === f && styles.filterPillActive]}
+                  onPress={() => handleFilterChange(f as any)}
+                >
+                  <Text style={[styles.filterPillText, selectedFilter === f && styles.filterPillTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
       </View>
 
       {/* 4. Transaction List */}
@@ -1038,6 +1103,57 @@ export const HistoryScreen: React.FC = () => {
           )}
         </Surface>
       </View>
+    </Modal>
+
+    {/* Filter Bottom Sheet */}
+    <Modal
+      visible={showFilterSheet}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowFilterSheet(false)}
+    >
+      <Pressable style={styles.sheetOverlay} onPress={() => setShowFilterSheet(false)}>
+        <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Filter Items</Text>
+            {itemFilters.length > 0 && (
+                <TouchableOpacity onPress={() => setItemFilters([])}>
+                    <Text style={{color: theme.colors.primary, fontFamily:'Outfit_600SemiBold'}}>Clear</Text>
+                </TouchableOpacity>
+            )}
+          </View>
+          
+          <Text style={styles.sheetSubtitle}>Show transactions containing:</Text>
+          
+          <View style={styles.chipGrid}>
+            {ITEM_FILTER_OPTIONS.map((option) => {
+              const isSelected = itemFilters.includes(option.value);
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.sheetChip, isSelected && styles.sheetChipSelected]}
+                  onPress={() => toggleItemFilter(option.value)}
+                >
+                  {isSelected && <Icon name="check" size={16} color={theme.colors.primary} style={{marginRight:4}} />}
+                  <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Button 
+            mode="contained" 
+            style={styles.applyButton} 
+            onPress={() => setShowFilterSheet(false)}
+            contentStyle={{height: 48}}
+            labelStyle={{fontSize:16}}
+          >
+            Apply Filters
+          </Button>
+        </Pressable>
+      </Pressable>
     </Modal>
 
     {/* Hidden Share View */}
@@ -1137,8 +1253,12 @@ const styles = StyleSheet.create({
   filterCarouselContainer: {
     marginBottom: 16,
   },
-  filterCarousel: {
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
+  },
+  filterCarousel: {
     gap: 8,
   },
   filterPill: {
@@ -1392,5 +1512,46 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 20,
     width: 400,
+  },
+  sheetOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',
+  },
+  sheetContainer: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingBottom: 40,
+    elevation: 24,
+  },
+  sheetHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
+  },
+  sheetTitle: {
+    fontFamily: 'Outfit_700Bold', fontSize: 20, color: theme.colors.onSurface,
+  },
+  sheetSubtitle: {
+    fontFamily: 'Outfit_400Regular', color: theme.colors.onSurfaceVariant, marginBottom: 16,
+  },
+  chipGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24,
+  },
+  sheetChip: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 100,
+    borderWidth: 1, borderColor: theme.colors.outline,
+    backgroundColor: theme.colors.surface,
+  },
+  sheetChipSelected: {
+    backgroundColor: theme.colors.primaryContainer, 
+    borderColor: theme.colors.primary,
+  },
+  sheetChipText: {
+    fontFamily: 'Outfit_500Medium', color: theme.colors.onSurfaceVariant,
+  },
+  sheetChipTextSelected: {
+    color: theme.colors.primary,
+  },
+  applyButton: {
+    borderRadius: 100, overflow: 'hidden',
   }
 });

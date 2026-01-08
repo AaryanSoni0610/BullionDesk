@@ -1,5 +1,4 @@
 import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
 import { Trade } from '../types';
 import { DatabaseService } from './database.sqlite';
 import { SettingsService } from './settings.service';
@@ -7,23 +6,10 @@ import { SettingsService } from './settings.service';
 // Background task constants
 const TRADE_CLEANUP_TASK = 'trade-cleanup-task';
 
-// Define the background task for trade cleanup
-TaskManager.defineTask(TRADE_CLEANUP_TASK, async () => {
-  try {
-    await TradeService.cleanupOldTrades();
-    return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch (error) {
-    console.error('Error in trade cleanup background task:', error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
-});
-
 export class TradeService {
   // Get all trades
   static async getAllTrades(): Promise<Trade[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       const trades = await DatabaseService.getAllAsyncBatch<{
         id: string;
         customerName: string;
@@ -54,8 +40,6 @@ export class TradeService {
   // Get trades by date range
   static async getTradesByDateRange(startDate: Date, endDate: Date): Promise<Trade[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       const trades = await DatabaseService.getAllAsyncBatch<any>(
         'SELECT * FROM trades WHERE date >= ? AND date <= ? ORDER BY createdAt DESC',
         [startDate.toISOString(), endDate.toISOString()]
@@ -89,9 +73,6 @@ export class TradeService {
         'INSERT INTO trades (id, customerName, type, itemType, price, weight, date, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [tradeId, trade.customerName, trade.type, trade.itemType, trade.price, trade.weight, trade.date, createdAt]
       );
-
-      // Clean up old trades (older than 7 days)
-      await this.cleanupOldTrades();
 
       return true;
     } catch (error) {
@@ -175,65 +156,6 @@ export class TradeService {
     } catch (error) {
       console.error('Error generating trade ID:', error);
       return `trade_${Date.now()}`;
-    }
-  }
-
-  // Clean up trades older than 7 days
-  static async cleanupOldTrades(): Promise<void> {
-    try {
-      const db = DatabaseService.getDatabase();
-      
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      await db.runAsync(
-        'DELETE FROM trades WHERE createdAt < ?',
-        [sevenDaysAgo.toISOString()]
-      );
-    } catch (error) {
-      console.error('Error cleaning up old trades:', error);
-    }
-  }
-
-  // Clear all trades (for testing/debugging)
-  static async clearAllTrades(): Promise<boolean> {
-    try {
-      const db = DatabaseService.getDatabase();
-      
-      await db.runAsync('DELETE FROM trades');
-      await SettingsService.deleteSetting('last_trade_id');
-      
-      return true;
-    } catch (error) {
-      console.error('Error clearing trades:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Register the background trade cleanup task
-   */
-  static async registerBackgroundTask(): Promise<void> {
-    try {
-      // Register the task with BackgroundFetch
-      await BackgroundFetch.registerTaskAsync(TRADE_CLEANUP_TASK, {
-        minimumInterval: 6 * 60 * 60, // 6 hours in seconds
-        stopOnTerminate: false, // Continue running after app terminates
-        startOnBoot: true, // Start when device boots
-      });
-    } catch (error) {
-      console.error('Error registering trade cleanup background task:', error);
-    }
-  }
-
-  /**
-   * Unregister the background trade cleanup task
-   */
-  static async unregisterBackgroundTask(): Promise<void> {
-    try {
-      await BackgroundFetch.unregisterTaskAsync(TRADE_CLEANUP_TASK);
-    } catch (error) {
-      console.error('Error unregistering trade cleanup background task:', error);
     }
   }
 }

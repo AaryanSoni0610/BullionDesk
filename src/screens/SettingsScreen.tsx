@@ -139,7 +139,7 @@ export const SettingsScreen: React.FC = () => {
 
   const handleSetBaseInventoryWithWarning = () => {
     showAlert(
-      '⚠️ Important Warning',
+      'Important Warning',
       'Setting base inventory will overwrite your starting inventory values.\n\nPlease ensure that:\n• You are entering the initial/opening stock values\n• Current inventory will be calculated as Base Inventory + Transactions\n\nThis action cannot be easily undone.',
       [
         {
@@ -152,7 +152,7 @@ export const SettingsScreen: React.FC = () => {
           onPress: handleSetBaseInventory,
         },
       ],
-      'alert-decagram-outline'
+      'alert-outline'
     );
   };
 
@@ -758,7 +758,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.3.5"
+              description="v7.4.0"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -900,7 +900,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v7.3.5
+        message={`BullionDesk v7.4.0
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

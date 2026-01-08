@@ -317,8 +317,10 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const adjustedNetAmount = netAmount;
 
   // Calculate full amount excluding last payment
-  const fullAmount = payments.length <= 1 
+  const fullAmount = payments.length === 0 
     ? Math.abs(adjustedNetAmount)
+    : payments.length === 1
+    ? Math.abs(adjustedNetAmount - totalReceived)
     : (() => {
         const receivedExclLast = payments.slice(0, -1)
           .filter(p => p.type === 'receive')
@@ -326,7 +328,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         const givenExclLast = payments.slice(0, -1)
           .filter(p => p.type === 'give')
           .reduce((sum, p) => sum + p.amount, 0);
-        return Math.abs(adjustedNetAmount) - Math.abs(receivedExclLast - givenExclLast);
+        return Math.abs(adjustedNetAmount - (receivedExclLast - givenExclLast));
       })();
 
   // Safety feature: Lock entry modifications for transactions created on previous dates

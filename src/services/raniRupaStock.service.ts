@@ -120,7 +120,17 @@ export class RaniRupaStockService {
     try {
       const db = DatabaseService.getDatabase();
       
-      // Check if stock is sold
+      // Attempt delete directly where it is NOT sold
+      const result = await db.runAsync(
+        'DELETE FROM rani_rupa_stock WHERE stock_id = ? AND isSold = 0',
+        [stock_id]
+      );
+
+      if (result.changes > 0) {
+        return { success: true };
+      }
+
+      // If delete failed, check why (Edge case)
       const item = await db.getFirstAsync<{ isSold: number }>(
         'SELECT isSold FROM rani_rupa_stock WHERE stock_id = ?',
         [stock_id]
@@ -134,16 +144,7 @@ export class RaniRupaStockService {
         return { success: false, error: 'Cannot delete sold stock. Please delete the sales transaction first.' };
       }
       
-      const result = await db.runAsync(
-        'DELETE FROM rani_rupa_stock WHERE stock_id = ?',
-        [stock_id]
-      );
-
-      if (result.changes === 0) {
-        return { success: false, error: 'Stock item not found' };
-      }
-
-      return { success: true };
+      return { success: false, error: 'Unknown error' };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
@@ -157,21 +158,6 @@ export class RaniRupaStockService {
     try {
       const db = DatabaseService.getDatabase();
       
-      // Check if stock exists
-      const existing = await db.getFirstAsync<{ stock_id: string; isSold: number }>(
-        'SELECT stock_id, isSold FROM rani_rupa_stock WHERE stock_id = ?',
-        [stock_id]
-      );
-
-      if (!existing) {
-        return { success: false, error: 'Stock item not found' };
-      }
-
-      // Allow updating sold stock to support transaction edits
-      // if (existing.isSold === 1) {
-      //   return { success: false, error: 'Cannot update sold stock' };
-      // }
-
       const updateFields: string[] = [];
       const params: any[] = [];
 
@@ -190,10 +176,14 @@ export class RaniRupaStockService {
 
       params.push(stock_id);
 
-      await db.runAsync(
+      const result = await db.runAsync(
         `UPDATE rani_rupa_stock SET ${updateFields.join(', ')} WHERE stock_id = ?`,
         params
       );
+
+      if (result.changes === 0) {
+        return { success: false, error: 'Stock item not found' };
+      }
 
       return { success: true };
     } catch (error) {

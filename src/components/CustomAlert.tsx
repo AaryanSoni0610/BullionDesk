@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   iconBadge: {
     padding: 8,
     borderRadius: 12,
-    marginRight: 12,
+    marginRight: 4,
   },
   title: {
     marginTop: 8,

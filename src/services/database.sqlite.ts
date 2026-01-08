@@ -228,6 +228,9 @@ export class DatabaseService {
     baseInventory: any;
     raniRupaStock: any[];
     settings: any;
+    rateCutHistory: any[];
+    dailyOpeningBalances: any[];
+    trades: any[];
   } | null> {
     try {
       const db = this.getDatabase();
@@ -272,13 +275,25 @@ export class DatabaseService {
         settings[(row as any).key] = (row as any).value;
       }
 
+      // Export rate cut history
+      const rateCutHistory = await DatabaseService.getAllAsyncBatch('SELECT * FROM rate_cut_history');
+
+      // Export daily opening balances
+      const dailyOpeningBalances = await DatabaseService.getAllAsyncBatch('SELECT * FROM daily_opening_balances');
+
+      // Export trades
+      const trades = await DatabaseService.getAllAsyncBatch('SELECT * FROM trades');
+
       return {
         customers: customersWithBalances,
         transactions: transactionsWithEntries,
         ledger,
         baseInventory,
         raniRupaStock,
-        settings
+        settings,
+        rateCutHistory,
+        dailyOpeningBalances,
+        trades
       };
     } catch (error) {
       console.error('Error exporting data:', error);
@@ -294,6 +309,9 @@ export class DatabaseService {
     baseInventory?: any;
     raniRupaStock?: any[];
     settings?: any;
+    rateCutHistory?: any[];
+    dailyOpeningBalances?: any[];
+    trades?: any[];
   }): Promise<boolean> {
     const db = this.getDatabase();
     
@@ -309,6 +327,9 @@ export class DatabaseService {
       await db.runAsync('DELETE FROM customers');
       await db.runAsync('DELETE FROM rani_rupa_stock');
       await db.runAsync('DELETE FROM settings');
+      await db.runAsync('DELETE FROM rate_cut_history');
+      await db.runAsync('DELETE FROM daily_opening_balances');
+      await db.runAsync('DELETE FROM trades');
 
       // Import customers
       for (const customer of data.customers) {
@@ -442,6 +463,36 @@ export class DatabaseService {
         }
       }
 
+      // Import rate cut history
+      if (data.rateCutHistory) {
+        for (const item of data.rateCutHistory) {
+          await db.runAsync(
+            'INSERT INTO rate_cut_history (id, customer_id, metal_type, weight_cut, rate, total_amount, cut_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [item.id, item.customer_id, item.metal_type, item.weight_cut, item.rate, item.total_amount, item.cut_date, item.created_at]
+          );
+        }
+      }
+
+      // Import daily opening balances
+      if (data.dailyOpeningBalances) {
+        for (const item of data.dailyOpeningBalances) {
+          await db.runAsync(
+            'INSERT INTO daily_opening_balances (date, gold999, gold995, silver, rani, rupu, money, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [item.date, item.gold999 || 0, item.gold995 || 0, item.silver || 0, item.rani || 0, item.rupu || 0, item.money || 0, item.updated_at || new Date().toISOString()]
+          );
+        }
+      }
+
+      // Import trades
+      if (data.trades) {
+        for (const item of data.trades) {
+          await db.runAsync(
+            'INSERT INTO trades (id, customerName, type, itemType, price, weight, date, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [item.id, item.customerName, item.type, item.itemType, item.price, item.weight, item.date, item.createdAt]
+          );
+        }
+      }
+
       await db.execAsync('COMMIT');
       return true;
     } catch (error) {
@@ -466,6 +517,7 @@ export class DatabaseService {
       await db.runAsync('DELETE FROM rani_rupa_stock');
       await db.runAsync('DELETE FROM trades');
       await db.runAsync('DELETE FROM daily_opening_balances');
+      await db.runAsync('DELETE FROM rate_cut_history');
       
       // Clear device_id and last_transaction_id from settings
       await db.runAsync('DELETE FROM settings WHERE key IN (?, ?)', ['device_id', 'last_transaction_id']);
@@ -483,24 +535,11 @@ export class DatabaseService {
   static async getAllAsyncBatch<T = any>(
     query: string,
     params: any[] = [],
-    batchSize: number = 250
   ): Promise<T[]> {
     const db = this.getDatabase();
-    const results: T[] = [];
-    let offset = 0;
-
-    while (true) {
-      const batchQuery = `${query} LIMIT ${batchSize} OFFSET ${offset}`;
-      const batch = await db.getAllAsync(batchQuery, params) as T[];
-      
-      if (batch.length === 0) {
-        break;
-      }
-      
-      results.push(...batch);
-      offset += batchSize;
-    }
-
-    return results;
+    // 1. Await the database query to get actual rows
+    const rows = await db.getAllAsync(query, params); 
+    // 2. Return the rows
+    return rows as unknown as T[];
   }
 }

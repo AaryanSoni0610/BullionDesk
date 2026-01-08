@@ -244,17 +244,25 @@ export const TradeScreen: React.FC = () => {
         <View style={styles.cardTop}>
           <View style={styles.userBlock}>
             <Text style={[styles.dateLabel, labelColor]}>{formatFullDate(item.date)}</Text>
-            <Text style={[styles.userName, textColor]}>{item.customerName}</Text>
+            <View style={styles.nameRow}>
+              <Text style={[styles.userName, textColor, { marginRight: 8 }]}>{item.customerName}</Text>
+              <View style={[styles.typeBadge]}>
+                <Text style={[styles.typeText, { color: accentColor }]}>{item.type}</Text>
+              </View>
+            </View>
           </View>
           <View style={styles.headerActions}>
-            <View style={styles.typeBadge}>
-              <Text style={[styles.typeText, { color: accentColor }]}>{item.type}</Text>
-            </View>
             <TouchableOpacity 
               style={styles.deleteAction} 
               onPress={() => handleDeleteTrade(item)}
             >
               <Icon name="delete-outline" size={20} color={theme.colors.error} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.addButton} 
+              onPress={() => {}}
+            >
+              <Text style={styles.addButtonText}>+ Add</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -426,6 +434,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_600SemiBold',
     fontSize: 22,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -436,6 +448,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 100,
     backgroundColor: 'rgba(255,255,255,0.6)',
+    alignSelf: 'flex-start',
   },
   deleteAction: {
     width: 32,
@@ -444,6 +457,20 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.errorContainer,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 32,
+  },
+  addButtonText: {
+    color: theme.colors.onPrimary,
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 12,
   },
   typeText: {
     fontFamily: 'Outfit_700Bold',

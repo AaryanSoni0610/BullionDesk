@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
   withTiming, 
   withSpring,
   interpolateColor,
-  useDerivedValue
 } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider, Snackbar, FAB } from 'react-native-paper';
@@ -39,52 +38,40 @@ import { AppProvider, useAppContext } from './src/context/AppContext';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
 import { DatabaseService } from './src/services/database.sqlite';
-import { TradeService } from './src/services/trade.service';
-import { InventoryService } from './src/services/inventory.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin' | 'rateCut';
 
 // 1. Define the Custom Tab Bar Component
 const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: any) => {
-  // Shared Values (UI Thread)
+  // Shared Values
   const translateX = useSharedValue(0);
   const highlightWidth = useSharedValue(0);
-  // We use index to drive color interpolation
   const activeIndex = useSharedValue(state.index);
   
   const [layouts, setLayouts] = React.useState<Array<{ x: number; width: number }>>([]);
 
-  // Theme colors for interpolation
-  const colors = [
-    theme.colors.primaryContainer,
-    theme.colors.secondaryContainer,
-    theme.colors.surfaceContainer,
-    theme.colors.surfaceContainerHigh,
-  ];
+  // --- FIX 1: UNIFIED COLORS ---
+  // The user requested the "blue-ish" shade (Index 0/Home color) for all tabs.
+  // We repeat theme.colors.primaryContainer for all 4 states so it stays blue.
+  const activeColor = theme.colors.primaryContainer; 
+  const colors = [activeColor, activeColor, activeColor, activeColor];
 
-  // Sync Shared Values when index or layouts change
   React.useEffect(() => {
     const target = layouts[state.index];
-    
-    // Update active index for color
     activeIndex.value = withTiming(state.index, { duration: 250 });
 
     if (target) {
-      // Use Spring for "Expressive" feel, or Timing for "Standard"
-      // Spring feels much more "physical" and hides lag better
       translateX.value = withSpring(target.x, { damping: 15, stiffness: 100 });
       highlightWidth.value = withSpring(target.width, { damping: 15, stiffness: 100 });
     }
   }, [state.index, layouts]);
 
-  // Animated Style for the Highlight Pill
   const animatedHighlightStyle = useAnimatedStyle(() => {
-    // Interpolate color on the UI thread
     const backgroundColor = interpolateColor(
       activeIndex.value,
-      [0, 1, 2, 3], // Input range (tab indexes)
-      colors        // Output colors
+      [0, 1, 2, 3], 
+      colors 
     );
 
     return {
@@ -96,9 +83,7 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
 
   return (
     <View style={styles.tabBarContainer}>
-      
       <View style={styles.navPill}>
-        {/* Animated Highlight using Reanimated View */}
         <Animated.View
           style={[styles.highlight, animatedHighlightStyle]}
         />
@@ -118,7 +103,6 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
             }
           };
 
-          // Define Icons
           let iconName;
           if (route.name === 'Home') iconName = isFocused ? 'home' : 'home-outline';
           else if (route.name === 'History') iconName = isFocused ? 'history' : 'clock-outline';
@@ -133,7 +117,6 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
               onPress={onPress}
               onLayout={(e) => {
                 const { x, width } = e.nativeEvent.layout;
-                // Only update if layout actually changed to prevent re-renders
                 setLayouts(prev => {
                   if (prev[index]?.x === x && prev[index]?.width === width) return prev;
                   const copy = [...prev]; 
@@ -146,7 +129,7 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
             >
               <Icon name={iconName as any} size={28} color={color} />
               {isFocused && (
-                <Text style={[styles.tabLabel, { color }]}>
+                <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
                   {route.name}
                 </Text>
               )}
@@ -162,7 +145,6 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
         onPress={onFabPress}
         customSize={64}
       />
-      
     </View>
   );
 };
@@ -225,29 +207,26 @@ const MainTabNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  // The Parent Container (Fixed at bottom)
   tabBarContainer: {
     position: 'absolute',
     bottom: 24,
     left: 24,
     right: 24,
-    flexDirection: 'row', // This aligns Navbar and FAB horizontally
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'transparent',
     elevation: 0,
     zIndex: 100,
   },
-  
-  // The Nav Pill (Flex Child 1)
   navPill: {
-    flex: 1, // Takes all available width minus the FAB
+    flex: 1, 
     flexDirection: 'row',
     height: 64,
     backgroundColor: '#1B1B1F',
     borderRadius: 100,
-    justifyContent: 'space-evenly',
+    justifyContent: 'space-evenly', 
     alignItems: 'center',
-    // Shadows
+    overflow: 'hidden', 
     elevation: 8,
     shadowColor: theme.colors.onPrimaryContainer,
     shadowOffset: { width: 0, height: 4 },
@@ -256,15 +235,13 @@ const styles = StyleSheet.create({
   },
   highlight: {
     position: 'absolute',
-    left: 0,
-    height: 54,
+    left: 0, // Ensure left is 0 so translateX works from the start
+    height: 54, // slightly smaller than navPill (64)
     borderRadius: 100,
     zIndex: 0,
   },
-
-  // The FAB (Flex Child 2)
   fab: {
-    marginLeft: 16, // The gap between Nav and FAB
+    marginLeft: 16,
     backgroundColor: '#00BCD4',
     borderRadius: 32,
     elevation: 6,
@@ -275,14 +252,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Individual Tab Items
   tabItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    // Reduced padding slightly to accommodate larger fonts better
+    paddingHorizontal: 12, 
     borderRadius: 100,
     height: 48,
     zIndex: 1,
@@ -470,9 +446,6 @@ export default function App() {
       if (isAutoBackupEnabled) {
         await BackupService.registerBackgroundTask();
       }
-
-      // Register background trade cleanup task
-      await TradeService.registerBackgroundTask();
 
       // Check if immediate backup is needed
       const shouldBackup = await BackupService.shouldPerformAutoBackup();

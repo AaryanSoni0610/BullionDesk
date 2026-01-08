@@ -376,10 +376,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   iconBadge: {
-    backgroundColor: theme.colors.surfaceVariant,
     padding: 8,
     borderRadius: 12,
-    marginRight: 12,
+    marginRight: 4,
   },
   title: {
     textAlign: 'left',

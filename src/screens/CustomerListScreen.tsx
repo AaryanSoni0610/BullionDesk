@@ -10,20 +10,13 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
-  Surface,
-  Searchbar,
-  List,
   Text,
-  Avatar,
-  IconButton,
-  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Customer, LedgerEntry } from '../types';
-import { theme } from '../theme';
+import { Customer } from '../types';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
 import { TransactionService } from '../services/transaction.service';
@@ -999,21 +992,23 @@ export const CustomerListScreen: React.FC = () => {
 
         {isExpanded && (
           <View style={styles.expandedView}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, styles.colDate]}>Date</Text>
-              <Text style={[styles.th, styles.colMoney]}>Money</Text>
-              <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
-            </View>
-            
-            {ledgerData.length === 0 ? (
-                <Text style={styles.noLedgerData}>No transactions found</Text>
-            ) : (
-                ledgerData.map((entry, index) => (
-                    <React.Fragment key={index}>
-                        {renderLedgerEntry(entry)}
-                    </React.Fragment>
-                ))
-            )}
+            <ScrollView style={styles.scrollableContent}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th, styles.colDate]}>Date</Text>
+                <Text style={[styles.th, styles.colMoney]}>Money</Text>
+                <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
+              </View>
+              
+              {ledgerData.length === 0 ? (
+                  <Text style={styles.noLedgerData}>No transactions found</Text>
+              ) : (
+                  ledgerData.map((entry, index) => (
+                      <React.Fragment key={index}>
+                          {renderLedgerEntry(entry)}
+                      </React.Fragment>
+                  ))
+              )}
+            </ScrollView>
           </View>
         )}
       </View>
@@ -1269,10 +1264,13 @@ const styles = StyleSheet.create({
   // Expanded View
   expandedView: {
     marginTop: 12,
-    backgroundColor: '#F0F2F5', // surface-container
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     overflow: 'hidden',
+  },
+  scrollableContent: {
+    maxHeight: 300,
   },
   tableHeader: {
     flexDirection: 'row',

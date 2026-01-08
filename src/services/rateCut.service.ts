@@ -12,24 +12,6 @@ export interface RateCutRecord {
 }
 
 export class RateCutService {
-  private static async ensureTableExists() {
-    const db = DatabaseService.getDatabase();
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS rate_cut_history (
-        id TEXT PRIMARY KEY NOT NULL,
-        customer_id TEXT NOT NULL,
-        metal_type TEXT NOT NULL CHECK(metal_type IN ('gold999', 'gold995', 'silver')),
-        weight_cut REAL NOT NULL,
-        rate REAL NOT NULL,
-        total_amount REAL NOT NULL,
-        cut_date INTEGER NOT NULL,
-        created_at DATETIME NOT NULL,
-        FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_rate_cut_history_customer_id ON rate_cut_history(customer_id);
-    `);
-  }
-
   static async applyRateCut(
     customerId: string,
     metalType: 'gold999' | 'gold995' | 'silver',
@@ -37,7 +19,6 @@ export class RateCutService {
     rate: number,
     cutDate: number // Unix timestamp
   ): Promise<boolean> {
-    await this.ensureTableExists();
     const db = DatabaseService.getDatabase();
     
     // Calculate total money based on metal type
@@ -145,13 +126,15 @@ export class RateCutService {
     }
   }
 
-  static async getRateCutHistory(customerId: string): Promise<RateCutRecord[]> {
+  static async getRateCutHistory(customerId: string, limit = 50, offset = 0): Promise<RateCutRecord[]> {
     try {
-      await this.ensureTableExists();
       const db = DatabaseService.getDatabase();
       return await db.getAllAsync<RateCutRecord>(
-        'SELECT * FROM rate_cut_history WHERE customer_id = ? ORDER BY cut_date DESC, created_at DESC',
-        [customerId]
+        `SELECT * FROM rate_cut_history 
+         WHERE customer_id = ? 
+         ORDER BY cut_date DESC, created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [customerId, limit, offset]
       );
     } catch (error) {
       console.error('Error getting rate cut history:', error);
@@ -159,12 +142,14 @@ export class RateCutService {
     }
   }
 
-  static async getAllRateCutHistory(): Promise<RateCutRecord[]> {
+  static async getAllRateCutHistory(limit = 50, offset = 0): Promise<RateCutRecord[]> {
     try {
-      await this.ensureTableExists();
       const db = DatabaseService.getDatabase();
       return await db.getAllAsync<RateCutRecord>(
-        'SELECT * FROM rate_cut_history ORDER BY cut_date DESC, created_at DESC'
+        `SELECT * FROM rate_cut_history 
+         ORDER BY cut_date DESC, created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
       );
     } catch (error) {
       console.error('Error getting all rate cut history:', error);

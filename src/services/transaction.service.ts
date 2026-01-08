@@ -148,8 +148,6 @@ export class TransactionService {
   // Get transactions by customer ID
   static async getTransactionsByCustomerId(customerId: string): Promise<Transaction[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       const transactions = await DatabaseService.getAllAsyncBatch<any>(
         `SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
          FROM transactions t
@@ -489,76 +487,6 @@ export class TransactionService {
     }
   }
 
-  // Get recent transactions with limit and exclusions (database-level filtering)
-  static async getRecentTransactions(
-    limit: number = 20,
-    excludeCustomerName?: string
-  ): Promise<Transaction[]> {
-    try {
-      const db = DatabaseService.getDatabase();
-      
-      let query = 'SELECT * FROM transactions WHERE deleted_on IS NULL';
-      let params: any[] = [];
-      
-      if (excludeCustomerName) {
-        query += ' AND LOWER(customerName) != ?';
-        params.push(excludeCustomerName.toLowerCase());
-      }
-      
-      query += ' ORDER BY date DESC LIMIT ?';
-      params.push(limit);
-
-      const transactions = await db.getAllAsync<any>(query, params);
-
-      const result: Transaction[] = [];
-      
-      for (const trans of transactions) {
-        const entries = await DatabaseService.getAllAsyncBatch<any>(
-          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
-          [trans.id]
-        );
-
-        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
-          id: entry.id,
-          type: entry.type,
-          itemType: entry.itemType,
-          weight: entry.weight,
-          price: entry.price,
-          touch: entry.touch,
-          cut: entry.cut,
-          extraPerKg: entry.extraPerKg,
-          pureWeight: entry.pureWeight,
-          moneyType: entry.moneyType,
-          amount: entry.amount,
-          metalOnly: entry.metalOnly === 1,
-          stock_id: entry.stock_id,
-          subtotal: entry.subtotal,
-          createdAt: entry.createdAt,
-          lastUpdatedAt: entry.lastUpdatedAt,
-        }));
-
-        result.push({
-          id: trans.id,
-          deviceId: trans.deviceId || undefined,
-          customerId: trans.customerId,
-          customerName: trans.customerName,
-          date: trans.date,
-          entries: mappedEntries,
-          total: trans.total,
-          amountPaid: trans.amountPaid,
-          note: trans.note,
-          createdAt: trans.createdAt,
-          lastUpdatedAt: trans.lastUpdatedAt,
-        });
-      }
-
-      return result;
-    } catch (error) {
-      console.error('Error getting recent transactions:', error);
-      return [];
-    }
-  }
-
   // Calculate transaction totals
   private static calculateTransactionTotals(entries: TransactionEntry[]) {
     let netAmount = 0;
@@ -634,6 +562,13 @@ export class TransactionService {
       let existingTransaction: Transaction | null | undefined;
       let earliestAffectedDate = transactionDate; // Default to new date
 
+      // Optimization: Track net metal changes to minimize DB writes
+      const netMetalChanges: Record<string, number> = {
+        gold999: 0,
+        gold995: 0,
+        silver: 0
+      };
+
       // Begin transaction
       await db.execAsync('BEGIN TRANSACTION');
 
@@ -695,8 +630,10 @@ export class TransactionService {
                 // Calculate original effect then reverse it
                 const originalEffect = oldEntry.type === 'sell' ? weight : -weight;
                 
-                // Reverse the metal balance (apply the original effect to undo)
-                await CustomerService.updateCustomerMetalBalance(customer.id, itemType, originalEffect);
+                // Accumulate to net changes instead of immediate DB write
+                if (netMetalChanges[itemType] !== undefined) {
+                  netMetalChanges[itemType] += originalEffect;
+                }
               }
             }
           }
@@ -944,8 +881,19 @@ export class TransactionService {
               // - Purchase (customer gives metal) = reduces their debt = negative (they owe less)
               // - Sell (merchant gives metal) = increases their debt = positive (they owe more)
               const metalAmount = entry.type === 'sell' ? -weight : weight;
-              await CustomerService.updateCustomerMetalBalance(customer.id, itemType, metalAmount);
+              
+              // Accumulate to net changes
+              if (netMetalChanges[itemType] !== undefined) {
+                netMetalChanges[itemType] += metalAmount;
+              }
             }
+          }
+        }
+
+        // Apply net metal balance changes to DB
+        for (const [itemType, change] of Object.entries(netMetalChanges)) {
+          if (Math.abs(change) > 0.0001) { // Floating point check
+            await CustomerService.updateCustomerMetalBalance(customer.id, itemType, change);
           }
         }
 

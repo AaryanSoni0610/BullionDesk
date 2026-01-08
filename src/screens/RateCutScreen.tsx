@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity, TextInput as RNTextInput } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -29,6 +29,12 @@ export const RateCutScreen: React.FC = () => {
   const [showDeleteConfirmAlert, setShowDeleteConfirmAlert] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RateCutRecord | null>(null);
 
+  // Pagination State
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingHistory, setIsFetchingHistory] = useState(false);
+  const PAGE_SIZE = 20;
+
   // Handle hardware back button
   useFocusEffect(
     useCallback(() => {
@@ -46,7 +52,7 @@ export const RateCutScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    loadHistory();
+    loadHistory(true);
   }, [selectedCustomer]);
 
   // Determine available metals based on customer balance
@@ -73,27 +79,45 @@ export const RateCutScreen: React.FC = () => {
   // Auto-select first available metal if current selection is invalid
   useEffect(() => {
     if (availableMetals.length > 0) {
-      const isCurrentValid = availableMetals.some(m => m.value === metalType);
+      const isCurrentValid = availableMetals.some((m: { value: 'gold999' | 'gold995' | 'silver', label: string }) => m.value === metalType);
       if (!isCurrentValid) {
         setMetalType(availableMetals[0].value);
       }
     }
   }, [availableMetals, metalType]);
 
-  const loadHistory = async () => {
+  const loadHistory = async (reset = false) => {
+    if (isFetchingHistory) return;
+    if (!reset && !hasMore) return;
+
+    setIsFetchingHistory(true);
     try {
+      const currentOffset = reset ? 0 : offset;
+      const limit = PAGE_SIZE;
+
       let data: RateCutRecord[];
       if (selectedCustomer) {
         // Load history for specific customer
-        data = await RateCutService.getRateCutHistory(selectedCustomer.id);
+        data = await RateCutService.getRateCutHistory(selectedCustomer.id, limit, currentOffset);
       } else {
         // Load all history
-        data = await RateCutService.getAllRateCutHistory();
+        data = await RateCutService.getAllRateCutHistory(limit, currentOffset);
       }
-      setHistory(data);
+      
+      setHasMore(data.length >= limit);
+
+      if (reset) {
+        setHistory(data);
+        setOffset(limit);
+      } else {
+        setHistory(prev => [...prev, ...data]);
+        setOffset(prev => prev + limit);
+      }
     } catch (error) {
       console.error('Error loading rate cut history:', error);
-      setHistory([]);
+      if (reset) setHistory([]);
+    } finally {
+      setIsFetchingHistory(false);
     }
   };
 
@@ -136,7 +160,7 @@ export const RateCutScreen: React.FC = () => {
     if (success) {
       setWeight('');
       setRate('');
-      loadHistory();
+      loadHistory(true);
       setShowSuccessAlert(true);
     } else {
       setErrorMessage('Failed to apply rate cut');
@@ -158,7 +182,7 @@ export const RateCutScreen: React.FC = () => {
     // @ts-ignore - metal_type is compatible but TS might complain due to strict union check if not updated everywhere
     const success = await RateCutService.deleteLatestRateCut(deleteTarget.id, deleteTarget.customer_id, deleteTarget.metal_type);
     if (success) {
-      loadHistory();
+      loadHistory(true);
     } else {
       setErrorMessage('Failed to delete rate cut');
       setShowErrorAlert(true);
@@ -173,20 +197,48 @@ export const RateCutScreen: React.FC = () => {
            (Math.abs(customer.metalBalances?.silver || 0) > 0.01);
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
-          </TouchableOpacity>
-          <Text style={styles.screenTitle}>Rate Cut</Text>
+  const renderHistoryItem = ({ item }: { item: RateCutRecord }) => {
+    const isGold = item.metal_type.includes('gold');
+    const badgeStyle = isGold ? styles.badgeGold : styles.badgeSilver;
+    const badgeTextStyle = isGold ? styles.badgeTextGold : styles.badgeTextSilver;
+    const metalLabel = item.metal_type === 'gold999' ? 'Gold 999' : 
+                       item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
+
+    return (
+      <View style={[styles.historyCard, { marginHorizontal: 16 }]}>
+        <View style={styles.cardTop}>
+          <Text style={styles.hDate}>{new Date(item.cut_date).toLocaleDateString()}</Text>
+          <View style={styles.cardTopRight}>
+            <View style={[styles.hBadge, badgeStyle]}>
+              <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.deleteIcon}
+              onPress={() => handleDelete(item)}
+            >
+              <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.cardDetails}>
+          <View>
+            <Text style={styles.calcRow}>
+              Weight: <Text style={styles.calcVal}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
+            </Text>
+            <Text style={styles.calcRow}>
+              Rate: <Text style={styles.calcVal}>₹{formatIndianNumber(item.rate)}</Text>
+            </Text>
+          </View>
+          <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(item.total_amount))}</Text>
         </View>
       </View>
+    );
+  };
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.formContainer}>
+  const renderHeader = () => (
+    <View>
+      <View style={styles.formContainer}>
           {/* Customer Select */}
           <View style={styles.customerSelectContainer}>
             <TouchableOpacity 
@@ -211,7 +263,7 @@ export const RateCutScreen: React.FC = () => {
           {/* Metal Segment */}
           {selectedCustomer && availableMetals.length > 0 ? (
             <View style={styles.metalSegment}>
-              {availableMetals.map((metal) => (
+              {availableMetals.map((metal: { value: 'gold999' | 'gold995' | 'silver', label: string }) => (
                 <TouchableOpacity
                   key={metal.value}
                   style={[
@@ -294,59 +346,46 @@ export const RateCutScreen: React.FC = () => {
               <Text style={styles.submitBtnText}>Apply Rate Cut</Text>
             )}
           </TouchableOpacity>
+      </View>
+      <Text style={styles.sectionTitle}>
+        {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
+      </Text>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Rate Cut</Text>
         </View>
+      </View>
 
-        <Text style={styles.sectionTitle}>
-          {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
-        </Text>
-        
-        <View style={styles.historyList}>
-          {history.map((item) => {
-            const isGold = item.metal_type.includes('gold');
-            const badgeStyle = isGold ? styles.badgeGold : styles.badgeSilver;
-            const badgeTextStyle = isGold ? styles.badgeTextGold : styles.badgeTextSilver;
-            const metalLabel = item.metal_type === 'gold999' ? 'Gold 999' : 
-                               item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
-
-            return (
-              <View key={item.id} style={styles.historyCard}>
-                <View style={styles.cardTop}>
-                  <Text style={styles.hDate}>{new Date(item.cut_date).toLocaleDateString()}</Text>
-                  <View style={styles.cardTopRight}>
-                    <View style={[styles.hBadge, badgeStyle]}>
-                      <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
-                    </View>
-                    <TouchableOpacity 
-                      style={styles.deleteIcon}
-                      onPress={() => handleDelete(item)}
-                    >
-                      <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                
-                <View style={styles.cardDetails}>
-                  <View>
-                    <Text style={styles.calcRow}>
-                      Weight: <Text style={styles.calcVal}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
-                    </Text>
-                    <Text style={styles.calcRow}>
-                      Rate: <Text style={styles.calcVal}>₹{formatIndianNumber(item.rate)}</Text>
-                    </Text>
-                  </View>
-                  <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(item.total_amount))}</Text>
-                </View>
-              </View>
-            );
-          })}
-          {history.length === 0 && (
-            <Text style={styles.emptyHistoryText}>
-              {selectedCustomer ? `No rate cut history found for ${selectedCustomer.name}` : 'No rate cut history found'}
-            </Text>
-          )}
-        </View>
-      </ScrollView>
-
+      <FlatList
+        data={history}
+        renderItem={renderHistoryItem}
+        keyExtractor={item => item.id}
+        ListHeaderComponent={renderHeader}
+        onEndReached={() => loadHistory(false)}
+        onEndReachedThreshold={0.5}
+        contentContainerStyle={styles.content}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        ListFooterComponent={
+          isFetchingHistory ? <ActivityIndicator style={{ paddingVertical: 20 }} color="#005AC1" /> : null
+        }
+        ListEmptyComponent={
+          !isFetchingHistory ? (
+          <Text style={styles.emptyHistoryText}>
+            {selectedCustomer ? `No rate cut history found for ${selectedCustomer.name}` : 'No rate cut history found'}
+          </Text>
+          ) : null
+        }
+      />
+      
       <CustomerSelectionModal
         visible={showCustomerModal}
         onDismiss={() => setShowCustomerModal(false)}

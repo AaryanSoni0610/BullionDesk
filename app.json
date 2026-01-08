@@ -3,9 +3,9 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "51.0.0",
-    "version": "7.3.5",
+    "version": "7.4.0",
     "orientation": "portrait",
-    "icon": "./assets/app-icon.png",
+    "icon": "./assets/app-icon1.png",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/icon.png",
@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/app-icon.png"
+        "foregroundImage": "./assets/app-icon1.png"
       },
       "package": "com.sonitech.bulliondesk",
       "permissions": [

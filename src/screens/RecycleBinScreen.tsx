@@ -163,13 +163,6 @@ export const RecycleBinScreen: React.FC = () => {
       }
       setError(null);
       
-      // Clean up old deleted transactions (15+ days old)
-      // Note: The service method has been updated to use 15 days
-      const deletedCount = await TransactionService.cleanupOldDeletedTransactions();
-      if (deletedCount > 0) {
-        console.log(`Automatically deleted ${deletedCount} old transactions from recycle bin`);
-      }
-      
       // Load deleted transactions only
       const allTransactions = await TransactionService.getDeletedTransactions();
       
@@ -296,6 +289,9 @@ export const RecycleBinScreen: React.FC = () => {
          } else {
              line1 = weightStr;
          }
+    } else if (entry.type === 'money') {
+         // For money entries
+         line1 = formatCurrency(entry.amount || 0);
     }
 
     return { line1, line2 };
@@ -437,8 +433,10 @@ export const RecycleBinScreen: React.FC = () => {
             {processedEntries.map((entry, index) => (
                 <View key={index} style={styles.entryWrapper}>
                   {(() => {
-                    const isSell = entry.type === 'sell';
-                    const isPurchase = entry.type === 'purchase';
+                    const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
+                    const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
+                    const isSell = entry.type === 'sell' || isMoneyGive;
+                    const isPurchase = entry.type === 'purchase' || isMoneyReceive;
                     const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
                     const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
                     const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;

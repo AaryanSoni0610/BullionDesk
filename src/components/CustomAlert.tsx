@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   },
   alertContainer: {
     width: '100%',
-    maxWidth: 400,
+    marginHorizontal: 0,
     backgroundColor: '#FDFBFF',
     borderRadius: 28,
     padding: 24,

@@ -1141,8 +1141,6 @@ export class TransactionService {
 
       // Calculate and restore balances (same logic as when transaction was deleted, but reverse)
       let updatedCustomer = { ...customer };
-      console.log('Restoring transaction for customer:', updatedCustomer);
-
       const isMoneyOnly = transaction.entries.length === 0;
       const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
       let balanceEffect = 0;
@@ -1151,7 +1149,6 @@ export class TransactionService {
         // For money-only transactions, restore the balance effect which was amountPaid (inverted)
         balanceEffect = transaction.amountPaid;
         updatedCustomer.balance += balanceEffect;
-        console.log('Restored money-only balance effect:', balanceEffect);
       } else if (!isMetalOnly) {
         const netAmount = transaction.total;
         const receivedAmount = transaction.amountPaid;
@@ -1159,10 +1156,9 @@ export class TransactionService {
         balanceEffect = receivedAmount - netAmount;
         
         updatedCustomer.balance += balanceEffect;
-        console.log('Restored money balance effect:', balanceEffect);
       }
+      
       // Restore metal balances for metal-only entries
-      console.log('isMetalOnly:', isMetalOnly);
       if (isMetalOnly) {
         for (const entry of transaction.entries) {
           if (entry.metalOnly && entry.type !== 'money') {
@@ -1187,11 +1183,9 @@ export class TransactionService {
             }
 
             // Apply original effect
-            console.log('weight:', weight);
             const effect = entry.type === 'sell' ? -weight : weight;
             
             // Update metal balance
-            console.log(`Restoring metal balance for ${itemType}, effect: ${effect}`);
             await CustomerService.updateCustomerMetalBalance(customer.id, itemType, effect);
           }
         }
@@ -1235,13 +1229,6 @@ export class TransactionService {
 
       // Restore the transaction by setting deleted_on to NULL
       await db.runAsync('UPDATE transactions SET deleted_on = NULL, lastUpdatedAt = ? WHERE id = ?', [new Date().toISOString(), transactionId]);
-
-      // check the balance of the customer after restoration
-      const freshCustomer = await CustomerService.getCustomerById(customer.id);
-      console.log('money:', freshCustomer?.balance ?? 0);
-      console.log('gold 999:', freshCustomer?.metalBalances?.gold999 ?? 0);
-      console.log('gold 995:', freshCustomer?.metalBalances?.gold995 ?? 0);
-      console.log('silver:', freshCustomer?.metalBalances?.silver ?? 0);
       
       return true;
     } catch (error) {
@@ -1257,7 +1244,6 @@ export class TransactionService {
     try {
       // Delete ledger entries permanently
       await db.runAsync('DELETE FROM ledger_entries WHERE transactionId = ?', [transactionId]);
-      await db.runAsync('DELETE FROM ledger_entry_items WHERE ledger_entry_id IN (SELECT id FROM ledger_entries WHERE transactionId = ?)', [transactionId]);
 
       // Delete the transaction permanently (cascade will delete entries)
       await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);

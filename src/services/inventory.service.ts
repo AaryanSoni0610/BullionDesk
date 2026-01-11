@@ -132,8 +132,6 @@ export class InventoryService {
 
   // The "Ripple" Rebuild: Recalculate balances from a specific date forward
   static async recalculateBalancesFrom(startDateStr?: string): Promise<void> {
-    console.log(`🔄 Starting recalculateBalancesFrom${startDateStr ? ` from ${startDateStr}` : ' (full rebuild)'}`);
-    
     const db = DatabaseService.getDatabase();
     
     // 1. Identify Start State
@@ -155,7 +153,6 @@ export class InventoryService {
 
       currentBalance = await this.getInventoryForDate(startDayStr);
       processingDate = new Date(startDayStr);
-      console.log(`📅 Starting from date: ${startDayStr} (derived from ${startDateStr}), initial balance:`, JSON.stringify(currentBalance));
     } else {
       currentBalance = await this.getBaseInventory();
       // Find the date of the very first transaction
@@ -164,9 +161,7 @@ export class InventoryService {
       );
       if (firstTxn && firstTxn.date) {
         processingDate = new Date(firstTxn.date);
-        console.log(`📅 Full rebuild starting from first transaction: ${firstTxn.date}, base balance:`, JSON.stringify(currentBalance));
       } else {
-        console.log(`📅 No transactions found, skipping rebuild`);
         return; // No transactions
       }
     }
@@ -201,8 +196,6 @@ export class InventoryService {
       ORDER BY t.date ASC
     `, [startIso]);
 
-    console.log(`📦 Fetched ${metalRows.length} metal transaction entries`);
-
     // ---------------------------------------------------------
     // STREAM B: FINANCIAL INVENTORY (Money)
     // Source 1: ledger_entries (Payments Received/Given)
@@ -223,8 +216,6 @@ export class InventoryService {
       ORDER BY le.date ASC
     `, [startIso]);
 
-    console.log(`💰 Fetched ${ledgerRows.length} ledger entries`);
-
     // Source 2: transaction_entries (Direct Money Adjustments)
     const moneyItemRows = await DatabaseService.getAllAsyncBatch<{
       date: string;
@@ -239,8 +230,6 @@ export class InventoryService {
         AND te.itemType = 'money'
     `, [startIso]);
 
-    console.log(`💵 Fetched ${moneyItemRows.length} direct money item entries`);
-
     // Source 3: Ghost Money Repair (Transactions with amountPaid but missing ledger)
     // This catches data from imports or manual edits where ledger might be desynced
     const txnPaymentRows = await DatabaseService.getAllAsyncBatch<{
@@ -253,16 +242,12 @@ export class InventoryService {
       WHERE date >= ? AND deleted_on IS NULL AND amountPaid != 0
     `, [startIso]);
 
-    console.log(`👻 Fetched ${txnPaymentRows.length} transactions with amountPaid for ghost money repair`);
-
     // Get all transaction IDs that have ledger entries (to avoid double counting)
     const transactionsWithLedger = new Set<string>();
     const allLedgerRows = await DatabaseService.getAllAsyncBatch<{ transactionId: string }>(
       `SELECT DISTINCT transactionId FROM ledger_entries WHERE deleted_on IS NULL`
     );
     allLedgerRows.forEach(row => transactionsWithLedger.add(row.transactionId));
-
-    console.log(`📋 Found ${transactionsWithLedger.size} transactions with ledger entries`);
 
     // ---------------------------------------------------------
     // 3. MERGE & CALCULATE
@@ -298,17 +283,12 @@ export class InventoryService {
 
     const daysToProcess = Array.from(eventsByDay.keys()).sort();
 
-    console.log(`📅 Processing ${daysToProcess.length} days: ${daysToProcess.join(', ')}`);
-
     // Loop through days
     for (const day of daysToProcess) {
       // Skip days strictly before the start DAY (string comparison of YYYY-MM-DD)
       if (startDayStr && day < startDayStr) continue;
 
       const events = eventsByDay.get(day)!;
-
-      console.log(`📅 Processing day: ${day}`);
-      console.log(`   Events: ${events.metals.length} metals, ${events.ledger.length} ledger, ${events.moneyItems.length} money items, ${events.txnPayments.length} txn payments`);
 
       // 1. Apply Metal Changes (From Transactions - Single Source of Truth)
       for (const row of events.metals) {
@@ -328,15 +308,11 @@ export class InventoryService {
 
       // Ensure Rani/Rupu balances don't go negative (floating point errors or data inconsistencies)
       if (currentBalance.rani < 0) {
-        console.log(`⚠️  Rani balance was negative (${currentBalance.rani}), setting to 0`);
         currentBalance.rani = 0;
       }
       if (currentBalance.rupu < 0) {
-        console.log(`⚠️  Rupu balance was negative (${currentBalance.rupu}), setting to 0`);
         currentBalance.rupu = 0;
       }
-
-      console.log(`   After metal changes:`, JSON.stringify(currentBalance));
 
       // 2. Apply Money Changes (From Ledger - Primary Source)
       let dailyMoneyChange = 0;
@@ -367,8 +343,6 @@ export class InventoryService {
       
       currentBalance.money += dailyMoneyChange;
 
-      console.log(`   Daily money change: ${dailyMoneyChange}, new balance:`, JSON.stringify(currentBalance));
-
       // 3. Save "Opening Balance" for the NEXT day
       const nextDay = new Date(day);
       nextDay.setDate(nextDay.getDate() + 1);
@@ -388,11 +362,7 @@ export class InventoryService {
           currentBalance.money
         ]
       );
-
-      console.log(`💾 Saved opening balance for ${nextDayStr}:`, JSON.stringify(currentBalance));
     }
-
-    console.log(`✅ RecalculateBalancesFrom completed`);
   }
 
   // Calculate opening balance effects on inventory (Legacy / Fallback)

@@ -428,15 +428,9 @@ export const SettingsScreen: React.FC = () => {
         'Choose what data to export:',
         [
           {
-            text: 'Today',
-            onPress: async () => {
-              await performExport('today');
-            },
-          },
-          {
             text: 'All Data',
             onPress: async () => {
-              await performExport('all');
+              await performExport();
             },
           },
           {
@@ -452,9 +446,9 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const performExport = async (exportType: 'today' | 'all') => {
+  const performExport = async () => {
     try {
-      const result = await BackupService.exportDataToUserStorage(exportType);
+      const result = await BackupService.exportDataToUserStorage();
       
       if (result.success && result.fileUri && result.fileName) {
         // Show success alert with share option
@@ -618,7 +612,7 @@ export const SettingsScreen: React.FC = () => {
         {/* App Settings */}
         <View style={styles.groupContainer}>
           <Text style={styles.groupLabel}>App Settings</Text>
-          <View style={styles.cardContainer}>
+          <View style={[styles.cardContainer, { paddingVertical: 0 }]}>
             <SettingsItem
               icon="bell-outline"
               title="Enable Notifications"
@@ -629,6 +623,7 @@ export const SettingsScreen: React.FC = () => {
                   onValueChange={handleNotificationToggle}
                   disabled={isCheckingNotifications}
                   color="#005AC1"
+                  style={{ height: 36, marginVertical: 0 }}
                 />
               }
             />
@@ -643,6 +638,7 @@ export const SettingsScreen: React.FC = () => {
                   onValueChange={handleAutoBackupToggle}
                   disabled={isCheckingBackup}
                   color="#005AC1"
+                  style={{ height: 36, marginVertical: 0 }}
                 />
               }
             />
@@ -985,19 +981,15 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     backgroundColor: '#FFFFFF', // --surface
-    borderRadius: 24, // --card-radius
+    borderRadius: 32, // --card-radius
     overflow: 'hidden',
-    elevation: 2, // box-shadow approximation
-    shadowColor: '#000',
-    shadowOpacity: 0.02,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    elevation: 1, // box-shadow approximation
   },
   itemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    paddingHorizontal: 20,
+    padding: 12,
+    paddingHorizontal: 16,
     gap: 16,
   },
   separator: {

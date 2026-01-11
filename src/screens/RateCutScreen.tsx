@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
+import { View, StyleSheet, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,6 +11,12 @@ import { formatIndianNumber } from '../utils/formatting';
 import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
+
+const hasMetalBalance = (customer: Customer) => {
+  return (Math.abs(customer.metalBalances?.gold999 || 0) > 0.01) || 
+         (Math.abs(customer.metalBalances?.gold995 || 0) > 0.01) || 
+         (Math.abs(customer.metalBalances?.silver || 0) > 0.01);
+};
 
 export const RateCutScreen: React.FC = () => {
   const { navigateToSettings } = useAppContext();
@@ -191,12 +197,6 @@ export const RateCutScreen: React.FC = () => {
     setDeleteTarget(null);
   };
 
-  const hasMetalBalance = (customer: Customer) => {
-    return (Math.abs(customer.metalBalances?.gold999 || 0) > 0.01) || 
-           (Math.abs(customer.metalBalances?.gold995 || 0) > 0.01) || 
-           (Math.abs(customer.metalBalances?.silver || 0) > 0.01);
-  };
-
   const renderHistoryItem = ({ item }: { item: RateCutRecord }) => {
     const isGold = item.metal_type.includes('gold');
     const badgeStyle = isGold ? styles.badgeGold : styles.badgeSilver;
@@ -204,10 +204,13 @@ export const RateCutScreen: React.FC = () => {
     const metalLabel = item.metal_type === 'gold999' ? 'Gold 999' : 
                        item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
 
+    const cutDate = new Date(item.cut_date);
+    const formattedDate = `${cutDate.getDate().toString().padStart(2, '0')}/${(cutDate.getMonth() + 1).toString().padStart(2, '0')}/${cutDate.getFullYear()}`;
+
     return (
-      <View style={[styles.historyCard, { marginHorizontal: 16 }]}>
+      <View style={styles.historyCard}>
         <View style={styles.cardTop}>
-          <Text style={styles.hDate}>{new Date(item.cut_date).toLocaleDateString()}</Text>
+          <Text style={styles.hDate}>{formattedDate}</Text>
           <View style={styles.cardTopRight}>
             <View style={[styles.hBadge, badgeStyle]}>
               <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
@@ -237,104 +240,93 @@ export const RateCutScreen: React.FC = () => {
   };
 
   const renderHeader = () => (
-    <View>
-      <View style={styles.formContainer}>
-          {/* Customer Select */}
-          <View style={styles.customerSelectContainer}>
-            <TouchableOpacity 
-              style={styles.customerSelect}
-              onPress={() => setShowCustomerModal(true)}
-            >
-              <Text style={styles.customerSelectText}>
-                {selectedCustomer ? selectedCustomer.name : 'Select Customer (All History)'}
-              </Text>
-              <MaterialCommunityIcons name="menu-down" size={24} color="#44474F" />
-            </TouchableOpacity>
-            {selectedCustomer && (
-              <TouchableOpacity 
-                style={styles.clearCustomerBtn}
-                onPress={() => setSelectedCustomer(null)}
-              >
-                <MaterialCommunityIcons name="close" size={20} color="#44474F" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Metal Segment */}
-          {selectedCustomer && availableMetals.length > 0 ? (
-            <View style={styles.metalSegment}>
-              {availableMetals.map((metal: { value: 'gold999' | 'gold995' | 'silver', label: string }) => (
-                <TouchableOpacity
-                  key={metal.value}
-                  style={[
-                    styles.segmentOpt,
-                    metalType === metal.value && styles.segmentOptActive
-                  ]}
-                  onPress={() => setMetalType(metal.value as any)}
-                >
-                  <Text style={[
-                    styles.segmentText,
-                    metalType === metal.value && styles.segmentTextActive
-                  ]}>
-                    {metal.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.noMetalText}>
-              {selectedCustomer ? 'No metal balance available for rate cut' : 'Select a customer to see options'}
-            </Text>
-          )}
-
-          {/* Inputs Row */}
-          <View style={styles.inputRow}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.fieldLabel}>Weight Cut (g)</Text>
-              <RNTextInput
-                style={styles.textInput}
-                value={weight}
-                onChangeText={setWeight}
-                keyboardType="numeric"
-                editable={!!selectedCustomer && availableMetals.length > 0}
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.fieldLabel}>Rate</Text>
-              <RNTextInput
-                style={styles.textInput}
-                value={rate}
-                onChangeText={setRate}
-                keyboardType="numeric"
-                editable={!!selectedCustomer && availableMetals.length > 0}
-              />
-            </View>
-          </View>
-
-          {/* Date Button */}
+    <View style={styles.formContainer}>
+        {/* Customer Select */}
+        <View style={styles.customerSelectContainer}>
           <TouchableOpacity 
-            style={styles.dateBtn}
+            style={styles.customerSelect}
+            onPress={() => setShowCustomerModal(true)}
+          >
+            <Text style={styles.customerSelectText}>
+              {selectedCustomer ? selectedCustomer.name : 'Select Customer (All History)'}
+            </Text>
+            <MaterialCommunityIcons name="menu-down" size={24} color="#44474F" />
+          </TouchableOpacity>
+          {selectedCustomer && (
+            <TouchableOpacity 
+              style={styles.clearCustomerBtn}
+              onPress={() => setSelectedCustomer(null)}
+            >
+              <MaterialCommunityIcons name="close" size={20} color="#44474F" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Metal Segment */}
+        {selectedCustomer && availableMetals.length > 0 ? (
+          <View style={styles.metalSegment}>
+            {availableMetals.map((metal: { value: 'gold999' | 'gold995' | 'silver', label: string }) => (
+              <TouchableOpacity
+                key={metal.value}
+                style={[
+                  styles.segmentOpt,
+                  metalType === metal.value && styles.segmentOptActive
+                ]}
+                onPress={() => setMetalType(metal.value as any)}
+              >
+                <Text style={[
+                  styles.segmentText,
+                  metalType === metal.value && styles.segmentTextActive
+                ]}>
+                  {metal.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.noMetalText}>
+            {selectedCustomer ? 'No metal balance available for rate cut' : 'Select a customer to see options'}
+          </Text>
+        )}
+
+        {/* Inputs Row */}
+        <View style={styles.inputRow}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.fieldLabel}>Weight Cut (g)</Text>
+            <RNTextInput
+              style={styles.textInput}
+              value={weight}
+              onChangeText={setWeight}
+              keyboardType="numeric"
+              editable={!!selectedCustomer && availableMetals.length > 0}
+            />
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.fieldLabel}>Rate</Text>
+            <RNTextInput
+              style={styles.textInput}
+              value={rate}
+              onChangeText={setRate}
+              keyboardType="numeric"
+              editable={!!selectedCustomer && availableMetals.length > 0}
+            />
+          </View>
+        </View>
+
+        {/* Date and Submit Buttons Row */}
+        <View style={styles.buttonRow}>
+          <TouchableOpacity 
+            style={[styles.dateBtn, { flex: 0.3 }]}
             onPress={() => setShowDatePicker(true)}
             disabled={!selectedCustomer || availableMetals.length === 0}
           >
-            <Text style={styles.dateBtnText}>Date: {date.toLocaleDateString()}</Text>
+            <Text style={styles.dateBtnText}>{`${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`}</Text>
           </TouchableOpacity>
 
-          {showDatePicker && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              onChange={(event, selectedDate) => {
-                setShowDatePicker(false);
-                if (selectedDate) setDate(selectedDate);
-              }}
-            />
-          )}
-
-          {/* Submit Button */}
           <TouchableOpacity 
             style={[
               styles.submitBtn,
+              { flex: 0.7 },
               (!selectedCustomer || !weight || !rate || availableMetals.length === 0) && styles.submitBtnDisabled
             ]}
             onPress={handleApply}
@@ -346,10 +338,18 @@ export const RateCutScreen: React.FC = () => {
               <Text style={styles.submitBtnText}>Apply Rate Cut</Text>
             )}
           </TouchableOpacity>
-      </View>
-      <Text style={styles.sectionTitle}>
-        {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
-      </Text>
+        </View>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) setDate(selectedDate);
+            }}
+          />
+        )}
     </View>
   );
 
@@ -365,26 +365,32 @@ export const RateCutScreen: React.FC = () => {
         </View>
       </View>
 
-      <FlatList
-        data={history}
-        renderItem={renderHistoryItem}
-        keyExtractor={item => item.id}
-        ListHeaderComponent={renderHeader}
-        onEndReached={() => loadHistory(false)}
-        onEndReachedThreshold={0.5}
-        contentContainerStyle={styles.content}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        ListFooterComponent={
-          isFetchingHistory ? <ActivityIndicator style={{ paddingVertical: 20 }} color="#005AC1" /> : null
-        }
-        ListEmptyComponent={
-          !isFetchingHistory ? (
-          <Text style={styles.emptyHistoryText}>
-            {selectedCustomer ? `No rate cut history found for ${selectedCustomer.name}` : 'No rate cut history found'}
-          </Text>
-          ) : null
-        }
-      />
+      <View style={styles.content}>
+        {renderHeader()}
+        <Text style={styles.sectionTitle}>
+          {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
+        </Text>
+        <FlatList
+          data={history}
+          renderItem={renderHistoryItem}
+          keyExtractor={item => item.id}
+          onEndReached={() => loadHistory(false)}
+          onEndReachedThreshold={0.5}
+          style={styles.historyList}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          ListFooterComponent={
+            isFetchingHistory ? <ActivityIndicator style={{ paddingVertical: 20 }} color="#005AC1" /> : null
+          }
+          ListEmptyComponent={
+            !isFetchingHistory ? (
+            <Text style={styles.emptyHistoryText}>
+              {selectedCustomer ? `No rate cut history found for ${selectedCustomer.name}` : 'No rate cut history found'}
+            </Text>
+            ) : null
+          }
+        />
+      </View>
       
       <CustomerSelectionModal
         visible={showCustomerModal}
@@ -395,6 +401,7 @@ export const RateCutScreen: React.FC = () => {
         }}
         onCreateCustomer={() => {}}
         allowCreateCustomer={false}
+        filterFn={hasMetalBalance}
       />
 
       {/* Error Alert */}
@@ -469,11 +476,16 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   content: {
+    flex: 1,
+    paddingHorizontal: 16,
     paddingBottom: 40,
+  },
+  // History Container
+  historyContainer: {
+    maxHeight: 800,
   },
   // Form Card
   formContainer: {
-    marginHorizontal: 16,
     marginBottom: 24,
     backgroundColor: '#FFFFFF', // --surface
     padding: 20,
@@ -498,7 +510,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F2F5', // --surface-container
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 16, // --radius-m
+    borderRadius: 32, // --radius-m
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -570,9 +582,9 @@ const styles = StyleSheet.create({
   },
   textInput: {
     backgroundColor: '#F0F2F5', // --surface-container
-    borderRadius: 16, // --radius-m
+    borderRadius: 32, // --radius-m
     paddingVertical: 12, // Adjusted for RN TextInput vertical alignment
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     fontSize: 16,
     fontFamily: 'Outfit_400Regular',
     color: '#1B1B1F', // --on-surface
@@ -581,8 +593,9 @@ const styles = StyleSheet.create({
   dateBtn: {
     backgroundColor: '#F0F2F5', // --surface-container
     padding: 14,
-    borderRadius: 16, // --radius-m
+    borderRadius: 32, // --radius-m
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#005AC1', // --primary
     borderStyle: 'dashed', // Note: dashed border style support varies in RN, works on iOS/Android usually
@@ -613,9 +626,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Outfit_600SemiBold',
   },
+  // Button Row
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   // History
   sectionTitle: {
-    paddingHorizontal: 20,
     paddingBottom: 12,
     fontSize: 14,
     fontFamily: 'Outfit_600SemiBold',
@@ -624,8 +641,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   historyList: {
-    paddingHorizontal: 16,
-    gap: 12,
+    maxHeight: 800,
   },
   historyCard: {
     backgroundColor: '#FFFFFF', // --surface

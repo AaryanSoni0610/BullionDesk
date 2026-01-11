@@ -980,7 +980,9 @@ export const HistoryScreen: React.FC = () => {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Icon name="close-circle" size={20} color={theme.colors.onSurfaceVariant} />
+              <Icon name="close-circle" size={24} color={theme.colors.onSurfaceVariant}
+                style={{ marginRight: -4 }}
+              />
             </TouchableOpacity>
           )}
         </View>

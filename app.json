@@ -40,7 +40,13 @@
           "icon": "./assets/app-icon.png",
           "color": "#ffffff",
           "androidMode": "default",
-          "androidCollapsedTitle": "BullionDesk Reminders"
+          "androidCollapsedTitle": "BullionDesk"
+        }
+      ],
+      [
+        "react-native-quick-crypto",
+        {
+          "shimCrypto": true
         }
       ]
     ],

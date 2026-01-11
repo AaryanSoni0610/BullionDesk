@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   },
   dialog: {
     width: '100%',
-    maxWidth: 360,
+    marginHorizontal: 16,
     padding: 24,
     borderRadius: 28,
     elevation: 6,

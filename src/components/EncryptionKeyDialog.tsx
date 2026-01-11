@@ -93,7 +93,9 @@ export const EncryptionKeyDialog: React.FC<EncryptionKeyDialogProps> = ({
               activeOutlineColor={theme.colors.primary}
               error={!!error}
               onSubmitEditing={handleSubmit}
-              left={<TextInput.Icon icon="key" color={theme.colors.onSurfaceVariant} />}
+              left={<TextInput.Icon icon="key" color={theme.colors.onSurfaceVariant} 
+                style={{ marginRight: -4 }}
+              />}
             />
 
             {error ? (
@@ -116,7 +118,7 @@ export const EncryptionKeyDialog: React.FC<EncryptionKeyDialogProps> = ({
                 style={[styles.button, styles.submitButton]}
                 labelStyle={styles.buttonLabel}
               >
-                {mode === 'confirm' ? 'Confirm' : 'Submit'}
+                {mode === 'confirm' ? 'Confirm' : 'Next'}
               </Button>
             </View>
           </Surface>
@@ -136,7 +138,7 @@ const styles = StyleSheet.create({
   },
   dialog: {
     width: '100%',
-    maxWidth: 360,
+    marginHorizontal: 16,
     backgroundColor: '#FDFBFF',
     borderRadius: 28,
     padding: 24,

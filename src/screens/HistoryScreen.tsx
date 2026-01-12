@@ -27,7 +27,7 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, formatIndianNumber, formatCurrency } from '../utils/formatting';
+import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, customFormatPureSilver, formatIndianNumber, formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -225,7 +225,7 @@ export const HistoryScreen: React.FC = () => {
   const generateTransactionCardHTML = (transaction: Transaction) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
     
-    // Preprocess entries
+    // Preprocess entries to add numbered labels for Rani/Rupa when multiple
     const processedEntries = transaction.entries.map((entry, index) => {
       let displayName = getItemDisplayName(entry);
       if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
@@ -235,6 +235,9 @@ export const HistoryScreen: React.FC = () => {
           const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
           displayName = `${displayName} ${itemIndex}`;
         }
+      } else if (entry.stock_id && entry.metalOnly) {
+        // For Rani/Rupa sell entries, show as Rani or Rupu
+        displayName = entry.itemType === 'gold999' || entry.itemType === 'gold995' ? 'Rani' : 'Rupu';
       } else if (entry.type === 'money' && entry.createdAt) {
         // Format date as DD/MM HH:MM am/pm
         const date = new Date(entry.createdAt);
@@ -248,6 +251,24 @@ export const HistoryScreen: React.FC = () => {
       }
       return { ...entry, displayName };
     });
+
+    // Separate Rani/Rupa sell entries (metal-only with stock_id)
+    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly);
+
+    // Group Rani/Rupa entries by itemType for summary
+    const groupedRaniRupa = raniRupaEntries.reduce((acc, entry) => {
+      let groupKey = entry.itemType;
+      // Map to metal types for summary
+      if (entry.itemType === 'rani') {
+          groupKey = (entry.cut || 0) > 0 ? 'gold999' : 'gold995';
+      } else if (entry.itemType === 'rupu') {
+          groupKey = 'silver';
+      }
+      
+      if (!acc[groupKey]) acc[groupKey] = [];
+      acc[groupKey].push(entry);
+      return acc;
+    }, {} as Record<string, typeof processedEntries>);
 
     // Balance Logic
     let transactionBalanceLabel = 'Settled';
@@ -312,7 +333,7 @@ export const HistoryScreen: React.FC = () => {
              const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
              const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
 
-             const isSell = entry.type === 'sell' || isMoneyGive;
+             const isSell = entry.type === 'sell' || isMoneyGive || (entry.stock_id && entry.metalOnly);
              const isPurchase = entry.type === 'purchase' || isMoneyReceive;
              const iconChar = isSell ? '↗' : isPurchase ? '↙' : '₹';
              const iconBg = isSell ? '#E8F5E9' : isPurchase ? '#E3F2FD' : '#FFF8E1';
@@ -335,6 +356,52 @@ export const HistoryScreen: React.FC = () => {
                  </div>
                ` : ''}
              `;
+          }).join('')}
+          
+          ${raniRupaEntries.length > 0 ? '<div class="divider"></div>' : ''}
+          
+          ${Object.entries(groupedRaniRupa).map(([itemType, entries]) => {
+            const sumPure = entries.reduce((sum, e) => {
+                const weight = e.weight || 0;
+                const touch = e.touch || 100;
+                
+                if (itemType === 'rupu') {
+                  return sum + customFormatPureSilver(weight, touch);
+                } else {
+                  const effectiveTouch = touch/100;
+                  const rawPure = (weight * effectiveTouch);
+                  return sum + (formatPureGoldPrecise(rawPure));
+                }
+              }, 0);
+              
+              const sumDebt = entries.reduce((sum, e) => {
+                const weight = e.weight || 0;
+                const touch = e.touch || 100;
+                const cut = e.cut || 0;
+                
+                if (itemType === 'rupu') {
+                  return sum + customFormatPureSilver(weight, touch);
+                } else {
+                  const effectiveTouch = (touch - cut)/100;
+                  const rawPure = (weight * effectiveTouch);
+                  return sum + formatPureGoldPrecise(rawPure);
+                }
+              }, 0);
+            
+            const hasCut = entries.some(e => (e.cut || 0) > 0);
+            const displayType = itemType === 'gold999' ? 'Pure Gold 999' : itemType === 'gold995' ? 'Pure Gold 995' : 'Pure Silver';
+            const decimals = itemType === 'silver' ? 0 : 3;
+            const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${(entries[0].cut || 0).toFixed(2)}%)` : `${sumPure.toFixed(decimals)}g`;
+
+            return `
+              <div class="entry-row">
+                <div class="item-name-row">
+                  <div class="icon-box">-</div>
+                  <span class="item-name">${displayType}</span>
+                </div>
+                <span class="item-val">${line1}</span>
+              </div>
+            `;
           }).join('')}
           
           ${(!isMetalOnly && processedEntries.length > 0) ? '<div class="divider"></div>' : ''}
@@ -623,39 +690,49 @@ export const HistoryScreen: React.FC = () => {
 
   const getEntryDisplayData = (entry: any, transaction: Transaction) => {
     const isMetalOnly = entry.metalOnly;
+    
     const isRaniRupa = ['rani', 'rupu'].includes(entry.itemType);
     const isGoldSilver = !isRaniRupa && entry.type !== 'money';
     
-    // Exception Check: Rani Sell + Gold Purchase -> Keep "Same as is"
-    const hasRaniSell = transaction.entries.some(e => e.itemType === 'rani' && e.type === 'sell');
-    const hasGoldPurchase = transaction.entries.some(e => e.itemType.includes('gold') && e.type === 'purchase');
-    const isExceptionCase = hasRaniSell && hasGoldPurchase;
+    // Special handling for Rani/Rupa sell entries (metal-only with stock_id)
+    if (entry.metalOnly && entry.stock_id) {
+      const weight = entry.weight || 0;
+      const touch = entry.touch || 100;
+      const cut = entry.cut || 0;
+      let effectiveTouch = touch;
+      let pureWeight = 0;
+      let fixedDigits = 0;
+      let formattedPure = 0;
 
-    if (isExceptionCase) {
-        let line1 = '';
-        if (isRaniRupa) {
-             const weight = entry.weight || 0;
-             const touch = entry.touch || 100;
-             const cut = entry.cut || 0;
-             const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-             const pureWeight = (weight * effectiveTouch) / 100;
-             const formattedPure = entry.itemType === 'rani' 
-                ? formatPureGoldPrecise(pureWeight) 
-                : formatPureSilver(pureWeight);
-             const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-             line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
-        } else if (isGoldSilver) {
-             const isGold = entry.itemType.includes('gold');
-             line1 = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
-        }
-        
-        let line2 = '';
-        if (!isMetalOnly && entry.price && entry.price > 0) {
-            line2 = formatCurrency(entry.price);
-        }
-        return { line1, line2 };
+      if (entry.itemType === 'rani') {
+        effectiveTouch = touch - cut;
+        pureWeight = (weight * effectiveTouch) / 100;
+        fixedDigits = 3;
+        formattedPure = formatPureGoldPrecise(pureWeight);
+      } else if (entry.itemType === 'rupu') {
+         effectiveTouch = touch;
+         pureWeight = (weight * effectiveTouch) / 100;
+         fixedDigits = 0;
+         formattedPure = customFormatPureSilver(weight, touch);
+      } else if (entry.itemType.includes('gold')) {
+         // Fallback if existing data has gold type
+         effectiveTouch = entry.itemType === 'gold999' ? touch - cut : touch;
+         pureWeight = (weight * effectiveTouch) / 100;
+         fixedDigits = 3;
+         formattedPure = formatPureGoldPrecise(pureWeight);
+      } else {
+         // Fallback for silver
+         effectiveTouch = touch;
+         pureWeight = (weight * effectiveTouch) / 100;
+         fixedDigits = 0;
+         formattedPure = customFormatPureSilver(weight, touch);
+      }
+
+      let line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+      let line2 = '';
+      return { line1, line2 };
     }
-
+    
     // New Logic
     let line1 = '';
     let line2 = '';
@@ -674,9 +751,12 @@ export const HistoryScreen: React.FC = () => {
              else formattedPure = formatPureGold(pureWeight); // Purchase -> Normal
          } else {
              formattedPure = formatPureSilver(pureWeight);
+             if (entry.type === 'sell') formattedPure = customFormatPureSilver(weight, touch);
+             else formattedPure = formatPureSilver(pureWeight); // Purchase -> Normal
          }
          
-         const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+         const fixedDigits = entry.itemType === 'rani' ? 3 : 0;
+         
          line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
          
          if (!isMetalOnly && entry.price && entry.price > 0) {
@@ -714,6 +794,9 @@ export const HistoryScreen: React.FC = () => {
           const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
           displayName = `${displayName} ${itemIndex}`;
         }
+      } else if (entry.stock_id && entry.metalOnly) {
+        // For Rani/Rupa sell entries, show as Rani or Rupu
+        displayName = entry.itemType === 'gold999' || entry.itemType === 'gold995' ? 'Rani' : 'Rupu';
       } else if (entry.type === 'money' && entry.createdAt) {
         // Format date as DD/MM HH:MM am/pm
         const date = new Date(entry.createdAt);
@@ -727,6 +810,24 @@ export const HistoryScreen: React.FC = () => {
       }
       return { ...entry, displayName };
     });
+
+    // Separate Rani/Rupa sell entries (metal-only with stock_id)
+    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly);
+
+    // Group Rani/Rupa entries by itemType for summary
+    const groupedRaniRupa = raniRupaEntries.reduce((acc, entry) => {
+      let groupKey = entry.itemType;
+      // Map to metal types for summary
+      if (entry.itemType === 'rani') {
+          groupKey = (entry.cut || 0) > 0 ? 'gold999' : 'gold995';
+      } else if (entry.itemType === 'rupu') {
+          groupKey = 'silver';
+      }
+      
+      if (!acc[groupKey]) acc[groupKey] = [];
+      acc[groupKey].push(entry);
+      return acc;
+    }, {} as Record<string, typeof processedEntries>);
     
     // Logic for Transaction Balance Label
     let transactionBalanceLabel = 'Settled';
@@ -828,6 +929,7 @@ export const HistoryScreen: React.FC = () => {
 
         {/* Receipt / Details Section */}
         <View style={styles.receiptSection}>
+            {/* Render all entries */}
             {processedEntries.map((entry, index) => (
                 <View key={index} style={styles.entryWrapper}>
                   {(() => {
@@ -835,7 +937,7 @@ export const HistoryScreen: React.FC = () => {
                     const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
                     const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
 
-                    const isSell = entry.type === 'sell' || isMoneyGive;
+                    const isSell = entry.type === 'sell' || isMoneyGive || (entry.stock_id && entry.metalOnly);
                     const isPurchase = entry.type === 'purchase' || isMoneyReceive;
                     
                     const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
@@ -877,6 +979,59 @@ export const HistoryScreen: React.FC = () => {
                   })()}
                 </View>
             ))}
+
+            {/* Divider before summary */}
+            {raniRupaEntries.length > 0 && <Divider style={[styles.divider, { marginVertical: 2 }]} />}
+
+            {/* Summary for Rani/Rupa pure metals */}
+            {Object.entries(groupedRaniRupa).map(([itemType, entries]) => {
+              const sumPure = entries.reduce((sum, e) => {
+                const weight = e.weight || 0;
+                const touch = e.touch || 100;
+                
+                if (itemType === 'rupu') {
+                  return sum + customFormatPureSilver(weight, touch);
+                } else {
+                  const effectiveTouch = touch/100;
+                  const rawPure = (weight * effectiveTouch);
+                  return sum + (formatPureGoldPrecise(rawPure));
+                }
+              }, 0);
+              
+              const sumDebt = entries.reduce((sum, e) => {
+                const weight = e.weight || 0;
+                const touch = e.touch || 100;
+                const cut = e.cut || 0;
+                
+                if (itemType === 'rupu') {
+                  return sum + customFormatPureSilver(weight, touch);
+                } else {
+                  const effectiveTouch = (touch - cut)/100;
+                  const rawPure = (weight * effectiveTouch);
+                  return sum + formatPureGoldPrecise(rawPure);
+                }
+              }, 0);
+              
+              const hasCut = entries.some(e => (e.cut || 0) > 0);
+              const displayType = itemType === 'gold999' ? 'Pure Gold 999' : itemType === 'gold995' ? 'Pure Gold 995' : 'Pure Silver';
+              const decimals = itemType === 'silver' ? 0 : 3;
+              const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${(entries[0].cut || 0).toFixed(2)})` : `${sumPure.toFixed(decimals)}g`;
+
+              return (
+                <View key={`summary-${itemType}`} style={styles.entryWrapper}>
+                  <View style={styles.receiptRow}>
+                    <View style={styles.itemNameRow}>
+                      <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, { marginLeft: 2 }]}>
+                        {displayType}
+                      </Text>
+                    </View>
+                    <Text allowFontScaling={allowFontScaling} style={styles.itemVal}>
+                      {line1}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
 
             {/* Dividers & Totals */}
             {!isMetalOnly && processedEntries.length > 0 && <Divider style={styles.divider} />}
@@ -1387,7 +1542,8 @@ const styles = StyleSheet.create({
   },
   divider: {
     marginVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.05)',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    height: 1,
   },
   footerLabel: {
     fontFamily: 'Outfit_500Medium',

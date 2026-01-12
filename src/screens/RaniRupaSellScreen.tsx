@@ -36,7 +36,6 @@ export const RaniRupaSellScreen: React.FC = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
-  const [extraWeight, setExtraWeight] = useState('');
   const [cutValue, setCutValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -227,25 +226,21 @@ export const RaniRupaSellScreen: React.FC = () => {
     selectedItems.forEach(itemId => {
       const item = inventoryItems.find(i => i.id === itemId);
       if (item) {
-        if (selectedType === 'rani') {
-          // Recalculate pure weight with cut applied
-          const effectiveTouch = Math.max(0, (item.touch || 0) - cut);
-          const pureWeight = (item.weight * effectiveTouch) / 100;
-          total += formatPureGoldPrecise(pureWeight);
-        } else {
-          total += item.pureWeight;
-        }
+        const pureWeight = selectedType === 'rani'
+          ? formatPureGoldPrecise((item.weight * (item.touch - cut)) / 100)
+          : customFormatPureSilver(item.weight, item.touch);
+        
+        total += pureWeight;
       }
     });
 
-    const extra = parseFloat(extraWeight) || 0;
-    return total + extra;
+    return total;
   };
 
   const handleSell = async () => {
     const totalWeight = calculateTotalPureWeight();
     if (totalWeight === 0) {
-      showAlert('No Items Selected', 'Please select items to sell or enter extra weight');
+      showAlert('No Items Selected', 'Please select items to sell');
       return;
     }
 
@@ -292,38 +287,32 @@ export const RaniRupaSellScreen: React.FC = () => {
 
       // Create transaction entries
       const entries: TransactionEntry[] = [];
+      const cut = parseFloat(cutValue) || 0;
+      const hasCut = cut > 0;
+      const itemType = selectedType === 'rani' ? (hasCut ? 'gold999' : 'gold995') : 'silver';
       
-      // Sell entries for each selected Rani/Rupa item (merchant sells Rani/Rupa to customer)
+      // Create purchase entries for each selected item (metal-only)
       selectedItems.forEach(itemId => {
         const item = inventoryItems.find(i => i.id === itemId);
         if (item) {
+          const pureWeight = selectedType === 'rani'
+            ? (item.weight * (item.touch - cut)) / 100
+            : (item.weight * item.touch) / 100;
           entries.push({
             id: `entry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type: 'sell',
             itemType: selectedType,
             weight: item.weight,
             touch: item.touch,
-            cut: selectedType === 'rani' ? (parseFloat(cutValue) || 0) : undefined, // Save cut for rani items
-            pureWeight: item.pureWeight,
-            price: 0, // No price for bulk exchange
-            subtotal: 0, // No money involved in this exchange
-            stock_id: item.stock_id, // Reference to stock item being sold
+            cut: selectedType === 'rani' ? cut : 0,
+            pureWeight,
+            price: 0,
+            subtotal: 0,
+            metalOnly: true,
+            stock_id: item.stock_id,
             createdAt: new Date().toISOString(),
           });
         }
-      });
-
-      // Purchase entry for total pure weight (merchant purchases pure metal from customer)
-      const totalPureWeight = calculateTotalPureWeight();
-      const pureItemType = selectedType === 'rani' ? 'gold999' : 'silver';
-      entries.push({
-        id: `entry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        type: 'purchase',
-        itemType: pureItemType,
-        weight: totalPureWeight,
-        price: 0, // No price for bulk exchange
-        subtotal: 0, // No money involved in this exchange
-        createdAt: new Date().toISOString(),
       });
 
       const allStock = await RaniRupaStockService.getAllStock();
@@ -363,7 +352,6 @@ export const RaniRupaSellScreen: React.FC = () => {
 
       // Reset state
       setSelectedItems(new Set());
-      setExtraWeight('');
       setCutValue('');
       await loadInventoryItems();
       
@@ -470,7 +458,7 @@ export const RaniRupaSellScreen: React.FC = () => {
             <View style={[styles.checkboxCustom, selectAll && styles.checkboxSelected]}>
                 {selectAll && <MaterialCommunityIcons name="check" size={14} color="white" />}
             </View>
-            <Text style={styles.selectLabel}>Select All Items</Text>
+            <Text style={styles.selectLabel}>Select All Items{selectedItems.size > 0 ? ` (Selected ${selectedItems.size})` : ''}</Text>
         </TouchableOpacity>
       )}
 
@@ -515,37 +503,31 @@ export const RaniRupaSellScreen: React.FC = () => {
 
       {/* Bottom Sheet */}
       <View style={styles.bottomSheet}>
-        <View style={styles.sheetSummary}>
-            <Text style={styles.totalLabel}>Total {selectedType === 'rani' ? 'Gold 999' : 'Silver'}</Text>
-            <Text style={styles.totalValue}>
-                {selectedType === 'rani' ? calculateTotalPureWeight().toFixed(3) : calculateTotalPureWeight().toFixed(1)}g
-            </Text>
-        </View>
+        <View style={styles.sheetContent}>
+          <View style={styles.sheetSummary}>
+              <Text style={styles.totalLabel}>{selectedType === 'rani' ? ((parseFloat(cutValue) || 0) > 0 ? 'Gold 999: ' : 'Gold 995: ') : 'Silver: '}</Text>
+              <Text style={styles.totalValue}>
+                  {selectedType === 'rani' ? calculateTotalPureWeight().toFixed(3) : calculateTotalPureWeight().toFixed(0)}g
+              </Text>
+          </View>
 
-        <View style={styles.inputRow}>
-            {selectedType === 'rani' && (
-                <RNTextInput
-                    placeholder="Cut (e.g. 0.2)"
-                    value={cutValue}
-                    onChangeText={(value) => {
-                        const num = parseFloat(value);
-                        if (value === '' || (num >= 0 && num <= 1.00)) {
-                            setCutValue(value);
-                        }
-                    }}
-                    keyboardType="decimal-pad"
-                    style={styles.sheetInput}
-                    placeholderTextColor="#44474F"
-                />
-            )}
-            <RNTextInput
-                placeholder="Extra (g)"
-                value={extraWeight}
-                onChangeText={setExtraWeight}
-                keyboardType="numeric"
-                style={styles.sheetInput}
-                placeholderTextColor="#44474F"
-            />
+          <View style={styles.inputRow}>
+              {selectedType === 'rani' && (
+                  <RNTextInput
+                      placeholder="Cut (e.g. 0.2)"
+                      value={cutValue}
+                      onChangeText={(value) => {
+                          const num = parseFloat(value);
+                          if (value === '' || (num >= 0 && num <= 1.00)) {
+                              setCutValue(value);
+                          }
+                      }}
+                      keyboardType="decimal-pad"
+                      style={styles.sheetInput}
+                      placeholderTextColor="#44474F"
+                  />
+              )}
+          </View>
         </View>
 
         <TouchableOpacity 
@@ -777,7 +759,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24, // --radius-l
     borderTopRightRadius: 24,
     padding: 24,
-    paddingTop: 20,
+    paddingTop: 16,
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -786,31 +768,35 @@ const styles = StyleSheet.create({
   },
   sheetSummary: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  sheetContent:{
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'Outfit_500Medium',
     color: '#44474F',
   },
   totalValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Outfit_700Bold',
     color: '#005AC1',
   },
   inputRow: {
-    flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
   },
   sheetInput: {
     flex: 1,
+    width: 125,
     backgroundColor: '#F0F2F5', // --surface-container
     borderRadius: 12, // --radius-m
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     fontSize: 14,
     fontFamily: 'Outfit_400Regular',
     color: '#1B1B1F',

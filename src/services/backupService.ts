@@ -1260,26 +1260,7 @@ export class BackupService {
         await this.unregisterBackgroundTask();
       }
 
-      // If enabling auto backup, check if we need to set up storage
-      if (enabled) {
-        const isFirstTime = await this.isFirstExportOrAutoBackup();
-        if (isFirstTime) {
-          // First time - request directory permissions
-          const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
 
-          if (permissions.granted) {
-            // Save the directory URI for future use
-            await this.setSAFDirectoryUri(permissions.directoryUri);
-            // Mark first export/auto backup as done
-            await this.markFirstExportOrAutoBackupDone();
-          } else {
-            // User denied permission, disable auto backup and unregister task
-            await SettingsService.setAutoBackupEnabled(false);
-            await this.unregisterBackgroundTask();
-            throw new Error('Storage permission required for auto backup');
-          }
-        }
-      }
 
       await this.logAction(`Auto backup ${enabled ? 'enabled' : 'disabled'}`);
     } catch (error) {

@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   navPill: {
     flex: 1, 
     flexDirection: 'row',
-    height: 64,
+    height: 56,
     backgroundColor: '#1B1B1F',
     borderRadius: 100,
     justifyContent: 'space-evenly', 
@@ -236,17 +236,17 @@ const styles = StyleSheet.create({
   highlight: {
     position: 'absolute',
     left: 0, // Ensure left is 0 so translateX works from the start
-    height: 54, // slightly smaller than navPill (64)
+    height: 50, // slightly smaller than navPill (64)
     borderRadius: 100,
     zIndex: 0,
   },
   fab: {
-    marginLeft: 16,
+    marginLeft: 12,
     backgroundColor: '#00BCD4',
     borderRadius: 32,
     elevation: 6,
-    width: 64,
-    height: 64,
+    width: 56,
+    height: 56,
     shadowColor: '#00BCD4',
     shadowRadius: 100,
     alignItems: 'center',

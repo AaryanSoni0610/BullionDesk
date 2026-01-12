@@ -799,6 +799,13 @@ export class TransactionService {
               await db.execAsync('ROLLBACK');
               return { success: false, error: `Failed to sell stock: ${markResult.error}` };
             }
+          } else if (entry.stock_id && entry.metalOnly && entry.type === 'purchase') {
+            // For rani/rupa sell as metal-only, mark stock as sold
+            const markResult = await RaniRupaStockService.markStockAsSold(entry.stock_id, true);
+            if (!markResult.success) {
+              await db.execAsync('ROLLBACK');
+              return { success: false, error: `Failed to sell stock: ${markResult.error}` };
+            }
           }
 
           // Insert entry
@@ -1019,6 +1026,9 @@ export class TransactionService {
               throw new Error(`Cannot delete transaction: ${result.error}`);
             }
           } else if (entry.type === 'sell' && (entry.itemType === 'rani' || entry.itemType === 'rupu')) {
+            await RaniRupaStockService.markStockAsSold(entry.stock_id, false);
+          } else if (entry.stock_id && entry.metalOnly && entry.type === 'purchase') {
+            // For rani/rupa sell reversal, mark stock as unsold
             await RaniRupaStockService.markStockAsSold(entry.stock_id, false);
           }
         }

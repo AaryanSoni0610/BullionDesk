@@ -2182,12 +2182,14 @@ const styles = StyleSheet.create({
   },
   ledgerCol: {
     flex: 1,
-    padding: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     justifyContent: 'center',
   },
   openingStockCol: {
     flex: 1,
-    padding: 12,
+    paddingTop: 8,
+    paddingHorizontal: 12,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: theme.colors.surfaceVariant,

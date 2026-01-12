@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
   settingsBtn: {
     width: 48,
     height: 48,
-    marginTop: -14,
+    marginTop: -10,
     marginRight: -7,
     borderRadius: 24,
     backgroundColor: theme.colors.surface,

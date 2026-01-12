@@ -33,8 +33,8 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   const isDismissible = finalButtons && finalButtons.length > 0;
 
   const handleButtonPress = (button: AlertButton) => {
+    if (onDismiss) onDismiss();
     if (button.onPress) button.onPress();
-    else if (onDismiss) onDismiss();
   };
 
   const getButtonColor = (style?: string) => {

@@ -353,17 +353,7 @@ export const SettingsScreen: React.FC = () => {
           return; // User cancelled key setup
         }
 
-        // Ensure SAF directory is selected
-        const hasDirectory = await BackupService.ensureSAFDirectorySelected();
-        
-        if (!hasDirectory) {
-          return; // User cancelled directory selection
-        }
-
-        // Mark first export/auto backup as done since we have directory
-        await BackupService.markFirstExportOrAutoBackupDone();
-
-        // Key and directory are set, now enable auto backup
+        // Key is set, now enable auto backup
         await BackupService.setAutoBackupEnabled(true);
         
         // Verify it was actually saved
@@ -397,7 +387,7 @@ export const SettingsScreen: React.FC = () => {
             style: 'destructive',
             onPress: async () => {
               try {
-                await BackupService.setAutoBackupEnabled(false);
+                BackupService.setAutoBackupEnabled(false);
                 setAutoBackupEnabled(false);
               } catch (error) {
                 console.error('🔴 Error disabling auto backup:', error);
@@ -754,7 +744,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.5.0"
+              description="v7.5.5"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -896,7 +886,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v7.5.0
+        message={`BullionDesk v7.5.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

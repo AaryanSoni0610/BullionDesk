@@ -147,7 +147,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   }, [customers, searchQuery]);
 
   useEffect(() => {
-    debouncedSearch(searchQuery);
+    debouncedSearch(searchQuery.trim());
   }, [searchQuery, debouncedSearch]);
 
   const handleSelectCustomer = (customer: Customer) => {

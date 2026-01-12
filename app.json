@@ -2,8 +2,8 @@
   "expo": {
     "name": "BullionDesk",
     "slug": "BullionDesk",
-    "sdkVersion": "51.0.0",
-    "version": "7.4.0",
+    "sdkVersion": "52.0.0",
+    "version": "7.5.0",
     "orientation": "portrait",
     "icon": "./assets/app-icon1.png",
     "userInterfaceStyle": "automatic",
@@ -44,11 +44,17 @@
         }
       ],
       [
-        "react-native-quick-crypto",
+        "expo-build-properties",
         {
-          "shimCrypto": true
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "35.0.0"
+          }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

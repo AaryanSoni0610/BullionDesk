@@ -1,19 +1,16 @@
-import QuickCrypto from 'react-native-quick-crypto';
+import Aes from 'react-native-aes-crypto';
 import { BackupService } from '../backupService';
 
 export class HashService {
   /**
-   * Generates a SHA-256 hash of the input string using QuickCrypto (Native C++).
+   * Generates a SHA-256 hash using Native OS Crypto.
+   * This is ASYNC, fast, and does not block the UI.
    */
   static async computeHash(content: string): Promise<string> {
     try {
-      // Create hash object
-      const hash = QuickCrypto.createHash('sha256');
-      
-      // Update with content 
-      // .digest() returns a Buffer
-      // .toString('hex') converts that Buffer to a string
-      return hash.update(content).digest().toString('hex');
+      // Aes.sha256 returns the hash directly as a Hex string
+      const hash = await Aes.sha256(content);
+      return hash;
     } catch (error) {
       console.error('HashService: Hashing error:', error);
       await BackupService.logAction(`HashService: Hashing error: ${error}`);

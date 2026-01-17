@@ -7,7 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RateCutService, RateCutRecord } from '../services/rateCut.service';
 import { Customer } from '../types';
-import { formatIndianNumber } from '../utils/formatting';
+import { formatIndianNumber, formatMoney } from '../utils/formatting';
 import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
@@ -140,10 +140,11 @@ export const RateCutScreen: React.FC = () => {
     }
 
     const currentBalance = selectedCustomer.metalBalances?.[metalType] || 0;
+    const roundedBalance = parseFloat(Math.abs(currentBalance).toFixed(3));
 
     // Validation: Weight Cut <= Metal Balance (Absolute)
-    if (weightVal > Math.abs(currentBalance)) {
-      setErrorMessage(`Weight cut (${weightVal}) cannot exceed current balance (${Math.abs(currentBalance).toFixed(3)})`);
+    if (weightVal > roundedBalance) {
+      setErrorMessage(`Weight cut (${weightVal}) cannot exceed current balance (${roundedBalance})`);
       setShowErrorAlert(true);
       return;
     }
@@ -233,7 +234,7 @@ export const RateCutScreen: React.FC = () => {
               Rate: <Text style={styles.calcVal}>₹{formatIndianNumber(item.rate)}</Text>
             </Text>
           </View>
-          <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(item.total_amount))}</Text>
+          <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(parseFloat(formatMoney((item.total_amount.toFixed(0))))))}</Text>
         </View>
       </View>
     );
@@ -257,7 +258,7 @@ export const RateCutScreen: React.FC = () => {
               style={styles.clearCustomerBtn}
               onPress={() => setSelectedCustomer(null)}
             >
-              <MaterialCommunityIcons name="close" size={20} color="#44474F" />
+              <MaterialCommunityIcons name="close" size={28} color="#44474F" />
             </TouchableOpacity>
           )}
         </View>
@@ -515,6 +516,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     flex: 1,
+    height: 52,
   },
   customerSelectText: {
     fontSize: 16,
@@ -522,9 +524,9 @@ const styles = StyleSheet.create({
     color: '#1B1B1F',
   },
   clearCustomerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 32,
     backgroundColor: '#F0F2F5', // --surface-container
     alignItems: 'center',
     justifyContent: 'center',

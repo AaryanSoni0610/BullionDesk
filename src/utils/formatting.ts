@@ -72,7 +72,8 @@ export const formatMoney = (value: string): string => {
   if (!value || value.trim() === '') return value;
 
   const num = parseFloat(value);
-  if (isNaN(num) || num < 0) return value;
+  const sign = Math.sign(num);
+  if (isNaN(num)) return value;
 
   let integerPart = Math.floor(num);
 
@@ -80,13 +81,14 @@ export const formatMoney = (value: string): string => {
   const lastDigit = integerPart % 10;
   let formattedAmount;
 
-  if (lastDigit < 6) {
+  if (lastDigit <= 5) {
     // Round down to nearest 10
     formattedAmount = Math.floor(integerPart / 10) * 10;
   } else {
     // Round up to nearest 10
     formattedAmount = Math.floor(integerPart / 10) * 10 + 10;
   }
+  formattedAmount = sign * formattedAmount;
 
   return formattedAmount.toString();
 };

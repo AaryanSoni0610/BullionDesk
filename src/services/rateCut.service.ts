@@ -1,3 +1,4 @@
+import { formatMoney } from '../utils/formatting';
 import { DatabaseService } from './database.sqlite';
 
 export interface RateCutRecord {
@@ -33,6 +34,8 @@ export class RateCutService {
       // Fallback
       totalMoney = weight * rate;
     }
+
+    totalMoney = parseInt(formatMoney(totalMoney.toString()));
 
     const id = `rc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const createdAt = new Date().toISOString();

@@ -3,7 +3,7 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "52.0.0",
-    "version": "7.5.5",
+    "version": "7.5.6",
     "orientation": "portrait",
     "icon": "./assets/app-icon1.png",
     "userInterfaceStyle": "automatic",

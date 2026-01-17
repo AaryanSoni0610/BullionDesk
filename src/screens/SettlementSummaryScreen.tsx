@@ -68,7 +68,7 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         setPayments(loadedPayments);
       } else if (pendingMoneyAmount !== 0) {
          setPayments([{
-           amount: pendingMoneyAmount,
+           amount: Math.abs(pendingMoneyAmount), 
            date: new Date().toISOString(),
            type: pendingMoneyType
          }]);

@@ -134,6 +134,57 @@ export const RecycleBinScreen: React.FC = () => {
     setAlertVisible(true);
   };
 
+  // Handle delete all transactions permanently
+  const handleDeleteAllPermanently = () => {
+    if (filteredTransactions.length === 0) {
+      setAlertTitle('No Transactions');
+      setAlertMessage('There are no transactions to delete.');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+      return;
+    }
+
+    setAlertTitle('Delete All Permanently');
+    setAlertMessage(`This will permanently delete all ${filteredTransactions.length} transaction${filteredTransactions.length > 1 ? 's' : ''} in the recycle bin. This action cannot be undone.`);
+    setAlertButtons([
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete All',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            let successCount = 0;
+            for (const transaction of filteredTransactions) {
+              const success = await TransactionService.deleteTransactionPermanently(transaction.id);
+              if (success) successCount++;
+            }
+            
+            if (successCount > 0) {
+              await loadTransactions(true);
+              setAlertTitle('Success');
+              setAlertMessage(`${successCount} transaction${successCount > 1 ? 's' : ''} deleted permanently`);
+              setAlertIcon('check-circle');
+              setAlertButtons([{ text: 'OK' }]);
+              setAlertVisible(true);
+            } else {
+              setAlertTitle('Error');
+              setAlertMessage('Failed to delete transactions');
+              setAlertButtons([{ text: 'OK' }]);
+              setAlertVisible(true);
+            }
+          } catch (error) {
+            console.warn('Error deleting all transactions:', error);
+            setAlertTitle('Error');
+            setAlertMessage(error instanceof Error ? error.message : 'Failed to delete transactions');
+            setAlertButtons([{ text: 'OK' }]);
+            setAlertVisible(true);
+          }
+        },
+      },
+    ]);
+    setAlertVisible(true);
+  };
+
   const getItemDisplayName = (entry: any): string => {
     if (entry.type === 'money') {
       return 'Money';
@@ -554,6 +605,17 @@ export const RecycleBinScreen: React.FC = () => {
               onChangeText={setSearchQuery}
             />
           </View>
+          <TouchableOpacity 
+            style={styles.deleteAllButton}
+            onPress={handleDeleteAllPermanently}
+            disabled={filteredTransactions.length === 0}
+          >
+            <MaterialCommunityIcons 
+              name="delete-sweep" 
+              size={28} 
+              color={filteredTransactions.length === 0 ? theme.colors.onSurfaceVariant : theme.colors.error} 
+            />
+          </TouchableOpacity>
         </View>
 
         {error ? (
@@ -637,7 +699,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     marginBottom: 16,
-    gap: 12,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
   },
   searchContainer: {
     flex: 1,
@@ -661,6 +725,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_400Regular',
     fontSize: 16,
     color: theme.colors.onSurface,
+  },
+  deleteAllButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
   listContainer: {
     paddingHorizontal: 16,

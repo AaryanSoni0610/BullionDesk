@@ -472,6 +472,9 @@ export class InventoryService {
         ]
       );
 
+      // Trigger full recalculation of the inventory chain from the beginning
+      await this.recalculateBalancesFrom();
+
       return true;
     } catch (error) {
       console.error('Error setting base inventory:', error);

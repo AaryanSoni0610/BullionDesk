@@ -20,6 +20,7 @@ import { Customer } from '../types';
 import { CustomerService } from '../services/customer.service';
 import { LedgerService } from '../services/ledger.service';
 import { TransactionService } from '../services/transaction.service';
+import { RateCutService } from '../services/rateCut.service';
 import { formatFullDate, formatIndianNumber, formatPureGoldPrecise, formatPureSilver, customFormatPureSilver } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import * as FileSystem from 'expo-file-system';
@@ -34,6 +35,13 @@ interface CustomerLedgerItem {
   givenAmount: number;
   entries: any[]; // Using any[] to accommodate TransactionEntry structure
   note?: string;
+  isRateCut?: boolean;
+  rateCutData?: {
+    metalType: 'gold999' | 'gold995' | 'silver';
+    weight: number;
+    rate: number;
+    totalAmount: number;
+  };
 }
 
 export const CustomerListScreen: React.FC = () => {
@@ -504,14 +512,43 @@ export const CustomerListScreen: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Money</th>
-                <th>Bullion</th>
+                <th style="width:30%">Date</th>
+                <th style="width:30%">Money</th>
+                <th style="width:40%">Bullion</th>
               </tr>
             </thead>
             <tbody>
               ${ledgerData.map(entry => {
                 const date = formatFullDate(entry.date);
+                
+                // Handle rate cut entries
+                if (entry.isRateCut && entry.rateCutData) {
+                  const { metalType, weight, rate } = entry.rateCutData;
+                  const isGold = metalType.includes('gold');
+                  const formattedWeight = isGold ? Math.abs(weight).toFixed(3) : Math.abs(weight).toFixed(1);
+                  const metalName = metalType === 'gold999' ? 'Gold 999' :
+                                    metalType === 'gold995' ? 'Gold 995' :
+                                    metalType === 'silver' ? 'Silver' : metalType;
+                  let metalValue = (parseFloat(formattedWeight) * rate);
+                  if (metalType === 'silver') {
+                    metalValue /= 1000; // Silver rate is per kg
+                  } else {
+                    metalValue /= 10; // Gold rate is per 10g
+                  }
+                  
+                  // Determine color based on balance vs debt
+                  const isBalanceReduction = weight > 0;
+                  const textColor = isBalanceReduction ? '#2e7d32' : '#d32f2f';
+                  
+                  return `
+                    <tr>
+                      <td>${date}</td>
+                      <td colspan="2" style="text-align: center; color: ${textColor};">
+                        Rate Cut: ${metalName} ${formattedWeight}g x ₹${formatIndianNumber(rate)} => ₹${formatIndianNumber(metalValue)}
+                      </td>
+                    </tr>
+                  `;
+                }
                 
                 let moneyHtml = '';
                 if (entry.receivedAmount > 0) {
@@ -632,9 +669,10 @@ export const CustomerListScreen: React.FC = () => {
     const now = Date.now();
     
     try {
-      const [ledgerEntries, customerTransactions] = await Promise.all([
+      const [ledgerEntries, customerTransactions, rateCuts] = await Promise.all([
         LedgerService.getLedgerEntriesByCustomerId(customerId),
-        TransactionService.getTransactionsByCustomerId(customerId)
+        TransactionService.getTransactionsByCustomerId(customerId),
+        RateCutService.getRateCutHistory(customerId, 1000, 0)
       ]);
 
       const transactionMap = new Map(customerTransactions.map(t => [t.id, t]));
@@ -642,8 +680,10 @@ export const CustomerListScreen: React.FC = () => {
 
       // Process ledger entries
       ledgerEntries.forEach(entry => {
-        // Create a unique key for grouping: transactionId + date
-        const key = `${entry.transactionId}_${entry.date}`;
+        // Group by transactionId + formatted date (rounded to minute)
+        // This ensures entries created at the same time (same minute) are grouped together
+        const formattedDate = formatFullDate(entry.date);
+        const key = `${entry.transactionId}_${formattedDate}`;
         
         if (!groupedItems.has(key)) {
           groupedItems.set(key, {
@@ -687,8 +727,29 @@ export const CustomerListScreen: React.FC = () => {
         }
       });
 
-      // Convert map to array and sort
-      const sortedItems = Array.from(groupedItems.values()).sort((a, b) => {
+      // Convert map to array
+      const ledgerItems = Array.from(groupedItems.values());
+
+      // Add rate cut records as separate items
+      const rateCutItems: CustomerLedgerItem[] = rateCuts.map(rc => ({
+        id: rc.id,
+        transactionId: rc.id,
+        date: new Date(rc.cut_date).toISOString(),
+        receivedAmount: 0,
+        givenAmount: 0,
+        entries: [],
+        isRateCut: true,
+        rateCutData: {
+          metalType: rc.metal_type,
+          weight: rc.weight_cut, // Keep signed value to determine balance vs debt
+          rate: rc.rate,
+          totalAmount: rc.total_amount
+        }
+      }));
+
+      // Combine and sort all items
+      const allItems = [...ledgerItems, ...rateCutItems];
+      const sortedItems = allItems.sort((a, b) => {
         const dateA = new Date(a.date).getTime();
         const dateB = new Date(b.date).getTime();
         return dateB - dateA; // Newest first
@@ -768,6 +829,41 @@ export const CustomerListScreen: React.FC = () => {
 
   const renderLedgerEntry = (entry: CustomerLedgerItem) => {
     const date = formatFullDate(entry.date);
+    
+    // Handle rate cut entries
+    if (entry.isRateCut && entry.rateCutData) {
+      const { metalType, weight, rate } = entry.rateCutData;
+      const isGold = metalType.includes('gold');
+      const formattedWeight = isGold ? Math.abs(weight).toFixed(3) : Math.abs(weight).toFixed(1);
+      const metalName = metalType === 'gold999' ? 'Gold 999' :
+                        metalType === 'gold995' ? 'Gold 995' :
+                        metalType === 'silver' ? 'Silver' : metalType;
+      let metalValue = (parseFloat(formattedWeight) * rate);
+      if (metalType === 'silver') {
+        metalValue /= 1000; // Silver rate is per kg
+      } else {
+        metalValue /= 10; // Gold rate is per 10g
+      }
+      
+      // Determine color based on balance vs debt
+      // Positive weight = balance reduction (green), Negative weight = debt reduction (red)
+      const isBalanceReduction = weight > 0;
+      const textColor = isBalanceReduction ? '#146C2E' : '#BA1A1A';
+      
+      return (
+        <View style={styles.txnRow}>
+          <View style={styles.colDate}> 
+            <Text style={styles.dateText}>{date}</Text>
+          </View>
+          <View style={styles.rateCutSpan}>
+            <Text style={[styles.rateCutText, { color: textColor }]}>
+              Rate Cut: {metalName} {formattedWeight}g {'\n'}
+              ₹{formatIndianNumber(rate)} {'=>'} ₹{formatIndianNumber(metalValue)}
+            </Text>
+          </View>
+        </View>
+      );
+    }
     
     const receivedAmount = entry.receivedAmount;
     const givenAmount = entry.givenAmount;
@@ -860,7 +956,7 @@ export const CustomerListScreen: React.FC = () => {
                  }
                  
                  const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
-                 details = `${typeName} ${details}`;
+                 details = `${details}\n${typeName}`;
 
             } else {
                  // Gold/Silver
@@ -872,7 +968,7 @@ export const CustomerListScreen: React.FC = () => {
                                   e.itemType === 'gold995' ? 'Gold 995' :
                                   e.itemType === 'silver' ? 'Silver' : e.itemType;
                  
-                 details = `${typeName} ${formattedWeight}g`;
+                 details = `${formattedWeight}g\n${typeName}`;
             }
             
             bullionEntries.push(
@@ -978,11 +1074,11 @@ export const CustomerListScreen: React.FC = () => {
             <View style={styles.actionsContainer}>
                 {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
                     <TouchableOpacity onPress={() => handleDeleteCustomer(item)} style={styles.actionIconBtn}>
-                        <MaterialCommunityIcons name="delete-outline" size={20} color="#BA1A1A" />
+                        <MaterialCommunityIcons name="delete-outline" size={22} color="#BA1A1A" />
                     </TouchableOpacity>
                 )}
                 <TouchableOpacity onPress={() => exportCustomerTransactionHistoryToPDF(item)} style={styles.actionIconBtn}>
-                    <MaterialCommunityIcons name="share-variant" size={20} color="#44474F" />
+                    <MaterialCommunityIcons name="export-variant" size={20} color="#44474F" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => toggleCardExpansion(item.id)} style={styles.actionIconBtn}>
                     <MaterialCommunityIcons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#44474F" />
@@ -1042,7 +1138,7 @@ export const CustomerListScreen: React.FC = () => {
                 />
             </View>
             <TouchableOpacity style={styles.exportBtn} onPress={exportCustomersToPDF}>
-                <MaterialCommunityIcons name="share-variant" size={24} color="#1B1B1F" />
+                <MaterialCommunityIcons name="export-variant" size={24} color="#1B1B1F" />
             </TouchableOpacity>
         </View>
 
@@ -1259,18 +1355,19 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   actionIconBtn: {
-    padding: 8,
+    padding: 6,
   },
   // Expanded View
   expandedView: {
     marginTop: 12,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     overflow: 'hidden',
   },
   scrollableContent: {
-    maxHeight: 300,
+    maxHeight: 250,
   },
   tableHeader: {
     flexDirection: 'row',
@@ -1285,7 +1382,7 @@ const styles = StyleSheet.create({
     color: '#44474F', // on-surface-variant
     textTransform: 'uppercase',
   },
-  colDate: { width: '25%' },
+  colDate: { width: '30%' },
   colMoney: { width: '30%', textAlign: 'center' },
   colBullion: { flex: 1, textAlign: 'center' },
   
@@ -1328,6 +1425,17 @@ const styles = StyleSheet.create({
     color: '#1B1B1F',
     fontSize: 13,
     fontFamily: 'Outfit_400Regular',
+  },
+  rateCutSpan: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  rateCutText: {
+    color: '#7c3aed',
+    fontSize: 13,
+    fontFamily: 'Outfit_500Medium',
   },
   dashText: {
     textAlign: 'center',

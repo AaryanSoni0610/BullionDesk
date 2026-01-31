@@ -317,7 +317,9 @@ export const RateCutScreen: React.FC = () => {
         {/* Date and Submit Buttons Row */}
         <View style={styles.buttonRow}>
           <TouchableOpacity 
-            style={[styles.dateBtn, { flex: 0.3 }]}
+            style={[styles.dateBtn, { flex: 0.5 },
+              (!selectedCustomer || !weight || !rate || availableMetals.length === 0) && styles.submitBtnDisabled
+            ]}
             onPress={() => setShowDatePicker(true)}
             disabled={!selectedCustomer || availableMetals.length === 0}
           >
@@ -327,7 +329,7 @@ export const RateCutScreen: React.FC = () => {
           <TouchableOpacity 
             style={[
               styles.submitBtn,
-              { flex: 0.7 },
+              { flex: 0.5 },
               (!selectedCustomer || !weight || !rate || availableMetals.length === 0) && styles.submitBtnDisabled
             ]}
             onPress={handleApply}
@@ -593,14 +595,12 @@ const styles = StyleSheet.create({
   },
   // Date Button
   dateBtn: {
-    backgroundColor: '#F0F2F5', // --surface-container
+    backgroundColor: '#F0F2F5',
     padding: 14,
     borderRadius: 32, // --radius-m
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
     borderColor: '#005AC1', // --primary
-    borderStyle: 'dashed', // Note: dashed border style support varies in RN, works on iOS/Android usually
   },
   dateBtnText: {
     fontSize: 14,
@@ -613,7 +613,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 100,
     alignItems: 'center',
-    marginTop: 4,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },

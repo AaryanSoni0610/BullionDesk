@@ -8,6 +8,7 @@ import * as TaskManager from 'expo-task-manager';
 import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { NotificationService } from './notificationService';
+import { Logger } from '../utils/logger';
 import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database.sqlite';
@@ -99,6 +100,9 @@ export class BackupService {
    * Redirect console.error to also log to device
    */
   static setupConsoleErrorLogging(): void {
+    // Initialize the logger first
+    Logger.initialize().catch(error => console.error('Failed to initialize logger:', error));
+    
     const originalConsoleError = console.error;
     console.error = (...args: any[]) => {
       // Call original console.error
@@ -1048,6 +1052,9 @@ export class BackupService {
           await InventoryService.setBaseInventory(records.baseInventory);
        }
     }
+    
+    // Trigger full recalculation of inventory chain after restoration
+    await InventoryService.recalculateBalancesFrom();
 
     if (records.raniRupaStock) {
       const existingStock = await RaniRupaStockService.getAllStock();
@@ -1312,68 +1319,7 @@ export class BackupService {
    * Log an action to device storage (public method for other services)
    */
   static async logAction(message: string): Promise<void> {
-    try {
-      // Check if SAF directory URI is configured
-      const safDirectoryUri = await this.getSAFDirectoryUri();
-      if (!safDirectoryUri) {
-        // Don't log if no external storage is configured
-        return;
-      }
-
-      const now = new Date();
-      const timestamp = now.toISOString();
-      const logMessage = `[${timestamp}] ${message}\n`;
-
-      // Get or create log file URI
-      let logFileUri = await SecureStore.getItemAsync(SECURE_STORE_KEYS.BACKUP_LOG_FILE_URI);
-
-      if (!logFileUri) {
-        // Create new log file in the root SAF directory
-        logFileUri = await FileSystem.StorageAccessFramework.createFileAsync(
-          safDirectoryUri,
-          'logs',
-          'text/plain'
-        );
-        await SecureStore.setItemAsync(SECURE_STORE_KEYS.BACKUP_LOG_FILE_URI, logFileUri);
-        // Write initial content
-        await FileSystem.StorageAccessFramework.writeAsStringAsync(
-          logFileUri,
-          logMessage,
-          { encoding: FileSystem.EncodingType.UTF8 }
-        );
-      } else {
-        // Read existing content and append
-        try {
-          const existingLog = await FileSystem.StorageAccessFramework.readAsStringAsync(
-            logFileUri,
-            { encoding: FileSystem.EncodingType.UTF8 }
-          );
-          const updatedLog = existingLog + logMessage;
-          await FileSystem.StorageAccessFramework.writeAsStringAsync(
-            logFileUri,
-            updatedLog,
-            { encoding: FileSystem.EncodingType.UTF8 }
-          );
-        } catch (readError) {
-          // File might not exist anymore, recreate it
-          logFileUri = await FileSystem.StorageAccessFramework.createFileAsync(
-            safDirectoryUri,
-            'logs',
-            'text/plain'
-          );
-          await SecureStore.setItemAsync(SECURE_STORE_KEYS.BACKUP_LOG_FILE_URI, logFileUri);
-          await FileSystem.StorageAccessFramework.writeAsStringAsync(
-            logFileUri,
-            logMessage,
-            { encoding: FileSystem.EncodingType.UTF8 }
-          );
-        }
-      }
-
-    } catch (error) {
-      // Silently fail if logging doesn't work, just console log
-      console.error('Error logging action:', error);
-    }
+    await Logger.logAction(message);
   }
 
   /**

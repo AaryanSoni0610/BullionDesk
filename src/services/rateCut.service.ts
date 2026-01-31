@@ -22,17 +22,18 @@ export class RateCutService {
   ): Promise<boolean> {
     const db = DatabaseService.getDatabase();
     
-    // Calculate total money based on metal type
+    // Calculate total money based on metal type (using absolute weight)
     let totalMoney = 0;
+    const absWeight = Math.abs(weight);
     if (metalType.includes('gold')) {
       // Gold rate is per 10g
-      totalMoney = (weight / 10) * rate;
+      totalMoney = (absWeight / 10) * rate;
     } else if (metalType === 'silver') {
       // Silver rate is per 1kg (1000g)
-      totalMoney = (weight / 1000) * rate;
+      totalMoney = (absWeight / 1000) * rate;
     } else {
       // Fallback
-      totalMoney = weight * rate;
+      totalMoney = absWeight * rate;
     }
 
     totalMoney = parseInt(formatMoney(totalMoney.toString()));
@@ -50,11 +51,14 @@ export class RateCutService {
         );
 
         // 2. Update customer_balances
-        // Decrease metal (Merchant owes less metal) -> If balance is positive (Merchant owes), decreasing it means subtracting.
-        // "Metal Balance decreases (Merchant owes less metal)". So subtract weight.
-        // "Money Balance increases (Merchant owes more money)". So add totalMoney.
+        // Logic: Convert metal balance/debt to money with same sign
+        // If metal is balance (+): metal decreases, money balance increases (+)
+        // If metal is debt (-): metal debt decreases (becomes less negative), money debt increases (becomes more negative)
         
         const metalColumn = metalType; 
+        
+        // Money change should have same sign as weight
+        const moneyChange = weight > 0 ? totalMoney : -totalMoney;
         
         // Update lock date: MAX(current_lock, new_cut_date)
         let lockColumn = 'last_silver_lock_date';
@@ -67,7 +71,7 @@ export class RateCutService {
                balance = balance + ?,
                ${lockColumn} = MAX(${lockColumn}, ?)
            WHERE customer_id = ?`,
-          [weight, totalMoney, cutDate, customerId]
+          [weight, moneyChange, cutDate, customerId]
         );
       });
       return true;

@@ -1,7 +1,7 @@
 import Aes from 'react-native-aes-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { Buffer } from 'buffer';
-import { BackupService } from './backupService';
+import { Logger } from '../utils/logger';
 
 const INTERNAL_KEY_ALIAS = 'internal_storage_key';
 // Set to 10000 for speed on mobile, or 100000 for max security (may cause UI lag)
@@ -21,12 +21,12 @@ export class EncryptionService {
         // Returns a Hex string automatically
         key = await Aes.randomKey(32);
         await SecureStore.setItemAsync(INTERNAL_KEY_ALIAS, key);
-        await BackupService.logAction(`Internal encryption key generated and stored`);
+        await Logger.logAction(`Internal encryption key generated and stored`);
       }
       return key;
     } catch (error) {
       console.error('Error managing internal key:', error);
-      await BackupService.logAction(`ERROR: Failed to manage internal encryption key - ${error}`);
+      await Logger.logAction(`ERROR: Failed to manage internal encryption key - ${error}`);
       throw new Error('Failed to access internal encryption key');
     }
   }
@@ -38,13 +38,13 @@ export class EncryptionService {
    */
   static async encryptInternal(data: string): Promise<string> {
     try {
-      await BackupService.logAction(`Starting internal encryption (${data.length} characters)`);
+      await Logger.logAction(`Starting internal encryption (${data.length} characters)`);
       const key = await this.getOrCreateInternalKey();
       const result = await this.encryptWithKey(data, key);
-      await BackupService.logAction(`Internal encryption completed (${result.length} bytes)`);
+      await Logger.logAction(`Internal encryption completed (${result.length} bytes)`);
       return result;
     } catch (error) {
-      await BackupService.logAction(`ERROR: Internal encryption failed - ${error}`);
+      await Logger.logAction(`ERROR: Internal encryption failed - ${error}`);
       throw error;
     }
   }
@@ -54,13 +54,13 @@ export class EncryptionService {
    */
   static async decryptInternal(encryptedString: string): Promise<string> {
     try {
-      await BackupService.logAction(`Starting internal decryption (${encryptedString.length} bytes)`);
+      await Logger.logAction(`Starting internal decryption (${encryptedString.length} bytes)`);
       const key = await this.getOrCreateInternalKey();
       const result = await this.decryptWithKey(encryptedString, key);
-      await BackupService.logAction(`Internal decryption completed (${result.length} characters)`);
+      await Logger.logAction(`Internal decryption completed (${result.length} characters)`);
       return result;
     } catch (error) {
-      await BackupService.logAction(`ERROR: Internal decryption failed - ${error}`);
+      await Logger.logAction(`ERROR: Internal decryption failed - ${error}`);
       throw error;
     }
   }
@@ -70,7 +70,7 @@ export class EncryptionService {
    */
   static async encryptWithPassword(data: string, password: string): Promise<string> {
     try {
-      await BackupService.logAction(`Starting password-based encryption (${data.length} characters)`);
+      await Logger.logAction(`Starting password-based encryption (${data.length} characters)`);
       
       // 1. Generate Salt (16 bytes)
       const salt = await Aes.randomKey(SALT_LENGTH);
@@ -92,11 +92,11 @@ export class EncryptionService {
       };
 
       const encryptedString = JSON.stringify(result);
-      await BackupService.logAction(`Password-based encryption completed (${encryptedString.length} bytes)`);
+      await Logger.logAction(`Password-based encryption completed (${encryptedString.length} bytes)`);
       return encryptedString;
     } catch (error) {
       console.error('Password encryption error:', error);
-      await BackupService.logAction(`ERROR: Password-based encryption failed - ${error}`);
+      await Logger.logAction(`ERROR: Password-based encryption failed - ${error}`);
       throw error;
     }
   }
@@ -106,7 +106,7 @@ export class EncryptionService {
    */
   static async decryptWithPassword(encryptedString: string, password: string): Promise<string> {
     try {
-      await BackupService.logAction(`Starting password-based decryption (${encryptedString.length} bytes)`);
+      await Logger.logAction(`Starting password-based decryption (${encryptedString.length} bytes)`);
       
       const bundle = JSON.parse(encryptedString);
       
@@ -116,11 +116,11 @@ export class EncryptionService {
       // Decrypt
       const decrypted = await Aes.decrypt(bundle.encrypted, key, bundle.iv, 'aes-256-cbc');
       
-      await BackupService.logAction(`Password-based decryption completed (${decrypted.length} characters)`);
+      await Logger.logAction(`Password-based decryption completed (${decrypted.length} characters)`);
       return decrypted;
     } catch (error) {
       console.error('Password decryption error:', error);
-      await BackupService.logAction(`ERROR: Password-based decryption failed - ${error}`);
+      await Logger.logAction(`ERROR: Password-based decryption failed - ${error}`);
       throw new Error('Decryption failed. Wrong password?');
     }
   }
@@ -160,7 +160,7 @@ export class EncryptionService {
 
   static async encryptZip(zipData: ArrayBuffer, password: string): Promise<string> {
     try {
-      await BackupService.logAction(`Starting ZIP encryption (${zipData.byteLength} bytes)`);
+      await Logger.logAction(`Starting ZIP encryption (${zipData.byteLength} bytes)`);
       
       // 1. Convert Binary -> Base64 (Aes-crypto deals in strings)
       const base64Data = Buffer.from(zipData).toString('base64');
@@ -169,18 +169,18 @@ export class EncryptionService {
       // This REUSES the code above instead of duplicating it
       const result = await this.encryptWithPassword(base64Data, password);
       
-      await BackupService.logAction(`ZIP encryption completed`);
+      await Logger.logAction(`ZIP encryption completed`);
       return result;
     } catch (error) {
       console.error('Encryption error:', error);
-      await BackupService.logAction(`ERROR: ZIP encryption failed - ${error}`);
+      await Logger.logAction(`ERROR: ZIP encryption failed - ${error}`);
       throw new Error('Failed to encrypt zip data');
     }
   }
 
   static async decryptZip(encryptedString: string, password: string): Promise<ArrayBuffer> {
     try {
-      await BackupService.logAction(`Starting ZIP decryption (${encryptedString.length} bytes)`);
+      await Logger.logAction(`Starting ZIP decryption (${encryptedString.length} bytes)`);
 
       // 1. Decrypt to get the Base64 string back
       // Reuses the password decryption logic above
@@ -192,11 +192,11 @@ export class EncryptionService {
       // 3. Return ArrayBuffer
       const result = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
       
-      await BackupService.logAction(`ZIP decryption completed (${result.byteLength} bytes)`);
+      await Logger.logAction(`ZIP decryption completed (${result.byteLength} bytes)`);
       return result;
     } catch (error) {
       console.error('Decryption error:', error);
-      await BackupService.logAction(`ERROR: ZIP decryption failed - ${error}`);
+      await Logger.logAction(`ERROR: ZIP decryption failed - ${error}`);
       throw new Error('Failed to decrypt zip data');
     }
   }

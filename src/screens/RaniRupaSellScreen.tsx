@@ -365,25 +365,64 @@ export const RaniRupaSellScreen: React.FC = () => {
     if (!editingItem) return;
 
     const newWeight = parseFloat(values.weight);
+    const newTouch = parseFloat(values.touch);
+
     if (isNaN(newWeight) || newWeight <= 0) {
       showAlert('Invalid Weight', 'Please enter a valid weight greater than 0');
       return;
     }
 
+    if (isNaN(newTouch) || newTouch < 0 || newTouch > 100) {
+      showAlert('Invalid Touch', 'Please enter a valid touch percentage between 0 and 100');
+      return;
+    }
+
     try {
       const oldWeight = editingItem.weight;
-      const weightDiff = newWeight - oldWeight;
+      const oldTouch = editingItem.touch;
+      const weightChanged = newWeight !== oldWeight;
+      const touchChanged = newTouch !== oldTouch;
+
+      if (!weightChanged && !touchChanged) {
+        showAlert('No Changes', 'No changes were made to the stock item');
+        return;
+      }
+
+      // Build confirmation message
+      let message = 'Confirm changes:\n\n';
+      if (weightChanged) {
+        const weightDiff = newWeight - oldWeight;
+        message += `Weight: ${oldWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g → ${newWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g\n`;
+        message += `(${weightDiff > 0 ? '+' : ''}${weightDiff.toFixed(selectedType === 'rani' ? 3 : 1)}g)\n\n`;
+      }
+      if (touchChanged) {
+        message += `Touch: ${oldTouch.toFixed(2)}% → ${newTouch.toFixed(2)}%\n`;
+        message += `(${newTouch > oldTouch ? '+' : ''}${(newTouch - oldTouch).toFixed(2)}%)\n\n`;
+      }
+
+      // Calculate new pure weight for display
+      const newPureWeight = selectedType === 'rani'
+        ? formatPureGoldPrecise((newWeight * newTouch) / 100)
+        : customFormatPureSilver(newWeight, newTouch);
+      const oldPureWeight = selectedType === 'rani'
+        ? formatPureGoldPrecise((oldWeight * oldTouch) / 100)
+        : customFormatPureSilver(oldWeight, oldTouch);
+
+      message += `Pure Weight: ${oldPureWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g → ${newPureWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g`;
 
       // Show confirmation alert
       showAlert(
-        'Confirm Weight Change',
-        `Change weight from ${oldWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g to ${newWeight.toFixed(selectedType === 'rani' ? 3 : 1)}g?\n\nThis will ${weightDiff > 0 ? 'increase' : 'decrease'} the total pure weight by ${Math.abs(weightDiff).toFixed(selectedType === 'rani' ? 3 : 1)}g.`,
+        'Confirm Stock Changes',
+        message,
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Confirm',
             onPress: async () => {
-              await RaniRupaStockService.updateStock(editingItem.id, { weight: newWeight });
+              await RaniRupaStockService.updateStock(editingItem.id, {
+                weight: weightChanged ? newWeight : undefined,
+                touch: touchChanged ? newTouch : undefined
+              });
               setShowEditDialog(false);
               setEditingItem(null);
               await loadInventoryItems(true);
@@ -392,8 +431,8 @@ export const RaniRupaSellScreen: React.FC = () => {
         ]
       );
     } catch (error) {
-      console.error('Error updating stock weight:', error);
-      showAlert('Error', 'Failed to update stock weight');
+      console.error('Error updating stock:', error);
+      showAlert('Error', 'Failed to update stock');
     }
   };
 
@@ -540,15 +579,23 @@ export const RaniRupaSellScreen: React.FC = () => {
       </View>
 
       <InventoryInputDialog
+        key={editingItem?.id}
         visible={showEditDialog}
-        title={`Edit ${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Weight`}
-        message={`Current weight: ${editingItem?.weight.toFixed(selectedType === 'rani' ? 3 : 1)}g`}
+        title={`Edit ${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Stock`}
+        message={`Current: ${editingItem?.weight.toFixed(selectedType === 'rani' ? 3 : 1)}g @ ${editingItem?.touch.toFixed(2)}%`}
         inputs={[
           {
             key: 'weight',
             label: 'Weight (g)',
             value: editingItem?.weight.toString() || '',
             placeholder: 'Enter weight in grams',
+            keyboardType: 'numeric'
+          },
+          {
+            key: 'touch',
+            label: 'Touch (%)',
+            value: editingItem?.touch.toString() || '',
+            placeholder: 'Enter touch percentage (0-100)',
             keyboardType: 'numeric'
           }
         ]}

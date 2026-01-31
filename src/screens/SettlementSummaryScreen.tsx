@@ -81,7 +81,9 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   const [paymentError, setPaymentError] = useState('');
   const [note, setNote] = useState(initialNote);
   const [isSaving, setIsSaving] = useState(false);
-  const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(new Date());
+  const [selectedSaveDate, setSelectedSaveDate] = useState<Date>(
+    transactionCreatedAt ? new Date(transactionCreatedAt) : new Date()
+  );
   const [showSaveDatePicker, setShowSaveDatePicker] = useState(false);
   const [pendingSaveDate, setPendingSaveDate] = useState<Date | null>(null);
   const [showDateWarningAlert, setShowDateWarningAlert] = useState(false);

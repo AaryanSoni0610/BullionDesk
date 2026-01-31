@@ -389,6 +389,9 @@ export class MigrationService {
       if (inventory.rupu !== undefined) delete inventory.rupu;
 
       await InventoryService.setBaseInventory(inventory);
+      
+      // Trigger full recalculation of inventory chain after migration
+      await InventoryService.recalculateBalancesFrom();
 
       return { success: true };
     } catch (error) {

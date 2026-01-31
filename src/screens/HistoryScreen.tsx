@@ -235,7 +235,7 @@ export const HistoryScreen: React.FC = () => {
           const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
           displayName = `${displayName} ${itemIndex}`;
         }
-      } else if (entry.stock_id && entry.metalOnly) {
+      } else if (entry.stock_id && entry.metalOnly && entry.type === 'sell') {
         // For Rani/Rupa sell entries, show as Rani or Rupu
         displayName = entry.itemType === 'gold999' || entry.itemType === 'gold995' ? 'Rani' : 'Rupu';
       } else if (entry.type === 'money' && entry.createdAt) {
@@ -253,7 +253,7 @@ export const HistoryScreen: React.FC = () => {
     });
 
     // Separate Rani/Rupa sell entries (metal-only with stock_id)
-    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly);
+    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly && e.type === 'sell');
 
     // Group Rani/Rupa entries by itemType for summary
     const groupedRaniRupa = raniRupaEntries.reduce((acc, entry) => {
@@ -333,7 +333,7 @@ export const HistoryScreen: React.FC = () => {
              const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
              const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
 
-             const isSell = entry.type === 'sell' || isMoneyGive || (entry.stock_id && entry.metalOnly);
+             const isSell = entry.type === 'sell' || isMoneyGive;
              const isPurchase = entry.type === 'purchase' || isMoneyReceive;
              const iconChar = isSell ? '↗' : isPurchase ? '↙' : '₹';
              const iconBg = isSell ? '#E8F5E9' : isPurchase ? '#E3F2FD' : '#FFF8E1';
@@ -391,7 +391,8 @@ export const HistoryScreen: React.FC = () => {
             const hasCut = entries.some(e => (e.cut || 0) > 0);
             const displayType = itemType === 'gold999' ? 'Pure Gold 999' : itemType === 'gold995' ? 'Pure Gold 995' : 'Pure Silver';
             const decimals = itemType === 'silver' ? 0 : 3;
-            const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${(entries[0].cut || 0).toFixed(2)}%)` : `${sumPure.toFixed(decimals)}g`;
+            const firstCut = entries[0].cut || 0;
+            const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${Math.abs(firstCut).toFixed(2)}%)` : `${sumPure.toFixed(decimals)}g`;
 
             return `
               <div class="entry-row">
@@ -695,7 +696,7 @@ export const HistoryScreen: React.FC = () => {
     const isGoldSilver = !isRaniRupa && entry.type !== 'money';
     
     // Special handling for Rani/Rupa sell entries (metal-only with stock_id)
-    if (entry.metalOnly && entry.stock_id) {
+    if (entry.metalOnly && entry.stock_id && entry.type === 'sell') {
       const weight = entry.weight || 0;
       const touch = entry.touch || 100;
       const cut = entry.cut || 0;
@@ -728,7 +729,8 @@ export const HistoryScreen: React.FC = () => {
          formattedPure = customFormatPureSilver(weight, touch);
       }
 
-      let line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+      const touchDisplay = cut > 0 ? `${touch.toFixed(2)}-${Math.abs(cut).toFixed(2)}` : effectiveTouch.toFixed(2);
+      let line1 = `${weight.toFixed(fixedDigits)}g : ${touchDisplay}% : ${formattedPure.toFixed(fixedDigits)}g`;
       let line2 = '';
       return { line1, line2 };
     }
@@ -756,8 +758,9 @@ export const HistoryScreen: React.FC = () => {
          }
          
          const fixedDigits = entry.itemType === 'rani' ? 3 : 0;
+         const touchDisplay = (entry.itemType === 'rani' && cut > 0) ? `${touch.toFixed(2)}-${Math.abs(cut).toFixed(2)}` : effectiveTouch.toFixed(2);
          
-         line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+         line1 = `${weight.toFixed(fixedDigits)}g : ${touchDisplay}% : ${formattedPure.toFixed(fixedDigits)}g`;
          
          if (!isMetalOnly && entry.price && entry.price > 0) {
              line2 = `${formatCurrency(entry.price)} (${formatCurrency(entry.subtotal || 0)})`;
@@ -794,7 +797,7 @@ export const HistoryScreen: React.FC = () => {
           const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
           displayName = `${displayName} ${itemIndex}`;
         }
-      } else if (entry.stock_id && entry.metalOnly) {
+      } else if (entry.stock_id && entry.metalOnly && entry.type === 'sell') {
         // For Rani/Rupa sell entries, show as Rani or Rupu
         displayName = entry.itemType === 'gold999' || entry.itemType === 'gold995' ? 'Rani' : 'Rupu';
       } else if (entry.type === 'money' && entry.createdAt) {
@@ -812,7 +815,7 @@ export const HistoryScreen: React.FC = () => {
     });
 
     // Separate Rani/Rupa sell entries (metal-only with stock_id)
-    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly);
+    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly && e.type === 'sell');
 
     // Group Rani/Rupa entries by itemType for summary
     const groupedRaniRupa = raniRupaEntries.reduce((acc, entry) => {
@@ -828,7 +831,7 @@ export const HistoryScreen: React.FC = () => {
       acc[groupKey].push(entry);
       return acc;
     }, {} as Record<string, typeof processedEntries>);
-    
+
     // Logic for Transaction Balance Label
     let transactionBalanceLabel = 'Settled';
     let transactionBalanceColor = theme.colors.primary; // Blue default
@@ -937,7 +940,7 @@ export const HistoryScreen: React.FC = () => {
                     const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
                     const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
 
-                    const isSell = entry.type === 'sell' || isMoneyGive || (entry.stock_id && entry.metalOnly);
+                    const isSell = entry.type === 'sell' || isMoneyGive;
                     const isPurchase = entry.type === 'purchase' || isMoneyReceive;
                     
                     const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
@@ -1015,7 +1018,8 @@ export const HistoryScreen: React.FC = () => {
               const hasCut = entries.some(e => (e.cut || 0) > 0);
               const displayType = itemType === 'gold999' ? 'Pure Gold 999' : itemType === 'gold995' ? 'Pure Gold 995' : 'Pure Silver';
               const decimals = itemType === 'silver' ? 0 : 3;
-              const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${(entries[0].cut || 0).toFixed(2)})` : `${sumPure.toFixed(decimals)}g`;
+              const firstCut = entries[0].cut || 0;
+              const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${Math.abs(firstCut).toFixed(2)})` : `${sumPure.toFixed(decimals)}g`;
 
               return (
                 <View key={`summary-${itemType}`} style={styles.entryWrapper}>

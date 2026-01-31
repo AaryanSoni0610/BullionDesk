@@ -1,30 +1,30 @@
-declare module 'react-native-esc-pos-printer' {
-  export interface PrinterConfig {
-    target: string;
-    seriesName: string;
-    language: string;
+declare module 'react-native-thermal-printer' {
+  export interface PrinterInterface {
+    payload: string;
+    autoCut?: boolean;
+    openCashbox?: boolean;
+    mmFeedPaper?: number;
+    printerDpi?: number;
+    printerWidthMM?: number;
+    printerNbrCharactersPerLine?: number;
   }
 
-  export interface PrinterSeries {
-    model: string;
-    series: string;
+  export interface PrintTcpInterface extends PrinterInterface {
+    ip: string;
+    port: number;
+    timeout?: number;
   }
 
-  const EscPosPrinter: {
-    init(config: PrinterConfig): Promise<void>;
-    printImage(base64: string, width: number): Promise<void>;
-    addText(text: string): Promise<void>;
-    addTextAlign(align: 'left' | 'center' | 'right'): Promise<void>;
-    addTextSize(width: number, height: number): Promise<void>;
-    addFeedLine(lines: number): Promise<void>;
-    addCut(type: 'CUT_FEED' | 'CUT_NO_FEED'): Promise<void>;
-    sendData(): Promise<void>;
-    disconnect(): Promise<void>;
+  export interface PrintBluetoothInterface extends PrinterInterface {}
+
+  const ThermalPrinterModule: {
+    defaultConfig: PrintTcpInterface;
+    printTcp(config: Partial<PrintTcpInterface> & Pick<PrinterInterface, 'payload'>): Promise<void>;
+    printBluetooth(config: Partial<PrintBluetoothInterface> & Pick<PrinterInterface, 'payload'>): Promise<void>;
   };
 
-  export function getPrinterSeriesByName(name: string): string;
-
-  export default EscPosPrinter;
+  export default ThermalPrinterModule;
 }
+
 
 

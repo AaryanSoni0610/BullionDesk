@@ -1,5 +1,5 @@
 import Aes from 'react-native-aes-crypto';
-import { BackupService } from '../backupService';
+import { Logger } from '../../utils/logger';
 
 export class HashService {
   /**
@@ -13,7 +13,7 @@ export class HashService {
       return hash;
     } catch (error) {
       console.error('HashService: Hashing error:', error);
-      await BackupService.logAction(`HashService: Hashing error: ${error}`);
+      await Logger.logAction(`HashService: Hashing error: ${error}`);
       throw new Error('Failed to compute hash');
     }
   }

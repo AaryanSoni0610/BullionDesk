@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system';
 import { CanonicalService } from './CanonicalService';
 import { HashService } from './HashService';
 import { EncryptionService } from '../encryptionService';
-import { BackupService } from '../backupService';
+import { Logger } from '../../utils/logger';
 
 const BACKUP_DIR = `${FileSystem.documentDirectory}backup/`;
 const OBJECTS_DIR = `${BACKUP_DIR}objects/`;
@@ -62,7 +62,7 @@ export class ObjectStorageService {
     const fileInfo = await FileSystem.getInfoAsync(objectPath);
     if (!fileInfo.exists) {
       console.error('ObjectStorageService: Object not found:', hash);
-      await BackupService.logAction(`ObjectStorageService: Object not found: ${hash}`);
+      await Logger.logAction(`ObjectStorageService: Object not found: ${hash}`);
       throw new Error(`Object ${hash} not found`);
     }
     
@@ -103,7 +103,7 @@ export class ObjectStorageService {
    */
   static async cleanupOrphanedObjects(activeHashes: Set<string>): Promise<number> {
     try {
-      await BackupService.logAction(`Starting garbage collection: ${activeHashes.size} active objects`);
+      await Logger.logAction(`Starting garbage collection: ${activeHashes.size} active objects`);
       await this.ensureBackupDirectory();
       
       // 1. Get all files in the objects directory
@@ -124,11 +124,11 @@ export class ObjectStorageService {
           deletedCount++;
         }
       }
-      await BackupService.logAction(`Garbage collection completed: ${deletedCount} orphaned objects deleted`);
+      await Logger.logAction(`Garbage collection completed: ${deletedCount} orphaned objects deleted`);
       return deletedCount;
     } catch (error) {
       console.error('ObjectStorageService: Cleanup error:', error);
-      await BackupService.logAction(`Garbage collection error: ${error}`);
+      await Logger.logAction(`Garbage collection error: ${error}`);
       // Don't throw, just return 0 to avoid breaking the backup flow
       return 0;
     }

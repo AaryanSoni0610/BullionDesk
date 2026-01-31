@@ -11,7 +11,8 @@ import {
   Modal,
   Pressable,
   PermissionsAndroid,
-  Platform
+  Platform,
+  PixelRatio
 } from 'react-native';
 import ThermalPrinterModule from 'react-native-thermal-printer';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -236,10 +237,12 @@ export const HistoryScreen: React.FC = () => {
       // Convert to data URI for the printer
       const imageDataUri = `data:image/png;base64,${base64Image}`;
       
-      // Create payload with image tag - the library will handle ESC/POS conversion
-      const payload = `[C]<img>${imageDataUri}</img>\n\n\n`;
+      // Create payload with left-aligned image tag
+      // [L] aligns against hardware margin, avoiding centering math issues
+      const payload = `[L]<img>${imageDataUri}</img>\n\n\n`;
       
       // Print using Bluetooth
+      // Lower printerNbrCharactersPerLine to 42 to prevent right-side clipping
       await ThermalPrinterModule.printBluetooth({
         payload,
         printerWidthMM: 80,
@@ -347,14 +350,21 @@ export const HistoryScreen: React.FC = () => {
   const performPrint = async (transaction: Transaction) => {
     try {
       setSharingTransactionId(transaction.id);
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Increased delay to ensure the hidden view renders fully
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       if (!shareableCardRef.current) {
         throw new Error('Could not capture transaction card');
       }
       
-      // Capture the card as an image
-      const uri = await captureRef(shareableCardRef, { format: 'png', quality: 1, result: 'tmpfile' });
+      // Capture at exact dot-density for 80mm printer (500 dots to avoid clipping)
+      // Dividing by PixelRatio ensures 1:1 mapping with printer dots for crisp text
+      const uri = await captureRef(shareableCardRef, { 
+        format: 'png', 
+        quality: 1, 
+        result: 'tmpfile',
+        width: 500 / PixelRatio.get(),
+      });
       
       // Print the image
       await printImage(uri);
@@ -1073,7 +1083,20 @@ export const HistoryScreen: React.FC = () => {
     }
     
     return (
-      <View style={styles.historyCard}>
+      <View style={[
+        styles.historyCard,
+        // Optimize for thermal printing when hideActions is true
+        hideActions && {
+          backgroundColor: '#FFFFFF', // Pure white for thermal
+          borderRadius: 0, // No rounded corners
+          padding: 4, // Minimal padding for thermal (reduced from 10)
+          marginBottom: 0,
+          margin: 0, // No margins
+          elevation: 0, // Remove shadow (prevents gray noise)
+          shadowOpacity: 0,
+          width: 500, // Reduced width to prevent right-side clipping
+        }
+      ]}>
         {/* Action Buttons at Top Left */}
         {!hideActions && (
           <View style={styles.cardTopActions}>
@@ -1107,10 +1130,16 @@ export const HistoryScreen: React.FC = () => {
         {/* Card Header */}
         <View style={styles.cardHeader}>
           <View style={styles.infoBlock}>
-            <Text allowFontScaling={allowFontScaling} style={styles.customerName}>
+            <Text allowFontScaling={allowFontScaling} style={[
+              styles.customerName,
+              hideActions && { color: '#000000', fontSize: 26 } // Pure black + larger (18+8)
+            ]}>
               {transaction.customerName}
             </Text>
-            <Text allowFontScaling={allowFontScaling} style={styles.transactionDate}>
+            <Text allowFontScaling={allowFontScaling} style={[
+              styles.transactionDate,
+              hideActions && { color: '#000000', fontSize: 20 } // Pure black + larger (12+8)
+            ]}>
               {formatFullDate(transaction.date)}
             </Text>
           </View>
@@ -1118,7 +1147,13 @@ export const HistoryScreen: React.FC = () => {
             {!isMetalOnly && (
               <Text 
                 allowFontScaling={allowFontScaling}
-                style={[styles.mainAmount, { color: getAmountColor(transaction) }]}
+                style={[
+                  styles.mainAmount, 
+                  { 
+                    color: hideActions ? '#000000' : getAmountColor(transaction),
+                    fontSize: hideActions ? 24 : 18 // Larger when printing (18+6)
+                  }
+                ]}
               >
                 {formatTransactionAmount(transaction)}
               </Text>
@@ -1151,15 +1186,21 @@ export const HistoryScreen: React.FC = () => {
                         <View style={styles.receiptRow}>
                           <View style={styles.itemNameRow}>
                             <View style={[styles.iconBox, iconStyle]}>
-                              <Icon name={iconName} size={14} color={iconColor} />
+                              <Icon name={iconName} size={hideActions ? 20 : 14} color={iconColor} />
                             </View>
-                            <Text allowFontScaling={allowFontScaling} style={styles.itemNameText}>
+                            <Text allowFontScaling={allowFontScaling} style={[
+                              styles.itemNameText,
+                              hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                            ]}>
                               {entry.displayName}
                             </Text>
                           </View>
                     
                           {/* Line 1: Weight / Details */}
-                          <Text allowFontScaling={allowFontScaling} style={styles.itemVal}>
+                          <Text allowFontScaling={allowFontScaling} style={[
+                            styles.itemVal,
+                            hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                          ]}>
                               {line1}
                           </Text>
                         </View>
@@ -1168,7 +1209,14 @@ export const HistoryScreen: React.FC = () => {
                         {line2 !== '' && (
                            <View style={[styles.receiptRow, { marginTop: -4 }]}>
                               <View /> 
-                              <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, { fontSize: 13, opacity: 0.8 }]}>
+                              <Text allowFontScaling={allowFontScaling} style={[
+                                styles.itemVal, 
+                                { 
+                                  fontSize: hideActions ? 19 : 13, // 13+6
+                                  opacity: hideActions ? 1 : 0.8,
+                                  color: hideActions ? '#000000' : undefined
+                                }
+                              ]}>
                                  {line2}
                               </Text>
                            </View>
@@ -1221,11 +1269,18 @@ export const HistoryScreen: React.FC = () => {
                 <View key={`summary-${itemType}`} style={styles.entryWrapper}>
                   <View style={styles.receiptRow}>
                     <View style={styles.itemNameRow}>
-                      <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, { marginLeft: 2 }]}>
+                      <Text allowFontScaling={allowFontScaling} style={[
+                        styles.itemNameText, 
+                        { marginLeft: 2 },
+                        hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                      ]}>
                         {displayType}
                       </Text>
                     </View>
-                    <Text allowFontScaling={allowFontScaling} style={styles.itemVal}>
+                    <Text allowFontScaling={allowFontScaling} style={[
+                      styles.itemVal,
+                      hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                    ]}>
                       {line1}
                     </Text>
                   </View>
@@ -1240,12 +1295,21 @@ export const HistoryScreen: React.FC = () => {
             {!isMetalOnly && (
               processedEntries.length === 0 ? (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Money-Only</Text>
+                  <Text style={[
+                    styles.totalLabel,
+                    hideActions && { fontSize: 21, color: '#000000' } // 13+8
+                  ]}>Money-Only</Text>
                 </View>
               ) : (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={[styles.totalAmount ]}>
+                  <Text style={[
+                    styles.totalLabel,
+                    hideActions && { fontSize: 21, color: '#000000' } // 13+8
+                  ]}>Total</Text>
+                  <Text style={[
+                    styles.totalAmount,
+                    hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                  ]}>
                     ₹{formatIndianNumber(Math.abs(transaction.total))}
                   </Text>
                 </View>
@@ -1258,15 +1322,26 @@ export const HistoryScreen: React.FC = () => {
             {/* Payment/Balance Row */}
             {!isMetalOnly && (
                <View style={[styles.receiptRow, styles.footerRow]}>
-                 <Text style={styles.footerLabel}>
+                 <Text style={[
+                   styles.footerLabel,
+                   hideActions && { fontSize: 21, color: '#000000' } // 13+8
+                 ]}>
                    {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
                  </Text>
-                 <Text style={[styles.footerAmount, { color: transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary }]}>
+                 <Text style={[
+                   styles.footerAmount, 
+                   { color: hideActions ? '#000000' : (transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary) },
+                   hideActions && { fontSize: 22 } // 14+8
+                 ]}>
                    {' '}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                  </Text>
                  <View style={{ flex: 1 }} />
                  <View>
-                   <Text style={[styles.balanceLabel, { color: transactionBalanceColor }]}>
+                   <Text style={[
+                     styles.balanceLabel, 
+                     { color: hideActions ? '#000000' : transactionBalanceColor },
+                     hideActions && { fontSize: 18 } // 10+8
+                   ]}>
                      {transactionBalanceLabel}
                    </Text>
                  </View>
@@ -1277,8 +1352,14 @@ export const HistoryScreen: React.FC = () => {
         {/* Note Section */}
         {transaction.note && transaction.note.trim() !== '' && (
           <View style={styles.noteRow}>
-            <Text style={styles.noteLabel}>NOTE</Text>
-            <Text style={styles.noteText}>{transaction.note}</Text>
+            <Text style={[
+              styles.noteLabel,
+              hideActions && { fontSize: 21, color: '#000000' } // 13+8
+            ]}>NOTE</Text>
+            <Text style={[
+              styles.noteText,
+              hideActions && { fontSize: 21, color: '#000000' } // 13+8
+            ]}>{transaction.note}</Text>
           </View>
         )}
       </View>
@@ -1882,9 +1963,10 @@ const styles = StyleSheet.create({
     top: 0,
   },
   shareableCardWrapper: {
-    backgroundColor: '#fff',
-    padding: 20,
-    width: 576,
+    backgroundColor: '#FFFFFF', // Pure white for thermal printing
+    padding: 0, // Zero padding to prevent clipping
+    margin: 0, // Ensure NO margins are present
+    width: 500, // Reduced width to avoid right-side clipping
   },
   sheetOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',

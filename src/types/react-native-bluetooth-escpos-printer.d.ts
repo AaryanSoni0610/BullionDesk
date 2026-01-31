@@ -1,4 +1,4 @@
-declare module 'react-native-bluetooth-escpos-printer' {
+declare module '@vardrz/react-native-bluetooth-escpos-printer' {
   interface PrinterOptions {
     width?: number;
     left?: number;

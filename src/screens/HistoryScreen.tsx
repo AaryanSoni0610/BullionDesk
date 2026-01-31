@@ -13,7 +13,7 @@ import {
   PermissionsAndroid,
   Platform
 } from 'react-native';
-import { BluetoothManager, BluetoothEscposPrinter } from 'react-native-bluetooth-escpos-printer';
+import { BluetoothManager, BluetoothEscposPrinter } from '@vardrz/react-native-bluetooth-escpos-printer';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Text,

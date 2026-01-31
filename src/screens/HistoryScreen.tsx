@@ -13,7 +13,7 @@ import {
   PermissionsAndroid,
   Platform
 } from 'react-native';
-import ThermalPrinterModule from 'react-native-thermal-receipt-printer';
+import EscPosPrinter, { getPrinterSeriesByName } from 'react-native-esc-pos-printer';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Text,
@@ -215,7 +215,12 @@ export const HistoryScreen: React.FC = () => {
   // Connect to a printer
   const connectToPrinter = async (printerAddress: string): Promise<boolean> => {
     try {
-      await ThermalPrinterModule.connectPrinter(printerAddress, 'bluetooth');
+      const printerSeries = getPrinterSeriesByName('TM-m10');
+      await EscPosPrinter.init({
+        target: printerAddress,
+        seriesName: printerSeries,
+        language: 'EPOS2_LANG_EN',
+      });
       setConnectedPrinter(printerAddress);
       return true;
     } catch (error) {
@@ -227,12 +232,20 @@ export const HistoryScreen: React.FC = () => {
   // Print image to thermal printer
   const printImage = async (imageUri: string): Promise<void> => {
     try {
-      // Print the image directly from URI
-      // The library handles image scaling for 80mm paper automatically
-      await ThermalPrinterModule.printImageUrl(imageUri);
+      // Read the image file as base64
+      const base64Image = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Print the image using ESC/POS
+      // 80mm (3 inch) paper = ~576 dots width
+      await EscPosPrinter.printImage(base64Image, 576);
       
       // Add some line feeds after printing
-      await ThermalPrinterModule.printText('\n\n\n');
+      await EscPosPrinter.addFeedLine(3);
+      
+      // Send print job
+      await EscPosPrinter.sendData();
     } catch (error) {
       throw error;
     }

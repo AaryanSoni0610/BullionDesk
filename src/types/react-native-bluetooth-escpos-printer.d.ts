@@ -1,53 +1,30 @@
-declare module 'react-native-thermal-receipt-printer' {
-  interface PrinterDevice {
-    id?: string;
-    name?: string;
-    address?: string;
-    connected?: boolean;
+declare module 'react-native-esc-pos-printer' {
+  export interface PrinterConfig {
+    target: string;
+    seriesName: string;
+    language: string;
   }
 
-  interface PrinterOptions {
-    beep?: boolean;
-    cut?: boolean;
-    tailingLine?: boolean;
-    encoding?: string;
+  export interface PrinterSeries {
+    model: string;
+    series: string;
   }
 
-  interface ColumnAlignment {
-    text: string;
-    width: number;
-    align?: 'LEFT' | 'CENTER' | 'RIGHT';
-  }
-
-  const ThermalPrinterModule: {
-    // Connection methods
-    connectPrinter(address: string, type: 'bluetooth' | 'usb' | 'net'): Promise<string>;
-    disconnectPrinter(): Promise<void>;
-    
-    // Bluetooth methods
-    getBluetoothDeviceList(): Promise<PrinterDevice[]>;
-    
-    // Print methods
-    printText(text: string, options?: PrinterOptions): Promise<void>;
-    printImageUrl(url: string, options?: { width?: number; height?: number }): Promise<void>;
-    printImageBase64(base64: string, options?: { width?: number; height?: number }): Promise<void>;
-    printBill(text: string, options?: PrinterOptions): Promise<void>;
-    printColumnsText(columns: ColumnAlignment[], options?: PrinterOptions): Promise<void>;
-    printQRCode(content: string, size?: number, align?: number): Promise<void>;
-    printBarCode(content: string, type?: number, width?: number, height?: number, align?: number): Promise<void>;
-    
-    // Paper feed
-    cutPaper(): Promise<void>;
-    feedPaper(lines: number): Promise<void>;
-    
-    // Alignment
-    setAlign(align: 'LEFT' | 'CENTER' | 'RIGHT'): Promise<void>;
-    
-    // Events
-    EVENT_CONNECTED: string;
-    EVENT_CONNECTION_LOST: string;
+  const EscPosPrinter: {
+    init(config: PrinterConfig): Promise<void>;
+    printImage(base64: string, width: number): Promise<void>;
+    addText(text: string): Promise<void>;
+    addTextAlign(align: 'left' | 'center' | 'right'): Promise<void>;
+    addTextSize(width: number, height: number): Promise<void>;
+    addFeedLine(lines: number): Promise<void>;
+    addCut(type: 'CUT_FEED' | 'CUT_NO_FEED'): Promise<void>;
+    sendData(): Promise<void>;
+    disconnect(): Promise<void>;
   };
 
-  export default ThermalPrinterModule;
+  export function getPrinterSeriesByName(name: string): string;
+
+  export default EscPosPrinter;
 }
+
 

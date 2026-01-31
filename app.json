@@ -3,7 +3,7 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "52.0.0",
-    "version": "7.5.7",
+    "version": "7.6.2",
     "orientation": "portrait",
     "icon": "./assets/app-icon1.png",
     "userInterfaceStyle": "automatic",
@@ -25,7 +25,12 @@
         "POST_NOTIFICATIONS",
         "SCHEDULE_EXACT_ALARM",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "ACCESS_FINE_LOCATION"
       ]
     },
     "experiments": {

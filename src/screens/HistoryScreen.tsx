@@ -9,8 +9,11 @@ import {
   TextInput,
   RefreshControl,
   Modal,
-  Pressable
+  Pressable,
+  PermissionsAndroid,
+  Platform
 } from 'react-native';
+import { BluetoothManager, BluetoothEscposPrinter } from 'react-native-bluetooth-escpos-printer';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Text,
@@ -81,6 +84,13 @@ export const HistoryScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'capturing' | 'generating' | 'cleaning'>('idle');
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
+  
+  // Printing State
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [connectedPrinter, setConnectedPrinter] = useState<string | null>(null);
+  const [availablePrinters, setAvailablePrinters] = useState<any[]>([]);
+  const [showPrinterSelection, setShowPrinterSelection] = useState(false);
+  const [pendingPrintTransaction, setPendingPrintTransaction] = useState<Transaction | null>(null);
 
 
   const formatDate = (date: Date) => {
@@ -157,7 +167,130 @@ export const HistoryScreen: React.FC = () => {
     setAlertVisible(true);
   };
 
-  const handleShareTransaction = async (transaction: Transaction) => {
+  // Request Bluetooth permissions for Android
+  const requestBluetoothPermissions = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    
+    try {
+      const apiLevel = Platform.Version;
+      
+      if (apiLevel >= 31) {
+        // Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT
+        const scanGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          {
+            title: 'Bluetooth Scan Permission',
+            message: 'This app needs Bluetooth scan permission to find printers.',
+            buttonPositive: 'OK',
+            buttonNegative: 'Cancel',
+          }
+        );
+        const connectGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          {
+            title: 'Bluetooth Connect Permission',
+            message: 'This app needs Bluetooth connect permission to connect to printers.',
+            buttonPositive: 'OK',
+            buttonNegative: 'Cancel',
+          }
+        );
+        return scanGranted === PermissionsAndroid.RESULTS.GRANTED && 
+               connectGranted === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        // Android 11 and below
+        const fineLocationGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Location Permission',
+            message: 'This app needs location permission to scan for Bluetooth devices.',
+            buttonPositive: 'OK',
+            buttonNegative: 'Cancel',
+          }
+        );
+        return fineLocationGranted === PermissionsAndroid.RESULTS.GRANTED;
+      }
+    } catch (err) {
+      console.error('Error requesting Bluetooth permissions:', err);
+      return false;
+    }
+  };
+
+  // Scan for available Bluetooth printers
+  const scanForPrinters = async (): Promise<any[]> => {
+    try {
+      const isEnabled = await BluetoothManager.isBluetoothEnabled();
+      if (!isEnabled) {
+        await BluetoothManager.enableBluetooth();
+      }
+      
+      // Get paired devices
+      const pairedDevices = await BluetoothManager.scanDevices();
+      const devices = typeof pairedDevices === 'string' ? JSON.parse(pairedDevices) : pairedDevices;
+      
+      // Filter to get paired devices (which typically include printers)
+      return devices.paired || devices || [];
+    } catch (error) {
+      console.error('Error scanning for printers:', error);
+      return [];
+    }
+  };
+
+  // Connect to a printer
+  const connectToPrinter = async (printerAddress: string): Promise<boolean> => {
+    try {
+      await BluetoothManager.connect(printerAddress);
+      setConnectedPrinter(printerAddress);
+      return true;
+    } catch (error) {
+      console.error('Error connecting to printer:', error);
+      return false;
+    }
+  };
+
+  // Print image to thermal printer
+  const printImage = async (imageUri: string): Promise<void> => {
+    try {
+      // Read the image file as base64
+      const base64Image = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Print the image using ESC/POS
+      await BluetoothEscposPrinter.printPic(base64Image, {
+        width: 384, // Standard thermal printer width (58mm = ~384 dots, 80mm = ~576 dots)
+        left: 0,
+      });
+      
+      // Add some line feeds after printing
+      await BluetoothEscposPrinter.printText('\n\n\n', {});
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // Handle the share/print action choice
+  const handleShareOrPrintTransaction = (transaction: Transaction) => {
+    setAlertTitle('Share or Print');
+    setAlertMessage('Would you like to share this transaction as an image or print it to your thermal printer?');
+    setAlertButtons([
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Share',
+        onPress: () => performShare(transaction),
+      },
+      {
+        text: 'Print',
+        onPress: () => handlePrintTransaction(transaction),
+      },
+    ]);
+    setAlertVisible(true);
+  };
+
+  // Original share functionality
+  const performShare = async (transaction: Transaction) => {
     try {
       setSharingTransactionId(transaction.id);
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -180,6 +313,115 @@ export const HistoryScreen: React.FC = () => {
     } catch (error) {
       setSharingTransactionId(null);
     }
+  };
+
+  // Handle print transaction
+  const handlePrintTransaction = async (transaction: Transaction) => {
+    try {
+      // Request Bluetooth permissions first
+      const hasPermission = await requestBluetoothPermissions();
+      if (!hasPermission) {
+        setAlertTitle('Permission Required');
+        setAlertMessage('Bluetooth permissions are required to print. Please enable them in settings.');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
+        return;
+      }
+
+      setIsPrinting(true);
+      
+      // If already connected to a printer, use it directly
+      if (connectedPrinter) {
+        await performPrint(transaction);
+        return;
+      }
+
+      // Scan for available printers
+      const printers = await scanForPrinters();
+      
+      if (printers.length === 0) {
+        setIsPrinting(false);
+        setAlertTitle('No Printers Found');
+        setAlertMessage('No paired Bluetooth printers found. Please pair your thermal printer in Bluetooth settings first.');
+        setAlertButtons([{ text: 'OK' }]);
+        setAlertVisible(true);
+        return;
+      }
+
+      // Store the transaction and show printer selection
+      setPendingPrintTransaction(transaction);
+      setAvailablePrinters(printers);
+      setShowPrinterSelection(true);
+      setIsPrinting(false);
+    } catch (error) {
+      setIsPrinting(false);
+      console.error('Print error:', error);
+      setAlertTitle('Print Error');
+      setAlertMessage(error instanceof Error ? error.message : 'Failed to initialize printing');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+    }
+  };
+
+  // Select a printer and print
+  const selectPrinterAndPrint = async (printer: any) => {
+    setShowPrinterSelection(false);
+    setIsPrinting(true);
+    
+    try {
+      const connected = await connectToPrinter(printer.address);
+      if (!connected) {
+        throw new Error('Failed to connect to printer');
+      }
+      
+      if (pendingPrintTransaction) {
+        await performPrint(pendingPrintTransaction);
+      }
+    } catch (error) {
+      console.error('Print error:', error);
+      setAlertTitle('Print Error');
+      setAlertMessage(error instanceof Error ? error.message : 'Failed to print');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+    } finally {
+      setIsPrinting(false);
+      setPendingPrintTransaction(null);
+    }
+  };
+
+  // Perform the actual printing
+  const performPrint = async (transaction: Transaction) => {
+    try {
+      setSharingTransactionId(transaction.id);
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      if (!shareableCardRef.current) {
+        throw new Error('Could not capture transaction card');
+      }
+      
+      // Capture the card as an image
+      const uri = await captureRef(shareableCardRef, { format: 'png', quality: 1, result: 'tmpfile' });
+      
+      // Print the image
+      await printImage(uri);
+      
+      setSharingTransactionId(null);
+      setIsPrinting(false);
+      
+      setAlertTitle('Print Success');
+      setAlertMessage('Transaction printed successfully!');
+      setAlertButtons([{ text: 'OK' }]);
+      setAlertVisible(true);
+    } catch (error) {
+      setSharingTransactionId(null);
+      setIsPrinting(false);
+      throw error;
+    }
+  };
+
+  // Legacy function name for compatibility (now shows dialog)
+  const handleShareTransaction = (transaction: Transaction) => {
+    handleShareOrPrintTransaction(transaction);
   };
 
   // --- EXPORT LOGIC ---
@@ -1328,6 +1570,89 @@ export const HistoryScreen: React.FC = () => {
          </View>
       </View>
     )}
+
+    {/* Printer Selection Modal */}
+    <Modal
+      visible={showPrinterSelection}
+      transparent
+      animationType="slide"
+      onRequestClose={() => {
+        setShowPrinterSelection(false);
+        setPendingPrintTransaction(null);
+      }}
+    >
+      <Pressable 
+        style={styles.sheetOverlay} 
+        onPress={() => {
+          setShowPrinterSelection(false);
+          setPendingPrintTransaction(null);
+        }}
+      >
+        <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Select Printer</Text>
+            <TouchableOpacity onPress={() => {
+              setShowPrinterSelection(false);
+              setPendingPrintTransaction(null);
+            }}>
+              <Icon name="close" size={24} color={theme.colors.onSurfaceVariant} />
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.sheetSubtitle}>Choose a Bluetooth printer:</Text>
+          
+          <ScrollView style={{ maxHeight: 300 }}>
+            {availablePrinters.map((printer, index) => (
+              <TouchableOpacity
+                key={printer.address || index}
+                style={[
+                  styles.printerItem,
+                  connectedPrinter === printer.address && styles.printerItemConnected
+                ]}
+                onPress={() => selectPrinterAndPrint(printer)}
+              >
+                <Icon 
+                  name="printer" 
+                  size={24} 
+                  color={connectedPrinter === printer.address ? theme.colors.primary : theme.colors.onSurfaceVariant} 
+                />
+                <View style={styles.printerInfo}>
+                  <Text style={styles.printerName}>{printer.name || 'Unknown Printer'}</Text>
+                  <Text style={styles.printerAddress}>{printer.address}</Text>
+                </View>
+                {connectedPrinter === printer.address && (
+                  <Icon name="check-circle" size={20} color={theme.colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          {availablePrinters.length === 0 && (
+            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+              <Icon name="printer-off" size={48} color={theme.colors.onSurfaceVariant} />
+              <Text style={{ marginTop: 12, color: theme.colors.onSurfaceVariant, fontFamily: 'Outfit_400Regular' }}>
+                No printers found
+              </Text>
+            </View>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+
+    {/* Printing Progress Modal */}
+    <Modal visible={isPrinting} transparent animationType="fade" onRequestClose={() => {}}>
+      <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center'}}>
+        <Surface style={{padding: 24, borderRadius: 16, width: 300, alignItems: 'center', backgroundColor: theme.colors.surface, elevation: 4}}>
+          <ActivityIndicator size="large" color={theme.colors.primary} style={{marginBottom: 16}} />
+          <Text variant="titleMedium" style={{marginBottom: 8, fontFamily: 'Outfit_600SemiBold', color: theme.colors.onSurface}}>
+            Printing...
+          </Text>
+          <Text variant="bodyMedium" style={{color: theme.colors.onSurfaceVariant, textAlign: 'center'}}>
+            Please wait while the transaction is being printed.
+          </Text>
+        </Surface>
+      </View>
+    </Modal>
     </>
   );
 };
@@ -1715,5 +2040,34 @@ const styles = StyleSheet.create({
   },
   applyButton: {
     borderRadius: 100, overflow: 'hidden',
-  }
+  },
+  // Printer Selection Styles
+  printerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surfaceContainerHigh || '#F0F2F5',
+    marginBottom: 8,
+    gap: 12,
+  },
+  printerItemConnected: {
+    backgroundColor: theme.colors.primaryContainer,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  printerInfo: {
+    flex: 1,
+  },
+  printerName: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 16,
+    color: theme.colors.onSurface,
+  },
+  printerAddress: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    marginTop: 2,
+  },
 });

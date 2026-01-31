@@ -13,7 +13,7 @@ import {
   PermissionsAndroid,
   Platform
 } from 'react-native';
-import { BluetoothManager, BluetoothEscposPrinter } from '@vardrz/react-native-bluetooth-escpos-printer';
+import ThermalPrinterModule from 'react-native-thermal-receipt-printer';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Text,
@@ -88,9 +88,6 @@ export const HistoryScreen: React.FC = () => {
   // Printing State
   const [isPrinting, setIsPrinting] = useState(false);
   const [connectedPrinter, setConnectedPrinter] = useState<string | null>(null);
-  const [availablePrinters, setAvailablePrinters] = useState<any[]>([]);
-  const [showPrinterSelection, setShowPrinterSelection] = useState(false);
-  const [pendingPrintTransaction, setPendingPrintTransaction] = useState<Transaction | null>(null);
 
 
   const formatDate = (date: Date) => {
@@ -215,30 +212,10 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
-  // Scan for available Bluetooth printers
-  const scanForPrinters = async (): Promise<any[]> => {
-    try {
-      const isEnabled = await BluetoothManager.isBluetoothEnabled();
-      if (!isEnabled) {
-        await BluetoothManager.enableBluetooth();
-      }
-      
-      // Get paired devices
-      const pairedDevices = await BluetoothManager.scanDevices();
-      const devices = typeof pairedDevices === 'string' ? JSON.parse(pairedDevices) : pairedDevices;
-      
-      // Filter to get paired devices (which typically include printers)
-      return devices.paired || devices || [];
-    } catch (error) {
-      console.error('Error scanning for printers:', error);
-      return [];
-    }
-  };
-
   // Connect to a printer
   const connectToPrinter = async (printerAddress: string): Promise<boolean> => {
     try {
-      await BluetoothManager.connect(printerAddress);
+      await ThermalPrinterModule.connectPrinter(printerAddress, 'bluetooth');
       setConnectedPrinter(printerAddress);
       return true;
     } catch (error) {
@@ -250,19 +227,12 @@ export const HistoryScreen: React.FC = () => {
   // Print image to thermal printer
   const printImage = async (imageUri: string): Promise<void> => {
     try {
-      // Read the image file as base64
-      const base64Image = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      
-      // Print the image using ESC/POS
-      await BluetoothEscposPrinter.printPic(base64Image, {
-        width: 384, // Standard thermal printer width (58mm = ~384 dots, 80mm = ~576 dots)
-        left: 0,
-      });
+      // Print the image directly from URI
+      // The library handles image scaling for 80mm paper automatically
+      await ThermalPrinterModule.printImageUrl(imageUri);
       
       // Add some line feeds after printing
-      await BluetoothEscposPrinter.printText('\n\n\n', {});
+      await ThermalPrinterModule.printText('\n\n\n');
     } catch (error) {
       throw error;
     }
@@ -329,63 +299,35 @@ export const HistoryScreen: React.FC = () => {
       }
 
       setIsPrinting(true);
-      
-      // If already connected to a printer, use it directly
-      if (connectedPrinter) {
+
+      // Hardcoded printer MAC address
+      const printerAddress = '00:1B:10:73:14:45';
+
+      // If already connected to the printer, use it directly
+      if (connectedPrinter === printerAddress) {
         await performPrint(transaction);
         return;
       }
 
-      // Scan for available printers
-      const printers = await scanForPrinters();
-      
-      if (printers.length === 0) {
-        setIsPrinting(false);
-        setAlertTitle('No Printers Found');
-        setAlertMessage('No paired Bluetooth printers found. Please pair your thermal printer in Bluetooth settings first.');
+      // Try to connect to the hardcoded printer
+      try {
+        await connectToPrinter(printerAddress);
+        await performPrint(transaction);
+      } catch (connectError) {
+        console.error('Failed to connect to printer:', connectError);
+        setAlertTitle('Printer Connection Failed');
+        setAlertMessage('Could not connect to the thermal printer. Please ensure the printer is paired and powered on.');
         setAlertButtons([{ text: 'OK' }]);
         setAlertVisible(true);
-        return;
       }
-
-      // Store the transaction and show printer selection
-      setPendingPrintTransaction(transaction);
-      setAvailablePrinters(printers);
-      setShowPrinterSelection(true);
-      setIsPrinting(false);
     } catch (error) {
-      setIsPrinting(false);
       console.error('Print error:', error);
       setAlertTitle('Print Error');
       setAlertMessage(error instanceof Error ? error.message : 'Failed to initialize printing');
       setAlertButtons([{ text: 'OK' }]);
       setAlertVisible(true);
-    }
-  };
-
-  // Select a printer and print
-  const selectPrinterAndPrint = async (printer: any) => {
-    setShowPrinterSelection(false);
-    setIsPrinting(true);
-    
-    try {
-      const connected = await connectToPrinter(printer.address);
-      if (!connected) {
-        throw new Error('Failed to connect to printer');
-      }
-      
-      if (pendingPrintTransaction) {
-        await performPrint(pendingPrintTransaction);
-      }
-    } catch (error) {
-      console.error('Print error:', error);
-      setAlertTitle('Print Error');
-      setAlertMessage(error instanceof Error ? error.message : 'Failed to print');
-      setAlertButtons([{ text: 'OK' }]);
-      setAlertVisible(true);
     } finally {
       setIsPrinting(false);
-      setPendingPrintTransaction(null);
     }
   };
 
@@ -1571,74 +1513,6 @@ export const HistoryScreen: React.FC = () => {
       </View>
     )}
 
-    {/* Printer Selection Modal */}
-    <Modal
-      visible={showPrinterSelection}
-      transparent
-      animationType="slide"
-      onRequestClose={() => {
-        setShowPrinterSelection(false);
-        setPendingPrintTransaction(null);
-      }}
-    >
-      <Pressable 
-        style={styles.sheetOverlay} 
-        onPress={() => {
-          setShowPrinterSelection(false);
-          setPendingPrintTransaction(null);
-        }}
-      >
-        <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Select Printer</Text>
-            <TouchableOpacity onPress={() => {
-              setShowPrinterSelection(false);
-              setPendingPrintTransaction(null);
-            }}>
-              <Icon name="close" size={24} color={theme.colors.onSurfaceVariant} />
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.sheetSubtitle}>Choose a Bluetooth printer:</Text>
-          
-          <ScrollView style={{ maxHeight: 300 }}>
-            {availablePrinters.map((printer, index) => (
-              <TouchableOpacity
-                key={printer.address || index}
-                style={[
-                  styles.printerItem,
-                  connectedPrinter === printer.address && styles.printerItemConnected
-                ]}
-                onPress={() => selectPrinterAndPrint(printer)}
-              >
-                <Icon 
-                  name="printer" 
-                  size={24} 
-                  color={connectedPrinter === printer.address ? theme.colors.primary : theme.colors.onSurfaceVariant} 
-                />
-                <View style={styles.printerInfo}>
-                  <Text style={styles.printerName}>{printer.name || 'Unknown Printer'}</Text>
-                  <Text style={styles.printerAddress}>{printer.address}</Text>
-                </View>
-                {connectedPrinter === printer.address && (
-                  <Icon name="check-circle" size={20} color={theme.colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          
-          {availablePrinters.length === 0 && (
-            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
-              <Icon name="printer-off" size={48} color={theme.colors.onSurfaceVariant} />
-              <Text style={{ marginTop: 12, color: theme.colors.onSurfaceVariant, fontFamily: 'Outfit_400Regular' }}>
-                No printers found
-              </Text>
-            </View>
-          )}
-        </Pressable>
-      </Pressable>
-    </Modal>
-
     {/* Printing Progress Modal */}
     <Modal visible={isPrinting} transparent animationType="fade" onRequestClose={() => {}}>
       <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center'}}>
@@ -1992,13 +1866,13 @@ const styles = StyleSheet.create({
   },
   hiddenCard: {
     position: 'absolute',
-    opacity: 0,
-    zIndex: -1,
+    left: -1000,
+    top: 0,
   },
   shareableCardWrapper: {
     backgroundColor: '#fff',
     padding: 20,
-    width: 400,
+    width: 576,
   },
   sheetOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',
@@ -2040,34 +1914,5 @@ const styles = StyleSheet.create({
   },
   applyButton: {
     borderRadius: 100, overflow: 'hidden',
-  },
-  // Printer Selection Styles
-  printerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surfaceContainerHigh || '#F0F2F5',
-    marginBottom: 8,
-    gap: 12,
-  },
-  printerItemConnected: {
-    backgroundColor: theme.colors.primaryContainer,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
-  },
-  printerInfo: {
-    flex: 1,
-  },
-  printerName: {
-    fontFamily: 'Outfit_600SemiBold',
-    fontSize: 16,
-    color: theme.colors.onSurface,
-  },
-  printerAddress: {
-    fontFamily: 'Outfit_400Regular',
-    fontSize: 12,
-    color: theme.colors.onSurfaceVariant,
-    marginTop: 2,
   },
 });

@@ -3,7 +3,7 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "52.0.0",
-    "version": "7.6.2",
+    "version": "7.6.5",
     "orientation": "portrait",
     "icon": "./assets/app-icon1.png",
     "userInterfaceStyle": "automatic",
@@ -11,7 +11,7 @@
       "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#173460",
-      "duration": 2000
+      "duration": 5000
     },
     "ios": {
       "supportsTablet": true

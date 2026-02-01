@@ -744,7 +744,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.6.2"
+              description="v7.6.5"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -886,7 +886,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v7.6.2
+        message={`BullionDesk v7.6.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 

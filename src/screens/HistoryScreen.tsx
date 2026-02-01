@@ -12,7 +12,6 @@ import {
   Pressable,
   PermissionsAndroid,
   Platform,
-  PixelRatio
 } from 'react-native';
 import ThermalPrinterModule from 'react-native-thermal-printer';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -226,7 +225,7 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
-  // Print image to thermal printer
+  // Print image to thermal printer - chunked approach to prevent height-based scaling
   const printImage = async (imageUri: string): Promise<void> => {
     try {
       // Read the image file as base64
@@ -234,20 +233,73 @@ export const HistoryScreen: React.FC = () => {
         encoding: FileSystem.EncodingType.Base64,
       });
       
-      // Convert to data URI for the printer
-      const imageDataUri = `data:image/png;base64,${base64Image}`;
-      
-      // Create payload with left-aligned image tag
-      // [L] aligns against hardware margin, avoiding centering math issues
-      const payload = `[L]<img>${imageDataUri}</img>\n\n\n`;
-      
-      // Print using Bluetooth
-      // Lower printerNbrCharactersPerLine to 42 to prevent right-side clipping
-      await ThermalPrinterModule.printBluetooth({
-        payload,
-        printerWidthMM: 80,
-        printerNbrCharactersPerLine: 48,
+      // Load image to get dimensions
+      const Image = require('react-native').Image;
+      const imageSize: { width: number; height: number } = await new Promise((resolve, reject) => {
+        Image.getSize(
+          imageUri,
+          (width: number, height: number) => resolve({ width, height }),
+          (error: any) => reject(error)
+        );
       });
+
+      // Calculate if chunking is needed
+      const CHUNK_HEIGHT = 200; // Max height per chunk to prevent scaling
+      const needsChunking = imageSize.height > CHUNK_HEIGHT;
+
+      if (!needsChunking) {
+        // Small image - print directly
+        const imageDataUri = `data:image/png;base64,${base64Image}`;
+        const payload = `<img>${imageDataUri}</img>\n\n\n`;
+        
+        await ThermalPrinterModule.printBluetooth({
+          payload,
+          printerWidthMM: 80,
+          printerNbrCharactersPerLine: 48,
+        });
+      } else {
+        // Large image - chunk and print sequentially
+        const { default: ImageEditor } = require('@react-native-community/image-editor');
+        const numChunks = Math.ceil(imageSize.height / CHUNK_HEIGHT);
+
+        for (let i = 0; i < numChunks; i++) {
+          const offsetY = i * CHUNK_HEIGHT;
+          const chunkHeight = Math.min(CHUNK_HEIGHT, imageSize.height - offsetY);
+
+          // Crop chunk
+          const cropData = {
+            offset: { x: 0, y: offsetY },
+            size: { width: imageSize.width, height: chunkHeight },
+          };
+
+          const chunkUri = await ImageEditor.cropImage(imageUri, cropData);
+
+          // Read chunk as base64
+          const chunkBase64 = await FileSystem.readAsStringAsync(chunkUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          const imageDataUri = `data:image/png;base64,${chunkBase64}`;
+          const payload = `<img>${imageDataUri}</img>`;
+
+          // Print chunk
+          await ThermalPrinterModule.printBluetooth({
+            payload,
+            printerWidthMM: 80,
+            printerNbrCharactersPerLine: 48,
+          });
+
+          // Cleanup chunk file
+          await FileSystem.deleteAsync(chunkUri, { idempotent: true });
+        }
+
+        // Final line feeds after all chunks
+        await ThermalPrinterModule.printBluetooth({
+          payload: '\n\n\n',
+          printerWidthMM: 80,
+          printerNbrCharactersPerLine: 48,
+        });
+      }
     } catch (error) {
       throw error;
     }
@@ -357,13 +409,13 @@ export const HistoryScreen: React.FC = () => {
         throw new Error('Could not capture transaction card');
       }
       
-      // Capture at exact dot-density for 80mm printer (500 dots to avoid clipping)
-      // Dividing by PixelRatio ensures 1:1 mapping with printer dots for crisp text
+      // Capture at fixed dot-density for 80mm printer (500 dots to prevent scaling-to-fit)
+      // Fixed width prevents printer driver from auto-scaling based on aspect ratio
       const uri = await captureRef(shareableCardRef, { 
         format: 'png', 
         quality: 1, 
         result: 'tmpfile',
-        width: 500 / PixelRatio.get(),
+        width: 500, // Fixed dot width for 80mm to prevent scaling-to-fit
       });
       
       // Print the image
@@ -1094,7 +1146,7 @@ export const HistoryScreen: React.FC = () => {
           margin: 0, // No margins
           elevation: 0, // Remove shadow (prevents gray noise)
           shadowOpacity: 0,
-          width: 500, // Reduced width to prevent right-side clipping
+          width: 500, // Fixed width to prevent right-side clipping and scaling
         }
       ]}>
         {/* Action Buttons at Top Left */}
@@ -1966,7 +2018,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', // Pure white for thermal printing
     padding: 0, // Zero padding to prevent clipping
     margin: 0, // Ensure NO margins are present
-    width: 500, // Reduced width to avoid right-side clipping
+    width: 500, // Fixed width for 80mm printer to prevent scaling-to-fit
   },
   sheetOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',

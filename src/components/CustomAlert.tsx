@@ -45,7 +45,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
     }
   };
 
-  const isStacked = finalButtons.length > 2;
+  const isStacked = finalButtons.length > 3;
 
   return (
     <Modal

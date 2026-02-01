@@ -226,81 +226,65 @@ export const HistoryScreen: React.FC = () => {
   };
 
   // Print image to thermal printer - chunked approach to prevent height-based scaling
-  const printImage = async (imageUri: string): Promise<void> => {
+  const printImage = async (imageUri: string | any): Promise<void> => {
     try {
-      // Read the image file as base64
-      const base64Image = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      
-      // Load image to get dimensions
-      const Image = require('react-native').Image;
-      const imageSize: { width: number; height: number } = await new Promise((resolve, reject) => {
-        Image.getSize(
-          imageUri,
-          (width: number, height: number) => resolve({ width, height }),
-          (error: any) => reject(error)
+      // 1. Handle cases where captureRef returns an object instead of string
+      let uri: string = typeof imageUri === 'string' ? imageUri : imageUri?.uri;
+      if (!uri) throw new Error('Invalid URI');
+
+      // Load image size to determine if chunking is needed for the P2600
+      const { width, height } = await new Promise<{width: number, height: number}>((resolve, reject) => {
+        const Image = require('react-native').Image;
+        Image.getSize(uri, 
+          (w: number, h: number) => resolve({ width: w, height: h }),
+          (err: any) => reject(err)
         );
       });
 
-      // Calculate if chunking is needed
-      const CHUNK_HEIGHT = 200; // Max height per chunk to prevent scaling
-      const needsChunking = imageSize.height > CHUNK_HEIGHT;
+      const CHUNK_HEIGHT = 400; // Smaller chunks for better Bluetooth stability
 
-      if (!needsChunking) {
-        // Small image - print directly
-        const imageDataUri = `data:image/png;base64,${base64Image}`;
-        const payload = `<img>${imageDataUri}</img>\n\n\n`;
-        
+      // first paper feed before the first chunk
+      await ThermalPrinterModule.printBluetooth({
+        payload: '\n',
+        printerWidthMM: 80,
+        printerNbrCharactersPerLine: 48,
+      });
+
+      const { default: ImageEditor } = require('@react-native-community/image-editor');
+      const numChunks = Math.ceil(height / CHUNK_HEIGHT);
+
+      for (let i = 0; i < numChunks; i++) {
+        const offsetY = i * CHUNK_HEIGHT;
+        const currentChunkHeight = Math.min(CHUNK_HEIGHT, height - offsetY);
+
+        const chunkResult = await ImageEditor.cropImage(uri, {
+          offset: { x: 0, y: offsetY },
+          size: { width: width, height: currentChunkHeight },
+        });
+
+        const chunkUri = typeof chunkResult === 'string' ? chunkResult : chunkResult.uri;
+        const chunkBase64 = await FileSystem.readAsStringAsync(chunkUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Print each chunk individually. Only the first chunk gets the [L] tag.
         await ThermalPrinterModule.printBluetooth({
-          payload,
+          payload: `<img>data:image/png;base64,${chunkBase64}</img>`,
           printerWidthMM: 80,
           printerNbrCharactersPerLine: 48,
         });
-      } else {
-        // Large image - chunk and print sequentially
-        const { default: ImageEditor } = require('@react-native-community/image-editor');
-        const numChunks = Math.ceil(imageSize.height / CHUNK_HEIGHT);
 
-        for (let i = 0; i < numChunks; i++) {
-          const offsetY = i * CHUNK_HEIGHT;
-          const chunkHeight = Math.min(CHUNK_HEIGHT, imageSize.height - offsetY);
-
-          // Crop chunk
-          const cropData = {
-            offset: { x: 0, y: offsetY },
-            size: { width: imageSize.width, height: chunkHeight },
-          };
-
-          const chunkUri = await ImageEditor.cropImage(imageUri, cropData);
-
-          // Read chunk as base64
-          const chunkBase64 = await FileSystem.readAsStringAsync(chunkUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          const imageDataUri = `data:image/png;base64,${chunkBase64}`;
-          const payload = `<img>${imageDataUri}</img>`;
-
-          // Print chunk
-          await ThermalPrinterModule.printBluetooth({
-            payload,
-            printerWidthMM: 80,
-            printerNbrCharactersPerLine: 48,
-          });
-
-          // Cleanup chunk file
-          await FileSystem.deleteAsync(chunkUri, { idempotent: true });
-        }
-
-        // Final line feeds after all chunks
-        await ThermalPrinterModule.printBluetooth({
-          payload: '\n\n\n',
-          printerWidthMM: 80,
-          printerNbrCharactersPerLine: 48,
-        });
+        await FileSystem.deleteAsync(chunkUri, { idempotent: true });
       }
+
+      // // Final paper feed after the last chunk
+      // await ThermalPrinterModule.printBluetooth({
+      //   payload: '\n',
+      //   printerWidthMM: 80,
+      //   printerNbrCharactersPerLine: 48,
+      // });
     } catch (error) {
+      console.error("Print execution failed:", error);
       throw error;
     }
   };
@@ -409,14 +393,16 @@ export const HistoryScreen: React.FC = () => {
         throw new Error('Could not capture transaction card');
       }
       
-      // Capture at fixed dot-density for 80mm printer (500 dots to prevent scaling-to-fit)
+      // Capture at fixed dot-density for 80mm printer (400 dots for safe width)
       // Fixed width prevents printer driver from auto-scaling based on aspect ratio
       const uri = await captureRef(shareableCardRef, { 
         format: 'png', 
         quality: 1, 
         result: 'tmpfile',
-        width: 500, // Fixed dot width for 80mm to prevent scaling-to-fit
+        width: 400, // Reduced width for safe printing on 80mm paper
       });
+      
+      console.log(`Captured image URI type: ${typeof uri}, value: ${JSON.stringify(uri)}`);
       
       // Print the image
       await printImage(uri);
@@ -937,7 +923,7 @@ export const HistoryScreen: React.FC = () => {
 
   // --- CORE COLOR & LABEL LOGIC (Preserved from Original) ---
   const getAmountColor = (transaction: Transaction) => {
-    const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+    const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
     if (isMoneyOnly) {
       const isReceived = transaction.amountPaid > 0;
       return isReceived ? theme.colors.sellColor : theme.colors.primary;
@@ -1142,11 +1128,12 @@ export const HistoryScreen: React.FC = () => {
           backgroundColor: '#FFFFFF', // Pure white for thermal
           borderRadius: 0, // No rounded corners
           padding: 4, // Minimal padding for thermal (reduced from 10)
+          paddingRight: 50, // Increase right padding for safety margin
           marginBottom: 0,
           margin: 0, // No margins
           elevation: 0, // Remove shadow (prevents gray noise)
           shadowOpacity: 0,
-          width: 500, // Fixed width to prevent right-side clipping and scaling
+          width: 400, // Reduced width for safe printing on 80mm paper
         }
       ]}>
         {/* Action Buttons at Top Left */}
@@ -1184,13 +1171,13 @@ export const HistoryScreen: React.FC = () => {
           <View style={styles.infoBlock}>
             <Text allowFontScaling={allowFontScaling} style={[
               styles.customerName,
-              hideActions && { color: '#000000', fontSize: 26 } // Pure black + larger (18+8)
+              hideActions && { color: '#000000', fontSize: 20 } // Base size +2
             ]}>
               {transaction.customerName}
             </Text>
             <Text allowFontScaling={allowFontScaling} style={[
               styles.transactionDate,
-              hideActions && { color: '#000000', fontSize: 20 } // Pure black + larger (12+8)
+              hideActions && { color: '#000000', fontSize: 14 } // Base size +2
             ]}>
               {formatFullDate(transaction.date)}
             </Text>
@@ -1203,7 +1190,7 @@ export const HistoryScreen: React.FC = () => {
                   styles.mainAmount, 
                   { 
                     color: hideActions ? '#000000' : getAmountColor(transaction),
-                    fontSize: hideActions ? 24 : 18 // Larger when printing (18+6)
+                    fontSize: hideActions ? 20 : 18 // Base size +2
                   }
                 ]}
               >
@@ -1242,7 +1229,7 @@ export const HistoryScreen: React.FC = () => {
                             </View>
                             <Text allowFontScaling={allowFontScaling} style={[
                               styles.itemNameText,
-                              hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                              hideActions && { fontSize: 16, color: '#000000' } // Base size +2
                             ]}>
                               {entry.displayName}
                             </Text>
@@ -1251,7 +1238,7 @@ export const HistoryScreen: React.FC = () => {
                           {/* Line 1: Weight / Details */}
                           <Text allowFontScaling={allowFontScaling} style={[
                             styles.itemVal,
-                            hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                            hideActions && { fontSize: 16, color: '#000000' } // Base size +2
                           ]}>
                               {line1}
                           </Text>
@@ -1264,7 +1251,7 @@ export const HistoryScreen: React.FC = () => {
                               <Text allowFontScaling={allowFontScaling} style={[
                                 styles.itemVal, 
                                 { 
-                                  fontSize: hideActions ? 19 : 13, // 13+6
+                                  fontSize: hideActions ? 15 : 13, // Base size +2
                                   opacity: hideActions ? 1 : 0.8,
                                   color: hideActions ? '#000000' : undefined
                                 }
@@ -1324,14 +1311,14 @@ export const HistoryScreen: React.FC = () => {
                       <Text allowFontScaling={allowFontScaling} style={[
                         styles.itemNameText, 
                         { marginLeft: 2 },
-                        hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                        hideActions && { fontSize: 16, color: '#000000' } // Base size +2
                       ]}>
                         {displayType}
                       </Text>
                     </View>
                     <Text allowFontScaling={allowFontScaling} style={[
                       styles.itemVal,
-                      hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                      hideActions && { fontSize: 16, color: '#000000' } // Base size +2
                     ]}>
                       {line1}
                     </Text>
@@ -1349,18 +1336,18 @@ export const HistoryScreen: React.FC = () => {
                 <View style={styles.totalRow}>
                   <Text style={[
                     styles.totalLabel,
-                    hideActions && { fontSize: 21, color: '#000000' } // 13+8
+                    hideActions && { fontSize: 15, color: '#000000' } // Base size +2
                   ]}>Money-Only</Text>
                 </View>
               ) : (
                 <View style={styles.totalRow}>
                   <Text style={[
                     styles.totalLabel,
-                    hideActions && { fontSize: 21, color: '#000000' } // 13+8
+                    hideActions && { fontSize: 15, color: '#000000' } // Base size +2
                   ]}>Total</Text>
                   <Text style={[
                     styles.totalAmount,
-                    hideActions && { fontSize: 22, color: '#000000' } // 14+8
+                    hideActions && { fontSize: 16, color: '#000000' } // Base size +2
                   ]}>
                     ₹{formatIndianNumber(Math.abs(transaction.total))}
                   </Text>
@@ -1376,14 +1363,14 @@ export const HistoryScreen: React.FC = () => {
                <View style={[styles.receiptRow, styles.footerRow]}>
                  <Text style={[
                    styles.footerLabel,
-                   hideActions && { fontSize: 21, color: '#000000' } // 13+8
+                   hideActions && { fontSize: 15, color: '#000000' } // Base size +2
                  ]}>
                    {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
                  </Text>
                  <Text style={[
                    styles.footerAmount, 
                    { color: hideActions ? '#000000' : (transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary) },
-                   hideActions && { fontSize: 22 } // 14+8
+                   hideActions && { fontSize: 16 } // Base size +2
                  ]}>
                    {' '}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                  </Text>
@@ -1392,7 +1379,7 @@ export const HistoryScreen: React.FC = () => {
                    <Text style={[
                      styles.balanceLabel, 
                      { color: hideActions ? '#000000' : transactionBalanceColor },
-                     hideActions && { fontSize: 18 } // 10+8
+                     hideActions && { fontSize: 12 } // Base size +2
                    ]}>
                      {transactionBalanceLabel}
                    </Text>
@@ -1406,11 +1393,11 @@ export const HistoryScreen: React.FC = () => {
           <View style={styles.noteRow}>
             <Text style={[
               styles.noteLabel,
-              hideActions && { fontSize: 21, color: '#000000' } // 13+8
+              hideActions && { fontSize: 15, color: '#000000' } // Base size +2
             ]}>NOTE</Text>
             <Text style={[
               styles.noteText,
-              hideActions && { fontSize: 21, color: '#000000' } // 13+8
+              hideActions && { fontSize: 15, color: '#000000' } // Base size +2
             ]}>{transaction.note}</Text>
           </View>
         )}
@@ -2018,7 +2005,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', // Pure white for thermal printing
     padding: 0, // Zero padding to prevent clipping
     margin: 0, // Ensure NO margins are present
-    width: 500, // Fixed width for 80mm printer to prevent scaling-to-fit
+    width: 400, // Reduced width for safe printing on 80mm paper
   },
   sheetOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',

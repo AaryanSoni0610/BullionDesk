@@ -152,16 +152,17 @@ export const formatPureSilver = (value: number): number => {
  * @returns Formatted amount string with label and currency symbol
  */
 export const formatTransactionAmount = (transaction: any): string => {
-  // Check if this is a money-only transaction (no entries)
-  const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+  // Check if this is a money-only transaction (no entries OR single money entry)
+  const isMoneyOnly = (transaction.entries.length === 1 && transaction.entries[0].type === 'money');
   
   let amount: number;
   let isReceived: boolean;
   
   if (isMoneyOnly) {
-    // For money-only transactions, show the amountPaid
-    amount = Math.abs(transaction.amountPaid || 0);
-    isReceived = (transaction.amountPaid || 0) > 0;
+    // For money-only transactions, use amountPaid directly to determine sign
+    const amountPaid = transaction.amountPaid || 0;
+    amount = Math.abs(amountPaid);
+    isReceived = amountPaid > 0;
   } else {
     // For regular transactions, show amountPaid (absolute value)
     amount = Math.abs(transaction.amountPaid || 0);

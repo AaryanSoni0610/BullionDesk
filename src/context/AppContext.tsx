@@ -2,10 +2,13 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { Customer, TransactionEntry, ItemType, PaymentInput } from '../types';
 import { CustomerService } from '../services/customer.service';
 import { TransactionService } from '../services/transaction.service';
+import { TradeService } from '../services/trade.service';
 
 export interface LastEntryState {
   transactionType: 'purchase' | 'sell' | 'money';
   itemType: ItemType;
+  weight?: number;
+  price?: number;
 }
 
 interface AlertButton {
@@ -31,6 +34,10 @@ interface AppContextType {
   transactionCreatedAt: string | null;
   transactionLastUpdatedAt: string | null;
   
+  // Trade Conversion State
+  tradeIdToDeleteOnSave: string | null;
+  setTradeIdToDeleteOnSave: (id: string | null) => void;
+  
   // Last Entry State
   lastEntryState: LastEntryState | null;
   setLastEntryState: (state: LastEntryState | null) => void;
@@ -46,6 +53,8 @@ interface AppContextType {
   setAllowCustomerCreation: (allow: boolean) => void;
   isCustomerSelectionForRaniRupa: boolean;
   setIsCustomerSelectionForRaniRupa: (isForRaniRupa: boolean) => void;
+  isCustomerSelectionForTrade: boolean;
+  setIsCustomerSelectionForTrade: (isForTrade: boolean) => void;
   
   // Snackbar Management
   snackbarVisible: boolean;
@@ -122,12 +131,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const [pendingMoneyType, setPendingMoneyType] = useState<'give' | 'receive'>('receive');
   const [transactionCreatedAt, setTransactionCreatedAt] = useState<string | null>(null);
   const [transactionLastUpdatedAt, setTransactionLastUpdatedAt] = useState<string | null>(null);
+  const [tradeIdToDeleteOnSave, setTradeIdToDeleteOnSave] = useState<string | null>(null);
   const [lastEntryState, setLastEntryState] = useState<LastEntryState | null>(null);
   const [customerModalVisible, setCustomerModalVisible] = useState(false);
   const [tradeDialogVisible, setTradeDialogVisible] = useState(false);
   const [ledgerDialogVisible, setLedgerDialogVisible] = useState(false);
   const [allowCustomerCreation, setAllowCustomerCreation] = useState(true);
   const [isCustomerSelectionForRaniRupa, setIsCustomerSelectionForRaniRupa] = useState(false);
+  const [isCustomerSelectionForTrade, setIsCustomerSelectionForTrade] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [alertVisible, setAlertVisible] = useState(false);
@@ -161,6 +172,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setTransactionCreatedAt(null);
     setTransactionLastUpdatedAt(null);
     setLastEntryState(null);
+    setTradeIdToDeleteOnSave(null);
     onNavigateToTabs();
   };
 
@@ -191,6 +203,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       // For Rani/Rupa sell, just set the customer without navigating
       setCurrentCustomer(customer);
       setIsCustomerSelectionForRaniRupa(false);
+    } else if (isCustomerSelectionForTrade) {
+      // For Trade screen, just set the customer without navigating
+      setCurrentCustomer(customer);
+      // DON'T clear flag here - let TradeScreen clear it after processing
     } else {
       // Clear editing transaction ID for new transactions
       setEditingTransactionId(null);
@@ -214,6 +230,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       // For Rani/Rupa sell, just set the customer without navigating
       setCurrentCustomer(newCustomer);
       setIsCustomerSelectionForRaniRupa(false);
+    } else if (isCustomerSelectionForTrade) {
+      // For Trade screen, just set the customer without navigating
+      setCurrentCustomer(newCustomer);
+      // DON'T clear flag here - let TradeScreen clear it after processing
     } else {
       // Clear editing transaction ID for new transactions
       setEditingTransactionId(null);
@@ -289,6 +309,17 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       );
 
       if (result.success) {
+        // If this was a trade conversion, delete the original trade
+        if (tradeIdToDeleteOnSave) {
+          try {
+            await TradeService.deleteTrade(tradeIdToDeleteOnSave);
+            setTradeIdToDeleteOnSave(null); // Clear the ID
+          } catch (error) {
+            console.error('Error deleting trade after conversion:', error);
+            // We don't block navigation if trade deletion fails, but we log it
+          }
+        }
+
         // Navigate back to tabs (no snackbar message)
         setLastEntryState(null);
         onNavigateToTabs();
@@ -377,6 +408,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setPendingMoneyType,
     transactionCreatedAt,
     transactionLastUpdatedAt,
+    tradeIdToDeleteOnSave,
+    setTradeIdToDeleteOnSave,
     lastEntryState,
     setLastEntryState,
     tradeDialogVisible,
@@ -389,6 +422,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setAllowCustomerCreation,
     isCustomerSelectionForRaniRupa,
     setIsCustomerSelectionForRaniRupa,
+    isCustomerSelectionForTrade,
+    setIsCustomerSelectionForTrade,
     snackbarVisible,
     setSnackbarVisible,
     snackbarMessage,

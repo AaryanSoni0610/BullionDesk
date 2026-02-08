@@ -122,8 +122,14 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   });
   
   // Input fields
-  const [weight, setWeight] = useState('');
-  const [price, setPrice] = useState('');
+  const [weight, setWeight] = useState(() => {
+    if (lastEntryState && !editingEntry && lastEntryState.weight) return lastEntryState.weight.toString();
+    return '';
+  });
+  const [price, setPrice] = useState(() => {
+    if (lastEntryState && !editingEntry && lastEntryState.price) return lastEntryState.price.toString();
+    return '';
+  });
   const [touch, setTouch] = useState('');
   const [cut, setCut] = useState('');
   const [extraPerKg, setExtraPerKg] = useState('');
@@ -666,7 +672,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               <Text style={[
                 styles.tabText,
                 transactionType === 'purchase' && { color: '#FFF' }
-              ]}>Purchase</Text>
+              ]}>Buy</Text>
             </TouchableOpacity>
           )}
           {availableTypes.includes('sell') && (

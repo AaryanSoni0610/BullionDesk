@@ -33,6 +33,7 @@ import { RaniRupaSellScreen } from './src/screens/RaniRupaSellScreen';
 import { RecycleBinScreen } from './src/screens/RecycleBinScreen';
 import { RateCutScreen } from './src/screens/RateCutScreen';
 import { CustomerSelectionModal } from './src/components/CustomerSelectionModal';
+import { AnimatedScreen } from './src/components/AnimatedScreen';
 import CustomAlert from './src/components/CustomAlert';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { NotificationService } from './src/services/notificationService';
@@ -152,7 +153,7 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
 // Main Tab Navigator Component with Stack for smooth transitions
 const MainTabNavigator = () => {
   const Tab = createBottomTabNavigator();
-  const { setCustomerModalVisible, setTradeDialogVisible, setLedgerDialogVisible } = useAppContext();
+  const { setCustomerModalVisible, setTradeDialogVisible, setLedgerDialogVisible, setIsCustomerSelectionForTrade } = useAppContext();
   const [activeRoute, setActiveRoute] = useState('Home');
 
   const getFabIcon = () => {
@@ -169,7 +170,10 @@ const MainTabNavigator = () => {
     switch (activeRoute) {
       case 'Home': setCustomerModalVisible(true); break;
       case 'History': setCustomerModalVisible(true); break;
-      case 'Trade': setTradeDialogVisible(true); break;
+      case 'Trade': 
+        setIsCustomerSelectionForTrade(true); 
+        setCustomerModalVisible(true); 
+        break;
       case 'Ledger': setLedgerDialogVisible(true); break;
     }
   };
@@ -358,28 +362,34 @@ const AppContent: React.FC<AppContentProps> = ({
             />
           )}
 
-          {appState === 'settings' && (
+          {/* Group 1: Settings screen - slides in from right when navigating from tabs */}
+          {/* Settings stays visible (static) when sub-screens are active */}
+          <AnimatedScreen 
+            isVisible={appState === 'settings' || appState === 'customers' || appState === 'rateCut' || appState === 'raniRupaSell' || appState === 'recycleBin'} 
+            direction="right"
+          >
             <SettingsScreen />
-          )}
+          </AnimatedScreen>
 
-          {appState === 'customers' && (
+          {/* Group 2: Settings sub-screens - slide in from right ON TOP of settings */}
+          <AnimatedScreen isVisible={appState === 'customers'} direction="right">
             <CustomerListScreen />
-          )}
+          </AnimatedScreen>
+
+          <AnimatedScreen isVisible={appState === 'rateCut'} direction="right">
+            <RateCutScreen />
+          </AnimatedScreen>
+
+          <AnimatedScreen isVisible={appState === 'raniRupaSell'} direction="right">
+            <RaniRupaSellScreen />
+          </AnimatedScreen>
+
+          <AnimatedScreen isVisible={appState === 'recycleBin'} direction="right">
+            <RecycleBinScreen />
+          </AnimatedScreen>
 
           {appState === 'trade' && (
             <TradeScreen />
-          )}
-
-          {appState === 'raniRupaSell' && (
-            <RaniRupaSellScreen />
-          )}
-
-          {appState === 'recycleBin' && (
-            <RecycleBinScreen />
-          )}
-
-          {appState === 'rateCut' && (
-            <RateCutScreen />
           )}
 
           {/* Customer Selection Modal */}

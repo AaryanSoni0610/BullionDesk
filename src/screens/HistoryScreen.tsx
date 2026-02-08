@@ -117,16 +117,7 @@ export const HistoryScreen: React.FC = () => {
 
   const isEditLocked = (transaction: Transaction): boolean => {
     if (isRateCutLocked(transaction)) return true;
-    
-    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
-    if (isMetalOnly) return false;
-
-    const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
-    if (isMoneyOnly) return false;
-
-    const remainingBalance = Math.abs(transaction.total) - transaction.amountPaid;
-    const isSettled = remainingBalance <= 0;
-    return isSettled;
+    return false;
   };
 
   const handleDeleteTransaction = async (transaction: Transaction) => {

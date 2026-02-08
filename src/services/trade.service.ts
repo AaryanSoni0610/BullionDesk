@@ -12,6 +12,7 @@ export class TradeService {
     try {
       const trades = await DatabaseService.getAllAsyncBatch<{
         id: string;
+        customer_id?: string;
         customerName: string;
         type: string;
         itemType: string;
@@ -23,6 +24,7 @@ export class TradeService {
 
       return trades.map(trade => ({
         id: trade.id,
+        customerId: trade.customer_id,
         customerName: trade.customerName,
         type: trade.type as 'sell' | 'purchase',
         itemType: trade.itemType as 'gold999' | 'gold995' | 'silver' | 'rani' | 'rupu',
@@ -47,6 +49,7 @@ export class TradeService {
 
       return trades.map((trade: any) => ({
         id: trade.id,
+        customerId: trade.customer_id,
         customerName: trade.customerName,
         type: trade.type as 'sell' | 'purchase',
         itemType: trade.itemType as 'gold999' | 'gold995' | 'silver' | 'rani' | 'rupu',
@@ -70,8 +73,8 @@ export class TradeService {
       const createdAt = new Date().toISOString();
 
       await db.runAsync(
-        'INSERT INTO trades (id, customerName, type, itemType, price, weight, date, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [tradeId, trade.customerName, trade.type, trade.itemType, trade.price, trade.weight, trade.date, createdAt]
+        'INSERT INTO trades (id, customer_id, customerName, type, itemType, price, weight, date, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [tradeId, trade.customerId || null, trade.customerName, trade.type, trade.itemType, trade.price, trade.weight, trade.date, createdAt]
       );
 
       return true;
@@ -89,6 +92,10 @@ export class TradeService {
       const updateFields: string[] = [];
       const params: any[] = [];
 
+      if (updates.customerId !== undefined) {
+        updateFields.push('customer_id = ?');
+        params.push(updates.customerId || null);
+      }
       if (updates.customerName !== undefined) {
         updateFields.push('customerName = ?');
         params.push(updates.customerName);

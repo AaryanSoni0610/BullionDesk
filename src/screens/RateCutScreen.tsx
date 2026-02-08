@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
+import { View, StyleSheet, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList, ScrollView } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,6 +21,7 @@ const hasMetalBalance = (customer: Customer) => {
 export const RateCutScreen: React.FC = () => {
   const { navigateToSettings } = useAppContext();
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [direction, setDirection] = useState<'sell' | 'purchase'>('sell');
   const [metalType, setMetalType] = useState<'gold999' | 'gold995' | 'silver'>('gold999');
   const [weight, setWeight] = useState('');
   const [rate, setRate] = useState('');
@@ -34,6 +35,7 @@ export const RateCutScreen: React.FC = () => {
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showDeleteConfirmAlert, setShowDeleteConfirmAlert] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RateCutRecord | null>(null);
+  const [availableWeights, setAvailableWeights] = useState<{ sellWeight: number; purchaseWeight: number }>({ sellWeight: 0, purchaseWeight: 0 });
 
   // Pagination State
   const [offset, setOffset] = useState(0);
@@ -57,9 +59,35 @@ export const RateCutScreen: React.FC = () => {
     }, [navigateToSettings])
   );
 
+  // Load history when customer or metal type changes
   useEffect(() => {
     loadHistory(true);
-  }, [selectedCustomer]);
+  }, [selectedCustomer, metalType]);
+
+  // Load available weights when customer or metal type changes
+  useEffect(() => {
+    if (selectedCustomer && metalType) {
+      loadAvailableWeights();
+    }
+  }, [selectedCustomer, metalType]);
+
+  // Auto-select direction when only one is available
+  useEffect(() => {
+    if (availableWeights.sellWeight > 0 && availableWeights.purchaseWeight === 0) {
+      setDirection('sell');
+    } else if (availableWeights.purchaseWeight > 0 && availableWeights.sellWeight === 0) {
+      setDirection('purchase');
+    }
+  }, [availableWeights]);
+
+  const loadAvailableWeights = async () => {
+    if (!selectedCustomer) {
+      setAvailableWeights({ sellWeight: 0, purchaseWeight: 0 });
+      return;
+    }
+    const weights = await RateCutService.getAvailableWeights(selectedCustomer.id, metalType);
+    setAvailableWeights(weights);
+  };
 
   // Determine available metals based on customer balance
   const getAvailableMetals = useCallback(() => {
@@ -139,35 +167,37 @@ export const RateCutScreen: React.FC = () => {
       return;
     }
 
-    const currentBalance = selectedCustomer.metalBalances?.[metalType] || 0;
-    const roundedBalance = parseFloat(Math.abs(currentBalance).toFixed(3));
+    // Validation: Weight Cut <= Available Weight for selected direction
+    const maxWeight = direction === 'sell' ? availableWeights.sellWeight : availableWeights.purchaseWeight;
+    const roundedMaxWeight = parseFloat(maxWeight.toFixed(3));
 
-    // Validation: Weight Cut <= Metal Balance (Absolute)
-    if (weightVal > roundedBalance) {
-      setErrorMessage(`Weight cut (${weightVal}) cannot exceed current balance (${roundedBalance})`);
+    if (weightVal > roundedMaxWeight) {
+      setErrorMessage(`Weight cut (${weightVal}g) cannot exceed available ${direction} weight (${roundedMaxWeight}g)`);
       setShowErrorAlert(true);
       return;
     }
 
-    // Sign Logic:
-    // If Balance > 0 (Merchant owes Customer), we reduce balance (positive weight).
-    // If Balance < 0 (Customer owes Merchant), we reduce debt (negative weight).
-    // The user enters positive weight in UI.
-    const signedWeight = Math.sign(currentBalance) * weightVal;
+    if (roundedMaxWeight === 0) {
+      setErrorMessage(`No ${direction} transactions found for ${metalType}`);
+      setShowErrorAlert(true);
+      return;
+    }
 
     setLoading(true);
     const success = await RateCutService.applyRateCut(
       selectedCustomer.id,
       metalType,
-      signedWeight,
+      weightVal,
       rateVal,
-      date.getTime()
+      date.getTime(),
+      direction
     );
 
     if (success) {
       setWeight('');
       setRate('');
       loadHistory(true);
+      loadAvailableWeights(); // Reload available weights immediately
       setShowSuccessAlert(true);
     } else {
       setErrorMessage('Failed to apply rate cut');
@@ -187,9 +217,10 @@ export const RateCutScreen: React.FC = () => {
     setShowDeleteConfirmAlert(false);
     setLoading(true);
     // @ts-ignore - metal_type is compatible but TS might complain due to strict union check if not updated everywhere
-    const success = await RateCutService.deleteLatestRateCut(deleteTarget.id, deleteTarget.customer_id, deleteTarget.metal_type);
+    const success = await RateCutService.deleteLatestRateCut(deleteTarget.id, deleteTarget.customer_id, deleteTarget.metal_type as any);
     if (success) {
       loadHistory(true);
+      loadAvailableWeights(); // Reload available weights immediately
     } else {
       setErrorMessage('Failed to delete rate cut');
       setShowErrorAlert(true);
@@ -208,36 +239,54 @@ export const RateCutScreen: React.FC = () => {
     const cutDate = new Date(item.cut_date);
     const formattedDate = `${cutDate.getDate().toString().padStart(2, '0')}/${(cutDate.getMonth() + 1).toString().padStart(2, '0')}/${cutDate.getFullYear()}`;
 
+    // Direction badge styles
+    const directionBadgeStyle = item.direction === 'sell' ? styles.badgeSell : styles.badgePurchase;
+    const directionBadgeTextStyle = item.direction === 'sell' ? styles.badgeTextSell : styles.badgeTextPurchase;
+    const directionLabel = item.direction === 'sell' ? 'Sell' : 'Buy';
+
     return (
-      <View style={styles.historyCard}>
-        <View style={styles.cardTop}>
-          <Text style={styles.hDate}>{formattedDate}</Text>
-          <View style={styles.cardTopRight}>
-            <View style={[styles.hBadge, badgeStyle]}>
-              <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.deleteIcon}
-              onPress={() => handleDelete(item)}
-            >
-              <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
-            </TouchableOpacity>
+    <View style={styles.historyCard}>
+      {/* Row 1: Date, Badges, Delete Icon */}
+      <View style={styles.cardTop}>
+        <Text style={styles.hDate}>{formattedDate}</Text>
+        <View style={styles.cardTopRight}>
+          <View style={[styles.hBadge, badgeStyle]}>
+            <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
           </View>
-        </View>
-        
-        <View style={styles.cardDetails}>
-          <View>
-            <Text style={styles.calcRow}>
-              Weight: <Text style={styles.calcVal}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
-            </Text>
-            <Text style={styles.calcRow}>
-              Rate: <Text style={styles.calcVal}>₹{formatIndianNumber(item.rate)}</Text>
-            </Text>
+          <View style={[styles.hBadge, directionBadgeStyle]}>
+            <Text style={[styles.hBadgeText, directionBadgeTextStyle]}>{directionLabel}</Text>
           </View>
-          <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(parseFloat(formatMoney((item.total_amount.toFixed(0))))))}</Text>
+          <TouchableOpacity 
+            style={styles.deleteIcon}
+            onPress={() => handleDelete(item)}
+          >
+            <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
+          </TouchableOpacity>
         </View>
       </View>
-    );
+      
+      {/* Row 2: Customer Name */}
+      <Text style={styles.hCustomerName}>{item.customer_name || 'Unknown'}</Text>
+      
+      {/* Row 3: Weight and Price */}
+      <View style={styles.cardRow3}>
+        <Text style={styles.cardDetailText}>
+          Weight: <Text style={styles.cardDetailValue}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
+        </Text>
+        <Text style={styles.cardDetailText}> - </Text>
+        <Text style={styles.cardDetailText}>
+          Price: <Text style={styles.cardDetailValue}>₹{formatIndianNumber(item.rate)}</Text>
+        </Text>
+      </View>
+      
+      {/* Row 4: Total */}
+      <View style={styles.cardRow3}>
+        <Text style={styles.cardDetailText}>
+          Total: <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(parseFloat(formatMoney((item.total_amount.toFixed(0))))))}</Text>
+        </Text>
+      </View>
+    </View>
+  );
   };
 
   const renderHeader = () => (
@@ -262,6 +311,48 @@ export const RateCutScreen: React.FC = () => {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Direction Selection - only show if there are available weights */}
+        {selectedCustomer && metalType && (availableWeights.sellWeight > 0 || availableWeights.purchaseWeight > 0) && (
+          <View style={styles.metalSegment}>
+            {availableWeights.sellWeight > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.segmentOpt,
+                  direction === 'sell' && styles.segmentOptActive
+                ]}
+                onPress={() => setDirection('sell')}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    direction === 'sell' && styles.segmentTextActive
+                  ]}
+                >
+                  Sell
+                </Text>
+              </TouchableOpacity>
+            )}
+            {availableWeights.purchaseWeight > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.segmentOpt,
+                  direction === 'purchase' && styles.segmentOptActive
+                ]}
+                onPress={() => setDirection('purchase')}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    direction === 'purchase' && styles.segmentTextActive
+                  ]}
+                >
+                  Buy
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Metal Segment */}
         {selectedCustomer && availableMetals.length > 0 ? (
@@ -288,6 +379,18 @@ export const RateCutScreen: React.FC = () => {
           <Text style={styles.noMetalText}>
             {selectedCustomer ? 'No metal balance available for rate cut' : 'Select a customer to see options'}
           </Text>
+        )}
+
+        {/* Available Weight Display */}
+        {selectedCustomer && (
+          <View style={styles.availableWeightContainer}>
+            <Text style={styles.availableWeightLabel}>
+              Available {direction === 'sell' ? 'Sell' : 'Buy'} Weight:
+            </Text>
+            <Text style={styles.availableWeightValue}>
+              {(direction === 'sell' ? availableWeights.sellWeight : availableWeights.purchaseWeight).toFixed(3)}g
+            </Text>
+          </View>
         )}
 
         {/* Inputs Row */}
@@ -368,32 +471,34 @@ export const RateCutScreen: React.FC = () => {
         </View>
       </View>
 
-      <View style={styles.content}>
-        {renderHeader()}
-        <Text style={styles.sectionTitle}>
-          {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
-        </Text>
-        <FlatList
-          data={history}
-          renderItem={renderHistoryItem}
-          keyExtractor={item => item.id}
-          onEndReached={() => loadHistory(false)}
-          onEndReachedThreshold={0.5}
-          style={styles.historyList}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          ListFooterComponent={
-            isFetchingHistory ? <ActivityIndicator style={{ paddingVertical: 20 }} color="#005AC1" /> : null
-          }
-          ListEmptyComponent={
-            !isFetchingHistory ? (
+      <FlatList
+        data={history}
+        renderItem={renderHistoryItem}
+        keyExtractor={item => item.id}
+        onEndReached={() => loadHistory(false)}
+        onEndReachedThreshold={0.5}
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        ListHeaderComponent={
+          <>
+            {renderHeader()}
+            <Text style={styles.sectionTitle}>
+              {selectedCustomer ? `Rate Cut History - ${selectedCustomer.name}` : 'All Rate Cut History'}
+            </Text>
+          </>
+        }
+        ListFooterComponent={
+          isFetchingHistory ? <ActivityIndicator style={{ paddingVertical: 20 }} color="#005AC1" /> : null
+        }
+        ListEmptyComponent={
+          !isFetchingHistory ? (
             <Text style={styles.emptyHistoryText}>
               {selectedCustomer ? `No rate cut history found for ${selectedCustomer.name}` : 'No rate cut history found'}
             </Text>
-            ) : null
-          }
-        />
-      </View>
+          ) : null
+        }
+      />
       
       <CustomerSelectionModal
         visible={showCustomerModal}
@@ -481,11 +586,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
-  // History Container
-  historyContainer: {
-    maxHeight: 800,
+    marginBottom: 15,
   },
   // Form Card
   formContainer: {
@@ -556,7 +657,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   segmentText: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: 'Outfit_600SemiBold',
     color: '#44474F', // --on-surface-variant
   },
@@ -641,21 +742,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  historyList: {
-    maxHeight: 800,
-  },
   historyCard: {
     backgroundColor: '#FFFFFF', // --surface
     borderRadius: 16, // --radius-m
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#E0E2E5', // --outline
+    borderColor: '#0b0b0cff', // --outline
   },
   cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 6,
   },
   cardTopRight: {
     flexDirection: 'row',
@@ -692,6 +789,20 @@ const styles = StyleSheet.create({
   badgeTextSilver: {
     color: '#263238', // --silver-text
   },
+  badgeSell: {
+    backgroundColor: '#FFEBEE', // light red
+    borderColor: 'rgba(211, 47, 47, 0.2)',
+  },
+  badgeTextSell: {
+    color: '#C62828', // dark red
+  },
+  badgePurchase: {
+    backgroundColor: '#E8F5E9', // light green
+    borderColor: 'rgba(56, 142, 60, 0.2)',
+  },
+  badgeTextPurchase: {
+    color: '#2E7D32', // dark green
+  },
   cardDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -708,7 +819,7 @@ const styles = StyleSheet.create({
     color: '#1B1B1F', // --on-surface
   },
   hTotal: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Outfit_700Bold',
     color: '#1B1B1F', // --on-surface
   },
@@ -725,5 +836,45 @@ const styles = StyleSheet.create({
     color: '#44474F',
     marginTop: 20,
     fontFamily: 'Outfit_400Regular',
+  },
+  availableWeightContainer: {
+    backgroundColor: '#F0F2F5',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  availableWeightLabel: {
+    fontSize: 14,
+    fontFamily: 'Outfit_500Medium',
+    color: '#44474F',
+  },
+  availableWeightValue: {
+    fontSize: 14,
+    fontFamily: 'Outfit_700Bold',
+    color: '#1B1B1F',
+  },
+  hCustomerName: {
+    fontSize: 16,
+    fontFamily: 'Outfit_700Bold',
+    color: '#1B1B1F',
+    marginBottom: 4,
+  },
+  cardRow3: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  cardDetailText: {
+    fontSize: 14,
+    fontFamily: 'Outfit_400Regular',
+    color: '#44474F',
+  },
+  cardDetailValue: {
+    fontSize: 14,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#1B1B1F',
   },
 });

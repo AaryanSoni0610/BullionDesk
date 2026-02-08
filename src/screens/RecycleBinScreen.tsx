@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  FlatList, 
+import {
+  View,
+  StyleSheet,
+  FlatList,
   BackHandler,
   TouchableOpacity,
   TextInput,
@@ -13,11 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { 
-  formatTransactionAmount, 
-  formatFullDate, 
-  formatPureGoldPrecise, 
-  formatIndianNumber, 
+import {
+  formatTransactionAmount,
+  formatFullDate,
+  formatPureGoldPrecise,
+  formatIndianNumber,
   customFormatPureSilver,
   formatCurrency,
   formatPureGold,
@@ -35,7 +35,7 @@ export const RecycleBinScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { navigateToSettings } = useAppContext();
-  
+
   // Alert state
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
@@ -158,7 +158,7 @@ export const RecycleBinScreen: React.FC = () => {
               const success = await TransactionService.deleteTransactionPermanently(transaction.id);
               if (success) successCount++;
             }
-            
+
             if (successCount > 0) {
               await loadTransactions(true);
               setAlertTitle('Success');
@@ -189,7 +189,7 @@ export const RecycleBinScreen: React.FC = () => {
     if (entry.type === 'money') {
       return 'Money';
     }
-    
+
     const typeMap: Record<string, string> = {
       'gold999': 'Gold 999',
       'gold995': 'Gold 995',
@@ -213,17 +213,17 @@ export const RecycleBinScreen: React.FC = () => {
         setIsLoading(true);
       }
       setError(null);
-      
+
       // Load deleted transactions only
       const allTransactions = await TransactionService.getDeletedTransactions();
-      
+
       // Sort by deleted_on in descending order (most recently deleted first)
       const sortedTransactions = allTransactions.sort((a, b) => {
         const dateA = new Date(a.deleted_on || 0).getTime();
         const dateB = new Date(b.deleted_on || 0).getTime();
         return dateA - dateB; // Descending order
       });
-      
+
       setTransactions(sortedTransactions);
       setFilteredTransactions(sortedTransactions);
     } catch (error) {
@@ -264,35 +264,35 @@ export const RecycleBinScreen: React.FC = () => {
     const isMetalOnly = entry.metalOnly;
     const isRaniRupa = ['rani', 'rupu'].includes(entry.itemType);
     const isGoldSilver = !isRaniRupa && entry.type !== 'money';
-    
+
     // Exception Check: Rani Sell + Gold Purchase -> Keep "Same as is"
     const hasRaniSell = transaction.entries.some(e => e.itemType === 'rani' && e.type === 'sell');
     const hasGoldPurchase = transaction.entries.some(e => e.itemType.includes('gold') && e.type === 'purchase');
     const isExceptionCase = hasRaniSell && hasGoldPurchase;
 
     if (isExceptionCase) {
-        let line1 = '';
-        if (isRaniRupa) {
-             const weight = entry.weight || 0;
-             const touch = entry.touch || 100;
-             const cut = entry.cut || 0;
-             const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-             const pureWeight = (weight * effectiveTouch) / 100;
-             const formattedPure = entry.itemType === 'rani' 
-                ? formatPureGoldPrecise(pureWeight) 
-                : formatPureSilver(pureWeight);
-             const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-             line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
-        } else if (isGoldSilver) {
-             const isGold = entry.itemType.includes('gold');
-             line1 = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
-        }
-        
-        let line2 = '';
-        if (!isMetalOnly && entry.price && entry.price > 0) {
-            line2 = formatCurrency(entry.price);
-        }
-        return { line1, line2 };
+      let line1 = '';
+      if (isRaniRupa) {
+        const weight = entry.weight || 0;
+        const touch = entry.touch || 100;
+        const cut = entry.cut || 0;
+        const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+        const pureWeight = (weight * effectiveTouch) / 100;
+        const formattedPure = entry.itemType === 'rani'
+          ? formatPureGoldPrecise(pureWeight)
+          : formatPureSilver(pureWeight);
+        const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+        line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+      } else if (isGoldSilver) {
+        const isGold = entry.itemType.includes('gold');
+        line1 = `${(entry.weight || 0).toFixed(isGold ? 3 : 1)}g`;
+      }
+
+      let line2 = '';
+      if (!isMetalOnly && entry.price && entry.price > 0) {
+        line2 = formatCurrency(entry.price);
+      }
+      return { line1, line2 };
     }
 
     // New Logic
@@ -300,49 +300,49 @@ export const RecycleBinScreen: React.FC = () => {
     let line2 = '';
 
     if (isRaniRupa) {
-         const weight = entry.weight || 0;
-         const touch = entry.touch || 100;
-         const cut = entry.cut || 0;
-         const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-         const pureWeight = (weight * effectiveTouch) / 100;
-         
-         // Pure Weight Formatting Logic
-         let formattedPure = 0;
-         if (entry.itemType === 'rani') {
-             if (entry.type === 'sell') formattedPure = formatPureGoldPrecise(pureWeight);
-             else formattedPure = formatPureGold(pureWeight); // Purchase -> Normal
-         } else {
-             formattedPure = formatPureSilver(pureWeight);
-         }
-         
-         const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
-         line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
-         
-         if (!isMetalOnly && entry.price && entry.price > 0) {
-             line2 = `${formatCurrency(entry.price)} : ${formatCurrency(entry.subtotal || 0)}`;
-         }
+      const weight = entry.weight || 0;
+      const touch = entry.touch || 100;
+      const cut = entry.cut || 0;
+      const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+      const pureWeight = (weight * effectiveTouch) / 100;
+
+      // Pure Weight Formatting Logic
+      let formattedPure = 0;
+      if (entry.itemType === 'rani') {
+        if (entry.type === 'sell') formattedPure = formatPureGoldPrecise(pureWeight);
+        else formattedPure = formatPureGold(pureWeight); // Purchase -> Normal
+      } else {
+        formattedPure = formatPureSilver(pureWeight);
+      }
+
+      const fixedDigits = entry.itemType === 'rani' ? 3 : 1;
+      line1 = `${weight.toFixed(fixedDigits)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(fixedDigits)}g`;
+
+      if (!isMetalOnly && entry.price && entry.price > 0) {
+        line2 = `${formatCurrency(entry.price)} : ${formatCurrency(entry.subtotal || 0)}`;
+      }
     } else if (isGoldSilver) {
-         const isGold = entry.itemType.includes('gold');
-         const weightStr = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
-         
-         if (!isMetalOnly && entry.price && entry.price > 0) {
-             line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
-             
-             // Subtotal Logic
-             const hasRaniRupaEntry = transaction.entries.some(e => ['rani', 'rupu'].includes(e.itemType));
-             if (!hasRaniRupaEntry) {
-                 // Normal Gold/Silver only
-                 line2 = `(${formatCurrency(entry.subtotal || 0)})`;
-             } else {
-                 // Mixed case -> No subtotal
-                 line2 = '';
-             }
-         } else {
-             line1 = weightStr;
-         }
+      const isGold = entry.itemType.includes('gold');
+      const weightStr = `${(entry.weight || 0).toFixed(isGold ? 3 : 1)}g`;
+
+      if (!isMetalOnly && entry.price && entry.price > 0) {
+        line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
+
+        // Subtotal Logic
+        const hasRaniRupaEntry = transaction.entries.some(e => ['rani', 'rupu'].includes(e.itemType));
+        if (!hasRaniRupaEntry) {
+          // Normal Gold/Silver only
+          line2 = `(${formatCurrency(entry.subtotal || 0)})`;
+        } else {
+          // Mixed case -> No subtotal
+          line2 = '';
+        }
+      } else {
+        line1 = weightStr;
+      }
     } else if (entry.type === 'money') {
-         // For money entries
-         line1 = formatCurrency(entry.amount || 0);
+      // For money entries
+      line1 = formatCurrency(entry.amount || 0);
     }
 
     return { line1, line2 };
@@ -350,15 +350,15 @@ export const RecycleBinScreen: React.FC = () => {
 
   const renderTransactionCard = ({ item: transaction }: { item: Transaction }) => {
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
-    
+
     // Preprocess entries
     const processedEntries = transaction.entries.map((entry, index) => {
       let displayName = getItemDisplayName(entry);
       if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-        const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e => 
+        const sameTypeEntries = transaction.entries.slice(0, index + 1).filter(e =>
           e.itemType === entry.itemType && e.type === entry.type
         );
-        const totalCount = transaction.entries.filter(e => 
+        const totalCount = transaction.entries.filter(e =>
           e.itemType === entry.itemType && e.type === entry.type
         ).length;
         if (totalCount > 1) {
@@ -367,7 +367,7 @@ export const RecycleBinScreen: React.FC = () => {
       }
       return { ...entry, displayName };
     });
-    
+
     let transactionBalanceLabel = '';
     let transactionBalanceColor = theme.colors.onSurfaceVariant;
 
@@ -411,14 +411,14 @@ export const RecycleBinScreen: React.FC = () => {
     } else {
       // Check if this is a money-only transaction (no entries)
       const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
-      
+
       if (isMoneyOnly) {
         const isBalance = transaction.amountPaid > 0;
         transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transaction.amountPaid))}`;
         transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
       } else {
         const transactionRemaining = transaction.amountPaid - transaction.total;
-        
+
         if (transactionRemaining === 0) {
           transactionBalanceLabel = 'Settled';
         } else {
@@ -433,29 +433,29 @@ export const RecycleBinScreen: React.FC = () => {
       <View style={styles.historyCard}>
         {/* Action Buttons and Delete Info */}
         <View style={styles.cardTopActions}>
-            {deletedOnInfo && (
-              <View style={[styles.warningPill, deletedOnInfo.isWarning ? styles.warningPillUrgent : styles.warningPillNormal]}>
-                <MaterialCommunityIcons name="clock-outline" size={16} color={deletedOnInfo.isWarning ? "#D32F2F" : "#F57F17"} />
-                <Text style={[styles.warningPillText, deletedOnInfo.isWarning ? styles.warningPillTextUrgent : styles.warningPillTextNormal]}>
-                  {deletedOnInfo.text}
-                </Text>
-              </View>
-            )}
-            <View style={styles.actionPill}>
-              <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnRestore]}
-                onPress={() => handleRestoreTransaction(transaction)}
-              >
-                <MaterialCommunityIcons name="restore" size={20} color={theme.colors.onPrimaryContainer} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnDelete]}
-                onPress={() => handleDeletePermanently(transaction)}
-              >
-                <MaterialCommunityIcons name="delete-forever" size={20} color={theme.colors.error} />
-              </TouchableOpacity>
+          {deletedOnInfo && (
+            <View style={[styles.warningPill, deletedOnInfo.isWarning ? styles.warningPillUrgent : styles.warningPillNormal]}>
+              <MaterialCommunityIcons name="clock-outline" size={16} color={deletedOnInfo.isWarning ? "#D32F2F" : "#F57F17"} />
+              <Text style={[styles.warningPillText, deletedOnInfo.isWarning ? styles.warningPillTextUrgent : styles.warningPillTextNormal]}>
+                {deletedOnInfo.text}
+              </Text>
             </View>
+          )}
+          <View style={styles.actionPill}>
+            <TouchableOpacity
+              style={[styles.iconBtn, styles.btnRestore]}
+              onPress={() => handleRestoreTransaction(transaction)}
+            >
+              <MaterialCommunityIcons name="restore" size={20} color={theme.colors.onPrimaryContainer} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.iconBtn, styles.btnDelete]}
+              onPress={() => handleDeletePermanently(transaction)}
+            >
+              <MaterialCommunityIcons name="delete-forever" size={20} color={theme.colors.error} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Card Header */}
@@ -470,7 +470,7 @@ export const RecycleBinScreen: React.FC = () => {
           </View>
           <View style={styles.amountBlock}>
             {!isMetalOnly && (
-              <Text 
+              <Text
                 style={[styles.mainAmount, { color: getAmountColor(transaction) }]}
               >
                 {formatTransactionAmount(transaction)}
@@ -481,92 +481,92 @@ export const RecycleBinScreen: React.FC = () => {
 
         {/* Receipt / Details Section */}
         <View style={styles.receiptSection}>
-            {processedEntries.map((entry, index) => (
-                <View key={index} style={styles.entryWrapper}>
-                  {(() => {
-                    const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
-                    const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
-                    const isSell = entry.type === 'sell' || isMoneyGive;
-                    const isPurchase = entry.type === 'purchase' || isMoneyReceive;
-                    const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
-                    const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
-                    const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;
-                    
-                    const { line1, line2 } = getEntryDisplayData(entry, transaction);
+          {processedEntries.map((entry, index) => (
+            <View key={index} style={styles.entryWrapper}>
+              {(() => {
+                const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
+                const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
+                const isSell = entry.type === 'sell' || isMoneyGive;
+                const isPurchase = entry.type === 'purchase' || isMoneyReceive;
+                const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
+                const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
+                const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;
 
-                    return (
-                      <>
-                        {/* Item Row */}
-                        <View style={styles.receiptRow}>
-                          <View style={styles.itemNameRow}>
-                            <View style={[styles.iconBox, iconStyle]}>
-                              <MaterialCommunityIcons name={iconName} size={14} color={iconColor} />
-                            </View>
-                            <Text style={styles.itemNameText}>
-                              {entry.displayName}
-                            </Text>
-                          </View>
-                    
-                          {/* Line 1: Weight / Details */}
-                          <Text style={styles.itemVal}>
-                              {line1}
-                          </Text>
+                const { line1, line2 } = getEntryDisplayData(entry, transaction);
+
+                return (
+                  <>
+                    {/* Item Row */}
+                    <View style={styles.receiptRow}>
+                      <View style={styles.itemNameRow}>
+                        <View style={[styles.iconBox, iconStyle]}>
+                          <MaterialCommunityIcons name={iconName} size={14} color={iconColor} />
                         </View>
+                        <Text style={styles.itemNameText}>
+                          {entry.displayName}
+                        </Text>
+                      </View>
 
-                        {/* Line 2: Price / Subtotal (if applicable) */}
-                        {line2 !== '' && (
-                           <View style={[styles.receiptRow, { marginTop: -4 }]}>
-                              <View /> 
-                              <Text style={[styles.itemVal, { fontSize: 13, opacity: 0.8 }]}>
-                                 {line2}
-                              </Text>
-                           </View>
-                        )}
-                      </>
-                    );
-                  })()}
-                </View>
-            ))}
+                      {/* Line 1: Weight / Details */}
+                      <Text style={styles.itemVal}>
+                        {line1}
+                      </Text>
+                    </View>
 
-            {/* Dividers & Totals */}
-            {!isMetalOnly && processedEntries.length > 0 && <View style={styles.divider} />}
-            
-            {/* Total Row or Money-Only Label */}
-            {!isMetalOnly && (
-              processedEntries.length === 0 ? (
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Money-Only</Text>
-                </View>
-              ) : (
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={[styles.totalAmount ]}>
-                    ₹{formatIndianNumber(Math.abs(transaction.total))}
-                  </Text>
-                </View>
-              )
-            )}
+                    {/* Line 2: Price / Subtotal (if applicable) */}
+                    {line2 !== '' && (
+                      <View style={[styles.receiptRow, { marginTop: -4 }]}>
+                        <View />
+                        <Text style={[styles.itemVal, { fontSize: 13, opacity: 0.8 }]}>
+                          {line2}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
+            </View>
+          ))}
 
-            {/* Divider */}
-            {!isMetalOnly && <View style={styles.divider} />}
+          {/* Dividers & Totals */}
+          {!isMetalOnly && processedEntries.length > 0 && <View style={styles.divider} />}
 
-            {/* Payment/Balance Row */}
-            {!isMetalOnly && (
-               <View style={[styles.receiptRow, styles.footerRow]}>
-                 <Text style={styles.footerLabel}>
-                   {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
-                 </Text>
-                 <Text style={[styles.footerAmount, { color: transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary }]}>
-                   {transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
-                 </Text>
-                 <View style={{ flex: 1 }} />
-                 <View>
-                   <Text style={[styles.balanceLabel, { color: transactionBalanceColor }]}>
-                     {transactionBalanceLabel}
-                   </Text>
-                 </View>
-               </View>
-            )}
+          {/* Total Row or Money-Only Label */}
+          {!isMetalOnly && (
+            processedEntries.length === 0 ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Money-Only</Text>
+              </View>
+            ) : (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={[styles.totalAmount]}>
+                  ₹{formatIndianNumber(Math.abs(transaction.total))}
+                </Text>
+              </View>
+            )
+          )}
+
+          {/* Divider */}
+          {!isMetalOnly && <View style={styles.divider} />}
+
+          {/* Payment/Balance Row */}
+          {!isMetalOnly && (
+            <View style={[styles.receiptRow, styles.footerRow]}>
+              <Text style={styles.footerLabel}>
+                {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
+              </Text>
+              <Text style={[styles.footerAmount, { color: transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary }]}>
+                {transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
+              </Text>
+              <View style={{ flex: 1 }} />
+              <View>
+                <Text style={[styles.balanceLabel, { color: transactionBalanceColor }]}>
+                  {transactionBalanceLabel}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Note Section */}
@@ -605,15 +605,15 @@ export const RecycleBinScreen: React.FC = () => {
               onChangeText={setSearchQuery}
             />
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.deleteAllButton}
             onPress={handleDeleteAllPermanently}
             disabled={filteredTransactions.length === 0}
           >
-            <MaterialCommunityIcons 
-              name="delete-sweep" 
-              size={28} 
-              color={filteredTransactions.length === 0 ? theme.colors.onSurfaceVariant : theme.colors.error} 
+            <MaterialCommunityIcons
+              name="delete-sweep"
+              size={28}
+              color={filteredTransactions.length === 0 ? theme.colors.onSurfaceVariant : theme.colors.error}
             />
           </TouchableOpacity>
         </View>
@@ -745,11 +745,11 @@ const styles = StyleSheet.create({
   },
   // Transaction Card
   historyCard: {
-    backgroundColor: theme.colors.surfaceContainerHigh || '#F0F2F5', 
+    backgroundColor: theme.colors.surfaceContainerHigh || '#F0F2F5',
     borderRadius: 24,
     padding: 16,
     marginBottom: 16,
-    elevation: 3, 
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,

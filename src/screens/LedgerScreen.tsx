@@ -892,7 +892,7 @@ export const LedgerScreen: React.FC = () => {
             <thead>
               <tr>
                 <th>Customer</th>
-                <th>Purchase</th>
+                <th>Buy</th>
                 <th>Sell</th>
               </tr>
             </thead>
@@ -953,7 +953,7 @@ export const LedgerScreen: React.FC = () => {
             <thead>
               <tr>
                 <th>Customer</th>
-                <th>Purchase</th>
+                <th>Buy</th>
                 <th>Sell</th>
               </tr>
             </thead>
@@ -1750,7 +1750,7 @@ export const LedgerScreen: React.FC = () => {
         {/* Transaction Table Header */}
         <View style={styles.ledgerHeader}>
           <Text style={styles.colHeader}>
-            {selectedInventory === 'money' ? 'Received' : 'Purchase'}
+            {selectedInventory === 'money' ? 'Received' : 'Buy'}
           </Text>
           <Text style={styles.colHeader}>
             {selectedInventory === 'money' ? 'Given' : 'Sell'}

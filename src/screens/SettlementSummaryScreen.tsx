@@ -333,23 +333,12 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
         return Math.abs(adjustedNetAmount - (receivedExclLast - givenExclLast));
       })();
 
-  // Safety feature: Lock entry modifications for transactions created on previous dates
-  const isOldTransaction = transactionCreatedAt
-    ? (() => {
-        const today = new Date();
-        const transactionDate = new Date(transactionCreatedAt);
-        return today.getFullYear() !== transactionDate.getFullYear() ||
-               today.getMonth() !== transactionDate.getMonth() ||
-               today.getDate() !== transactionDate.getDate();
-      })()
-    : false;
+
   
   // Check if this is a money-only transaction (no entries)
   const isMoneyOnlyTransaction = entries.length === 0;
   
-  // Determine if entry modifications are locked
-  // Allow editing metal-only transactions at any time
-  const areEntriesLocked = isEditing && isOldTransaction && !isMetalOnly;
+
 
   // Show FAB for non-money-only transactions or when editing money-only transactions
   const shouldShowFAB = !isMoneyOnlyTransaction || isEditing;
@@ -475,20 +464,22 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   }
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => {
-    // Check if this specific entry should be locked
-    // For old transactions: lock all entries
-    // For editing current transactions: lock only rani/rupu entries that are not metal-only
-    const isEntryLocked = areEntriesLocked || (isEditing && (entry.itemType === 'rani' || entry.itemType === 'rupu') && !entry.metalOnly);
+
 
     return (
     <View key={entry.id} style={styles.entryCard}>
       <View style={styles.entryHeader}>
         <Text style={styles.entryTitle}>
-          {entry.type === 'money' ? 'Money' : `${entry.type === 'sell' ? 'Sell' : 'Purchase'} - ${getItemDisplayName(entry)}`}
+          {entry.type === 'money' ? 'Money' : `${entry.type === 'sell' ? 'Sell' : 'Buy'} - ${getItemDisplayName(entry)}`}
         </Text>
-        <TouchableOpacity onPress={() => onEditEntry(entry.id)} disabled={isEntryLocked}>
-           <MaterialCommunityIcons name="pencil" size={20} color={isEntryLocked ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity onPress={() => onEditEntry(entry.id)}>
+             <MaterialCommunityIcons name="pencil" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onDeleteEntry(entry.id)} disabled={!!editingTransactionId}>
+             <MaterialCommunityIcons name="delete" size={20} color={!!editingTransactionId ? theme.colors.onSurfaceDisabled : theme.colors.error} style={{ marginLeft: 16 }} />
+          </TouchableOpacity>
+        </View>
       </View>
       <Text style={styles.entryDetails}>{formatEntryDetails(entry)}</Text>
       <Text style={styles.entryTotal}>Total: {entry.subtotal >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(entry.subtotal))}</Text>

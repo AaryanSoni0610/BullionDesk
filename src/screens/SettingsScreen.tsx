@@ -50,10 +50,10 @@ export const SettingsScreen: React.FC = () => {
     useCallback(() => {
       // Configure BackupService to use CustomAlert
       BackupService.setAlertFunction(showAlert);
-      
+
       const checkSettings = async () => {
         try {
-          
+
           const notifEnabled = await NotificationService.isNotificationsEnabled();
           setNotificationsEnabled(notifEnabled);
 
@@ -68,7 +68,7 @@ export const SettingsScreen: React.FC = () => {
             RaniRupaStockService.getStockByType('rani'),
             RaniRupaStockService.getStockByType('rupu')
           ]);
-          
+
           setCustomers(customersData);
           setBaseInventory(inventoryData);
           setOpeningBalanceEffects(effectsData);
@@ -76,10 +76,10 @@ export const SettingsScreen: React.FC = () => {
           // Calculate Rani/Rupu totals
           const raniPure = raniStock.reduce((sum, item) => sum + ((item.weight * item.touch) / 100), 0);
           const rupuPure = rupuStock.reduce((sum, item) => sum + customFormatPureSilver(item.weight, item.touch), 0);
-          
+
           setRaniTotal(raniPure);
           setRupuTotal(rupuPure);
-          
+
           // Don't auto-initialize directories here
           // They will be created on demand when needed
         } catch (error) {
@@ -263,7 +263,7 @@ export const SettingsScreen: React.FC = () => {
 
       // Save key
       await SecureStore.setItemAsync('backup_encryption_key', key);
-      
+
       // Wait for user to acknowledge the success alert
       await new Promise<void>((resolve) => {
         showAlert(
@@ -272,7 +272,7 @@ export const SettingsScreen: React.FC = () => {
           [{ text: 'OK', onPress: () => resolve() }]
         );
       });
-      
+
       return true;
     } catch (error) {
       console.error('🔑 Error setting up encryption key:', error);
@@ -344,10 +344,10 @@ export const SettingsScreen: React.FC = () => {
     if (value) {
       // Enabling auto backup - check encryption key first
       try {
-        
+
         // Setup encryption key first - will prompt if not set
         const hasKey = await setupEncryptionKey();
-        
+
         if (!hasKey) {
           // Don't change the toggle state - user cancelled
           return; // User cancelled key setup
@@ -355,10 +355,10 @@ export const SettingsScreen: React.FC = () => {
 
         // Key is set, now enable auto backup
         await BackupService.setAutoBackupEnabled(true);
-        
+
         // Verify it was actually saved
         const isEnabled = await BackupService.isAutoBackupEnabled();
-        
+
         if (isEnabled) {
           setAutoBackupEnabled(true);
           showAlert(
@@ -439,7 +439,7 @@ export const SettingsScreen: React.FC = () => {
   const performExport = async () => {
     try {
       const result = await BackupService.exportDataToUserStorage();
-      
+
       if (result.success && result.fileUri && result.fileName) {
         // Show success alert with share option
         showAlert(
@@ -525,7 +525,7 @@ export const SettingsScreen: React.FC = () => {
                 ]);
                 setCustomers(customersData);
                 setBaseInventory(inventoryData);
-                
+
                 showAlert(
                   'Success',
                   'All data has been cleared successfully.',
@@ -554,28 +554,28 @@ export const SettingsScreen: React.FC = () => {
     );
   };
 
-  const SettingsItem = ({ 
-    icon, 
-    title, 
-    description, 
-    onPress, 
-    rightElement, 
+  const SettingsItem = ({
+    icon,
+    title,
+    description,
+    onPress,
+    rightElement,
     isDestructive = false,
     isLast = false,
     disabled = false
   }: any) => (
     <>
-      <TouchableOpacity 
-        style={[styles.itemContainer, isDestructive && styles.destructiveItem]} 
+      <TouchableOpacity
+        style={[styles.itemContainer, isDestructive && styles.destructiveItem]}
         onPress={onPress}
         activeOpacity={0.7}
         disabled={disabled || !onPress}
       >
         <View style={styles.iconBox}>
-          <Icon 
-            name={icon} 
-            size={24} 
-            color={isDestructive ? theme.colors.error : '#44474F'} 
+          <Icon
+            name={icon}
+            size={24}
+            color={isDestructive ? theme.colors.error : '#44474F'}
           />
         </View>
         <View style={styles.itemContent}>
@@ -669,14 +669,14 @@ export const SettingsScreen: React.FC = () => {
               onPress={() => {
                 if (baseInventory) {
                   let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(raniTotal)}g\nRupu: ${formatPureSilver(rupuTotal)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
-                  
+
                   showAlert(
                     'Base Inventory',
                     message,
                     [
                       { text: 'OK' },
-                      { 
-                        text: 'Set Custom Values', 
+                      {
+                        text: 'Set Custom Values',
                         onPress: () => {
                           setTimeout(() => {
                             handleSetBaseInventoryWithWarning();
@@ -744,7 +744,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.6.5"
+              description="v7.8.2"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -760,15 +760,15 @@ export const SettingsScreen: React.FC = () => {
           keyDialogMode === 'setup'
             ? 'Set Backup Encryption Key'
             : keyDialogMode === 'confirm'
-            ? 'Confirm Encryption Key'
-            : 'Enter Encryption Key'
+              ? 'Confirm Encryption Key'
+              : 'Enter Encryption Key'
         }
         message={
           keyDialogMode === 'setup'
             ? "Choose a strong key to encrypt your backups. You'll need this to restore data.\n\nMinimum 8 characters required."
             : keyDialogMode === 'confirm'
-            ? 'Please re-enter your encryption key to confirm:'
-            : 'Enter your encryption key to decrypt the backup:'
+              ? 'Please re-enter your encryption key to confirm:'
+              : 'Enter your encryption key to decrypt the backup:'
         }
         onSubmit={handleKeyDialogSubmit}
         onCancel={handleKeyDialogCancel}
@@ -781,15 +781,15 @@ export const SettingsScreen: React.FC = () => {
           inventoryDialogStep === 'gold'
             ? 'Set Gold Inventory'
             : inventoryDialogStep === 'silver'
-            ? 'Set Silver Inventory'
-            : 'Set Money Inventory'
+              ? 'Set Silver Inventory'
+              : 'Set Money Inventory'
         }
         message={
           inventoryDialogStep === 'gold'
             ? 'Enter the base (opening) gold inventory levels:'
             : inventoryDialogStep === 'silver'
-            ? 'Enter the base (opening) silver inventory levels:'
-            : 'Enter the base (opening) money balance:'
+              ? 'Enter the base (opening) silver inventory levels:'
+              : 'Enter the base (opening) money balance:'
         }
         inputs={inventoryInputs}
         onSubmit={handleInventoryDialogSubmit}
@@ -886,7 +886,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v7.6.5
+        message={`BullionDesk v7.8.2
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 
@@ -906,17 +906,19 @@ If you find this app helpful and would like to support its continued development
 Contact: For feedback, suggestions, or support, please reach out to the developer.`}
         maxHeight={400}
         buttons={[
-          { text: 'Donate', onPress: () => {
-            setShowAbout(false);
-            // Show donation information
-            setTimeout(() => {
-              showAlert(
-                'Support BullionDesk',
-                'Thank you for considering a donation!\n\nYou can support the development through:\n\n• UPI: imaaryan3563-2@okhdfcbank\n• UPI Mobile number: 7043414570\n\nEvery contribution, no matter the size, is greatly appreciated and helps keep the app free and improved!',
-                [{ text: 'Close' }]
-              );
-            }, 300);
-          }},
+          {
+            text: 'Donate', onPress: () => {
+              setShowAbout(false);
+              // Show donation information
+              setTimeout(() => {
+                showAlert(
+                  'Support BullionDesk',
+                  'Thank you for considering a donation!\n\nYou can support the development through:\n\n• UPI: imaaryan3563-2@okhdfcbank\n• UPI Mobile number: 7043414570\n\nEvery contribution, no matter the size, is greatly appreciated and helps keep the app free and improved!',
+                  [{ text: 'Close' }]
+                );
+              }, 300);
+            }
+          },
           { text: 'OK', onPress: () => setShowAbout(false) }
         ]}
         onDismiss={() => setShowAbout(false)}
@@ -971,7 +973,7 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     backgroundColor: '#FFFFFF', // --surface
-    borderRadius: 32, // --card-radius
+    borderRadius: 28, // --card-radius
     overflow: 'hidden',
     elevation: 1, // box-shadow approximation
   },

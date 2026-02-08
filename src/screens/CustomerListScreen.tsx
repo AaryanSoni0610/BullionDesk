@@ -114,7 +114,7 @@ export const CustomerListScreen: React.FC = () => {
           customersWithTxns.add(check.id);
         }
       });
-      
+
       setCustomersWithTransactions(customersWithTxns);
       setAreTransactionsChecked(true);
     } catch (error) {
@@ -232,23 +232,23 @@ export const CustomerListScreen: React.FC = () => {
     try {
       // Load all customers for PDF export (not just searched ones)
       const allCustomers = await CustomerService.getAllCustomers();
-      
+
       // Prepare data for PDF - export all customers with debt/balance
-      const pdfData: Array<{customer: string, goldBalance: string, goldDebt: string, silverBalance: string, silverDebt: string, moneyBalance: string, moneyDebt: string}> = [];
-      
+      const pdfData: Array<{ customer: string, goldBalance: string, goldDebt: string, silverBalance: string, silverDebt: string, moneyBalance: string, moneyDebt: string }> = [];
+
       // Filter customers to only include those with debt/balance
       const customersWithBalances = allCustomers.filter(customer => {
         // Check money balance
         if (customer.balance !== 0) return true;
-        
+
         // Check metal balances
         const metalBalances = customer.metalBalances || {};
         return Object.values(metalBalances).some(balance => balance && Math.abs(balance) > 0.001);
       });
-      
+
       customersWithBalances.forEach(customer => {
         const metalBalances = customer.metalBalances || {};
-        
+
         // Create gold column content
         const goldBalances: string[] = [];
         const goldDebts: string[] = [];
@@ -256,7 +256,7 @@ export const CustomerListScreen: React.FC = () => {
         const silverDebts: string[] = [];
         let moneyBalance = '';
         let moneyDebt = '';
-        
+
         // Process metal balances/debts
         Object.entries(metalBalances).forEach(([type, balance]) => {
           if (balance && Math.abs(balance) > 0.001) {
@@ -270,10 +270,10 @@ export const CustomerListScreen: React.FC = () => {
               silver96: 'Silver 96',
               rupu: 'Rupu',
             }[type] || type;
-            
+
             const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance)).toFixed(1);
             const balanceText = `${displayName} ${formattedBalance}g`;
-            
+
             if (isGold) {
               if (balance > 0) {
                 goldBalances.push(balanceText);
@@ -289,7 +289,7 @@ export const CustomerListScreen: React.FC = () => {
             }
           }
         });
-        
+
         // Process money balance/debt (INVERTED SIGN)
         if (customer.balance > 0) {
           // Positive = merchant owes customer (balance)
@@ -298,7 +298,7 @@ export const CustomerListScreen: React.FC = () => {
           // Negative = customer owes merchant (debt)
           moneyDebt = `₹${formatIndianNumber(Math.abs(customer.balance))}`;
         }
-        
+
         pdfData.push({
           customer: customer.name,
           goldBalance: goldBalances.join('<br>'),
@@ -309,7 +309,7 @@ export const CustomerListScreen: React.FC = () => {
           moneyDebt: moneyDebt
         });
       });
-      
+
       // Generate HTML for PDF
       const htmlContent = `
         <!DOCTYPE html>
@@ -405,19 +405,19 @@ export const CustomerListScreen: React.FC = () => {
         </body>
         </html>
       `;
-      
+
       // Generate PDF
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
         base64: false,
       });
-      
+
       const date = new Date();
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
       const dateStr = `${day}-${month}-${year}`; // e.g., "08-10-2025"
-      
+
       // Save the PDF to file system
       const newUri = `${FileSystem.documentDirectory}BullionDesk_CustomerBalance_${dateStr}.pdf`;
       await FileSystem.moveAsync({
@@ -435,7 +435,7 @@ export const CustomerListScreen: React.FC = () => {
       } else {
         setError('Sharing is not available on this device');
       }
-      
+
       setTimeout(async () => {
         try {
           await FileSystem.deleteAsync(newUri, { idempotent: true });
@@ -443,7 +443,7 @@ export const CustomerListScreen: React.FC = () => {
           console.error('Could not clean up pdf file:', error);
         }
       }, 120000); // 2 minute delay
-      
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       setError('Failed to generate PDF');
@@ -519,28 +519,28 @@ export const CustomerListScreen: React.FC = () => {
             </thead>
             <tbody>
               ${ledgerData.map(entry => {
-                const date = formatFullDate(entry.date);
-                
-                // Handle rate cut entries
-                if (entry.isRateCut && entry.rateCutData) {
-                  const { metalType, weight, rate } = entry.rateCutData;
-                  const isGold = metalType.includes('gold');
-                  const formattedWeight = isGold ? Math.abs(weight).toFixed(3) : Math.abs(weight).toFixed(1);
-                  const metalName = metalType === 'gold999' ? 'Gold 999' :
-                                    metalType === 'gold995' ? 'Gold 995' :
-                                    metalType === 'silver' ? 'Silver' : metalType;
-                  let metalValue = (parseFloat(formattedWeight) * rate);
-                  if (metalType === 'silver') {
-                    metalValue /= 1000; // Silver rate is per kg
-                  } else {
-                    metalValue /= 10; // Gold rate is per 10g
-                  }
-                  
-                  // Determine color based on balance vs debt
-                  const isBalanceReduction = weight > 0;
-                  const textColor = isBalanceReduction ? '#2e7d32' : '#d32f2f';
-                  
-                  return `
+        const date = formatFullDate(entry.date);
+
+        // Handle rate cut entries
+        if (entry.isRateCut && entry.rateCutData) {
+          const { metalType, weight, rate } = entry.rateCutData;
+          const isGold = metalType.includes('gold');
+          const formattedWeight = isGold ? Math.abs(weight).toFixed(3) : Math.abs(weight).toFixed(1);
+          const metalName = metalType === 'gold999' ? 'Gold 999' :
+            metalType === 'gold995' ? 'Gold 995' :
+              metalType === 'silver' ? 'Silver' : metalType;
+          let metalValue = (parseFloat(formattedWeight) * rate);
+          if (metalType === 'silver') {
+            metalValue /= 1000; // Silver rate is per kg
+          } else {
+            metalValue /= 10; // Gold rate is per 10g
+          }
+
+          // Determine color based on balance vs debt
+          const isBalanceReduction = weight > 0;
+          const textColor = isBalanceReduction ? '#2e7d32' : '#d32f2f';
+
+          return `
                     <tr>
                       <td>${date}</td>
                       <td colspan="2" style="text-align: center; color: ${textColor};">
@@ -548,72 +548,72 @@ export const CustomerListScreen: React.FC = () => {
                       </td>
                     </tr>
                   `;
-                }
-                
-                let moneyHtml = '';
-                if (entry.receivedAmount > 0) {
-                    moneyHtml = `<span style="color: #2e7d32;">↙️ ₹${formatIndianNumber(entry.receivedAmount)}</span>`; // Green
-                } else if (entry.givenAmount > 0) {
-                    moneyHtml = `<span style="color: #1976d2;">↗️ ₹${formatIndianNumber(entry.givenAmount)}</span>`; // Blue
-                }
+        }
 
-                const metalEntries = entry.entries.filter(e => e.type !== 'money');
-                const sellEntries = metalEntries.filter(e => e.type === 'sell');
-                const purchaseEntries = metalEntries.filter(e => e.type === 'purchase');
-                const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
+        let moneyHtml = '';
+        if (entry.receivedAmount > 0) {
+          moneyHtml = `<span style="color: #2e7d32;">↙️ ₹${formatIndianNumber(entry.receivedAmount)}</span>`; // Green
+        } else if (entry.givenAmount > 0) {
+          moneyHtml = `<span style="color: #1976d2;">↗️ ₹${formatIndianNumber(entry.givenAmount)}</span>`; // Blue
+        }
 
-                const bullionDetails = sortedMetalEntries.map(e => {
-                    const isSell = e.type === 'sell';
-                    const arrow = isSell ? '↗️' : '↙️';
-                    let details = '';
-                    
-                    if (e.itemType === 'rani' || e.itemType === 'rupu') {
-                      const weight = e.weight || 0;
-                      const touch = e.touch || 100;
-                      const cut = e.cut || 0;
-                      let effectiveTouch = touch;
-                      let pureWeight = weight*touch/100;
-                      const decimalPlaces = e.itemType === 'rani' ? 3 : 1;
+        const metalEntries = entry.entries.filter(e => e.type !== 'money');
+        const sellEntries = metalEntries.filter(e => e.type === 'sell');
+        const purchaseEntries = metalEntries.filter(e => e.type === 'purchase');
+        const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
 
-                      let weightStr = '';
-                      if (e.itemType === 'rani') {
-                          if (isSell) {
-                            effectiveTouch = Math.max(0, touch - cut);
-                            pureWeight = (weight * effectiveTouch) / 1000;
-                            weightStr = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
-                          } else {
-                              weightStr = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
-                          }
-                      } else {
-                          if (isSell) {
-                            weightStr = `${customFormatPureSilver(weight, touch).toFixed(1)}g`;
-                          } else {
-                            weightStr = `${formatPureSilver(pureWeight)}g`;
-                          }
-                      }
-                      
-                      const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
-                      details = `${typeName} ${weight.toFixed(decimalPlaces)}g - ${effectiveTouch.toFixed(2)}% - ${weightStr}`;
-                    } else {
-                      const isGold = e.itemType.includes('gold');
-                      const weight = e.weight || 0;
-                      const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
-                      const typeName = e.itemType === 'gold999' ? 'Gold 999' :
-                                      e.itemType === 'gold995' ? 'Gold 995' :
-                                      e.itemType === 'silver' ? 'Silver' : e.itemType;
-                      details = `${typeName} ${formattedWeight}g`;
-                    }
-                    return `<div>${arrow} ${details}</div>`;
-                }).join('');
+        const bullionDetails = sortedMetalEntries.map(e => {
+          const isSell = e.type === 'sell';
+          const arrow = isSell ? '↗️' : '↙️';
+          let details = '';
 
-                return `
+          if (e.itemType === 'rani' || e.itemType === 'rupu') {
+            const weight = e.weight || 0;
+            const touch = e.touch || 100;
+            const cut = e.cut || 0;
+            let effectiveTouch = touch;
+            let pureWeight = weight * touch / 100;
+            const decimalPlaces = e.itemType === 'rani' ? 3 : 1;
+
+            let weightStr = '';
+            if (e.itemType === 'rani') {
+              if (isSell) {
+                effectiveTouch = Math.max(0, touch - cut);
+                pureWeight = (weight * effectiveTouch) / 1000;
+                weightStr = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
+              } else {
+                weightStr = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
+              }
+            } else {
+              if (isSell) {
+                weightStr = `${customFormatPureSilver(weight, touch).toFixed(1)}g`;
+              } else {
+                weightStr = `${formatPureSilver(pureWeight)}g`;
+              }
+            }
+
+            const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
+            details = `${typeName} ${weight.toFixed(decimalPlaces)}g - ${effectiveTouch.toFixed(2)}% - ${weightStr}`;
+          } else {
+            const isGold = e.itemType.includes('gold');
+            const weight = e.weight || 0;
+            const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
+            const typeName = e.itemType === 'gold999' ? 'Gold 999' :
+              e.itemType === 'gold995' ? 'Gold 995' :
+                e.itemType === 'silver' ? 'Silver' : e.itemType;
+            details = `${typeName} ${formattedWeight}g`;
+          }
+          return `<div>${arrow} ${details}</div>`;
+        }).join('');
+
+        return `
                   <tr>
                     <td>${date}</td>
                     <td>${moneyHtml}</td>
                     <td>${bullionDetails}</td>
                   </tr>
                 `;
-              }).join('')}
+      }).join('')}
             </tbody>
           </table>
         </body>
@@ -667,7 +667,7 @@ export const CustomerListScreen: React.FC = () => {
 
   const fetchCustomerLedger = async (customerId: string): Promise<CustomerLedgerItem[]> => {
     const now = Date.now();
-    
+
     try {
       const [ledgerEntries, customerTransactions, rateCuts] = await Promise.all([
         LedgerService.getLedgerEntriesByCustomerId(customerId),
@@ -684,7 +684,7 @@ export const CustomerListScreen: React.FC = () => {
         // This ensures entries created at the same time (same minute) are grouped together
         const formattedDate = formatFullDate(entry.date);
         const key = `${entry.transactionId}_${formattedDate}`;
-        
+
         if (!groupedItems.has(key)) {
           groupedItems.set(key, {
             id: key,
@@ -706,24 +706,24 @@ export const CustomerListScreen: React.FC = () => {
             group.givenAmount += entry.amount || 0;
           }
         } else {
-            // It's a metal entry. 
-            // If this group corresponds to the transaction date, we can populate entries from the transaction.
-            const transaction = transactionMap.get(entry.transactionId);
-            if (transaction && transaction.date === entry.date) {
-                // Only populate once
-                if (group.entries.length === 0) {
-                    group.entries = transaction.entries.filter(e => e.itemType !== 'money');
-                }
-            } else {
-                // Fallback if dates don't match exactly or transaction missing
-                group.entries.push({
-                    type: entry.type,
-                    itemType: entry.itemType,
-                    weight: entry.weight,
-                    touch: entry.touch,
-                    pureWeight: (entry.weight || 0) * (entry.touch || 0) / 100
-                });
+          // It's a metal entry. 
+          // If this group corresponds to the transaction date, we can populate entries from the transaction.
+          const transaction = transactionMap.get(entry.transactionId);
+          if (transaction && transaction.date === entry.date) {
+            // Only populate once
+            if (group.entries.length === 0) {
+              group.entries = transaction.entries.filter(e => e.itemType !== 'money');
             }
+          } else {
+            // Fallback if dates don't match exactly or transaction missing
+            group.entries.push({
+              type: entry.type,
+              itemType: entry.itemType,
+              weight: entry.weight,
+              touch: entry.touch,
+              pureWeight: (entry.weight || 0) * (entry.touch || 0) / 100
+            });
+          }
         }
       });
 
@@ -789,7 +789,7 @@ export const CustomerListScreen: React.FC = () => {
     try {
       // Delete the customer
       const success = await CustomerService.deleteCustomer(customerToDelete.id);
-      
+
       if (success) {
         // Remove from local state
         setCustomers(prev => prev.filter(c => c.id !== customerToDelete.id));
@@ -829,30 +829,30 @@ export const CustomerListScreen: React.FC = () => {
 
   const renderLedgerEntry = (entry: CustomerLedgerItem) => {
     const date = formatFullDate(entry.date);
-    
+
     // Handle rate cut entries
     if (entry.isRateCut && entry.rateCutData) {
       const { metalType, weight, rate } = entry.rateCutData;
       const isGold = metalType.includes('gold');
       const formattedWeight = isGold ? Math.abs(weight).toFixed(3) : Math.abs(weight).toFixed(1);
       const metalName = metalType === 'gold999' ? 'Gold 999' :
-                        metalType === 'gold995' ? 'Gold 995' :
-                        metalType === 'silver' ? 'Silver' : metalType;
+        metalType === 'gold995' ? 'Gold 995' :
+          metalType === 'silver' ? 'Silver' : metalType;
       let metalValue = (parseFloat(formattedWeight) * rate);
       if (metalType === 'silver') {
         metalValue /= 1000; // Silver rate is per kg
       } else {
         metalValue /= 10; // Gold rate is per 10g
       }
-      
+
       // Determine color based on balance vs debt
       // Positive weight = balance reduction (green), Negative weight = debt reduction (red)
       const isBalanceReduction = weight > 0;
       const textColor = isBalanceReduction ? '#146C2E' : '#BA1A1A';
-      
+
       return (
         <View style={styles.txnRow}>
-          <View style={styles.colDate}> 
+          <View style={styles.colDate}>
             <Text style={styles.dateText}>{date}</Text>
           </View>
           <View style={styles.rateCutSpan}>
@@ -864,20 +864,20 @@ export const CustomerListScreen: React.FC = () => {
         </View>
       );
     }
-    
+
     const receivedAmount = entry.receivedAmount;
     const givenAmount = entry.givenAmount;
 
     // Money Column Logic
     let moneyContent = <Text style={styles.dashText}>-</Text>;
     let hasMoney = false;
-    
+
     if (receivedAmount > 0) {
       hasMoney = true;
       moneyContent = (
         <View style={styles.moneyCellContent}>
           <View style={[styles.arrowIcon, { backgroundColor: '#E8F5E9' }]}>
-             <MaterialCommunityIcons name="arrow-bottom-left" size={16} color="#146C2E" />
+            <MaterialCommunityIcons name="arrow-bottom-left" size={16} color="#146C2E" />
           </View>
           <Text style={[styles.moneyText, { color: '#146C2E' }]}>
             ₹{formatIndianNumber(receivedAmount)}
@@ -889,7 +889,7 @@ export const CustomerListScreen: React.FC = () => {
       moneyContent = (
         <View style={styles.moneyCellContent}>
           <View style={[styles.arrowIcon, { backgroundColor: '#E3F2FD' }]}>
-             <MaterialCommunityIcons name="arrow-top-right" size={16} color="#005AC1" />
+            <MaterialCommunityIcons name="arrow-top-right" size={16} color="#005AC1" />
           </View>
           <Text style={[styles.moneyText, { color: '#005AC1' }]}>
             ₹{formatIndianNumber(givenAmount)}
@@ -900,98 +900,98 @@ export const CustomerListScreen: React.FC = () => {
 
     // Bullion Column Logic
     const bullionEntries: React.ReactNode[] = [];
-    
+
     // Filter and sort entries: Sell first, then Purchase
     // Note: entry.entries already excludes money entries based on fetchCustomerLedger logic
     const sellEntries = entry.entries.filter(e => e.type === 'sell');
     const purchaseEntries = entry.entries.filter(e => e.type === 'purchase');
-    
+
     const sortedMetalEntries = [...sellEntries, ...purchaseEntries];
 
     if (sortedMetalEntries.length === 0) {
-        if (!hasMoney && entry.note) {
-            bullionEntries.push(
-                <Text key="note" style={[styles.bullionText, { fontStyle: 'italic', color: '#44474F', textAlign: 'center' }]}>
-                    {entry.note}
-                </Text>
-            );
-        } else {
-            bullionEntries.push(<Text key="empty" style={styles.dashText}>-</Text>);
-        }
+      if (!hasMoney && entry.note) {
+        bullionEntries.push(
+          <Text key="note" style={[styles.bullionText, { fontStyle: 'italic', color: '#44474F', textAlign: 'center' }]}>
+            {entry.note}
+          </Text>
+        );
+      } else {
+        bullionEntries.push(<Text key="empty" style={styles.dashText}>-</Text>);
+      }
     } else {
-        sortedMetalEntries.forEach((e, index) => {
-            const isSell = e.type === 'sell';
-            // Sell (Outgoing Goods) -> arrow-top-right (Blue)
-            // Purchase (Incoming Goods) -> arrow-bottom-left (Green)
-            const arrowIconName = isSell ? 'arrow-top-right' : 'arrow-bottom-left';
-            const arrowBg = isSell ? '#E3F2FD' : '#E8F5E9';
-            const arrowColor = isSell ? '#005AC1' : '#146C2E';
-            
-            let details = '';
-            
-            if (e.itemType === 'rani' || e.itemType === 'rupu') {
-                 const weight = e.weight || 0;
-                 const touch = e.touch || 100;
-                 const cut = e.cut || 0;
-                 const effectiveTouch = e.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-                 const pureWeight = (weight * effectiveTouch) / 100;
-                 
-                 if (e.itemType === 'rani') {
-                     if (isSell) {
-                         // 3 decimal precision
-                         details = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
-                     } else {
-                         // Purchase: 2 decimal precision (X.YZ0)
-                         details = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
-                     }
-                 } else {
-                     // Rupu
-                     if (isSell) {
-                        // Use precision from raniRupuBulkSell screen (usually 1 decimal for silver)
-                        details = `${formatPureSilver(pureWeight).toFixed(1)}g`;
-                     } else {
-                        // Purchase: same as purchase entry in entry screen (integer)
-                        details = `${formatPureSilver(pureWeight)}g`;
-                     }
-                 }
-                 
-                 const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
-                 details = `${details}\n${typeName}`;
+      sortedMetalEntries.forEach((e, index) => {
+        const isSell = e.type === 'sell';
+        // Sell (Outgoing Goods) -> arrow-top-right (Blue)
+        // Purchase (Incoming Goods) -> arrow-bottom-left (Green)
+        const arrowIconName = isSell ? 'arrow-top-right' : 'arrow-bottom-left';
+        const arrowBg = isSell ? '#E3F2FD' : '#E8F5E9';
+        const arrowColor = isSell ? '#005AC1' : '#146C2E';
 
+        let details = '';
+
+        if (e.itemType === 'rani' || e.itemType === 'rupu') {
+          const weight = e.weight || 0;
+          const touch = e.touch || 100;
+          const cut = e.cut || 0;
+          const effectiveTouch = e.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+          const pureWeight = (weight * effectiveTouch) / 100;
+
+          if (e.itemType === 'rani') {
+            if (isSell) {
+              // 3 decimal precision
+              details = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
             } else {
-                 // Gold/Silver
-                 const isGold = e.itemType.includes('gold');
-                 const weight = e.weight || 0;
-                 const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
-                 
-                 const typeName = e.itemType === 'gold999' ? 'Gold 999' :
-                                  e.itemType === 'gold995' ? 'Gold 995' :
-                                  e.itemType === 'silver' ? 'Silver' : e.itemType;
-                 
-                 details = `${formattedWeight}g\n${typeName}`;
+              // Purchase: 2 decimal precision (X.YZ0)
+              details = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
             }
-            
-            bullionEntries.push(
-                <View key={index} style={styles.bullionRow}>
-                    <View style={[styles.arrowIcon, { backgroundColor: arrowBg }]}>
-                        <MaterialCommunityIcons name={arrowIconName} size={16} color={arrowColor} />
-                    </View>
-                    <Text style={styles.bullionText}>{details}</Text>
-                </View>
-            );
-        });
+          } else {
+            // Rupu
+            if (isSell) {
+              // Use precision from raniRupuBulkSell screen (usually 1 decimal for silver)
+              details = `${formatPureSilver(pureWeight).toFixed(1)}g`;
+            } else {
+              // Purchase: same as purchase entry in entry screen (integer)
+              details = `${formatPureSilver(pureWeight)}g`;
+            }
+          }
+
+          const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
+          details = `${details}\n${typeName}`;
+
+        } else {
+          // Gold/Silver
+          const isGold = e.itemType.includes('gold');
+          const weight = e.weight || 0;
+          const formattedWeight = isGold ? weight.toFixed(3) : weight.toFixed(1);
+
+          const typeName = e.itemType === 'gold999' ? 'Gold 999' :
+            e.itemType === 'gold995' ? 'Gold 995' :
+              e.itemType === 'silver' ? 'Silver' : e.itemType;
+
+          details = `${formattedWeight}g\n${typeName}`;
+        }
+
+        bullionEntries.push(
+          <View key={index} style={styles.bullionRow}>
+            <View style={[styles.arrowIcon, { backgroundColor: arrowBg }]}>
+              <MaterialCommunityIcons name={arrowIconName} size={16} color={arrowColor} />
+            </View>
+            <Text style={styles.bullionText}>{details}</Text>
+          </View>
+        );
+      });
     }
 
     return (
       <View style={styles.txnRow}>
-        <View style={styles.colDate}> 
+        <View style={styles.colDate}>
           <Text style={styles.dateText}>{date}</Text>
         </View>
         <View style={styles.colMoney}>
           {moneyContent}
         </View>
         <View style={styles.colBullion}>
-            {bullionEntries}
+          {bullionEntries}
         </View>
       </View>
     );
@@ -1003,87 +1003,87 @@ export const CustomerListScreen: React.FC = () => {
 
     // Badge Logic
     const badges: React.ReactNode[] = [];
-    
+
     // Money Balance
     if (item.balance > 0) {
-        badges.push(
-            <View key="money-bal" style={[styles.badge, styles.badgeGreen]}>
-                <Text style={styles.badgeTextGreen}>Bal: ₹{formatIndianNumber(item.balance)}</Text>
-            </View>
-        );
+      badges.push(
+        <View key="money-bal" style={[styles.badge, styles.badgeGreen]}>
+          <Text style={styles.badgeTextGreen}>Bal: ₹{formatIndianNumber(item.balance)}</Text>
+        </View>
+      );
     } else if (item.balance < 0) {
-        badges.push(
-            <View key="money-debt" style={[styles.badge, styles.badgeRed]}>
-                <Text style={styles.badgeTextRed}>Debt: ₹{formatIndianNumber(Math.abs(item.balance))}</Text>
-            </View>
-        );
+      badges.push(
+        <View key="money-debt" style={[styles.badge, styles.badgeRed]}>
+          <Text style={styles.badgeTextRed}>Debt: ₹{formatIndianNumber(Math.abs(item.balance))}</Text>
+        </View>
+      );
     }
 
     // Metal Balances
     if (item.metalBalances) {
-        Object.entries(item.metalBalances).forEach(([type, balance]) => {
-            if (balance && Math.abs(balance) > 0.001) {
-                const isGold = type.includes('gold') || type === 'rani';
-                const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
-                
-                const typeName = type === 'gold999' ? 'Gold999' :
-                                 type === 'gold995' ? 'Gold995' :
-                                 type === 'rani' ? 'Rani' :
-                                 type === 'silver' ? 'Silver' :
-                                 type === 'rupu' ? 'Rupu' : type;
-                
-                const label = `${typeName} ${formattedBalance}g`;
-                
-                if (balance < 0) {
-                    // Debt
-                    badges.push(
-                        <View key={`metal-${type}`} style={[styles.badge, styles.badgeRed]}>
-                            <Text style={styles.badgeTextRed}>Debt: {label}</Text>
-                        </View>
-                    );
-                } else {
-                    // Balance (Credit)
-                    badges.push(
-                        <View key={`metal-${type}`} style={[styles.badge, styles.badgeMetal]}>
-                            <Text style={styles.badgeTextMetal}>Bal: {label}</Text>
-                        </View>
-                    );
-                }
-            }
-        });
+      Object.entries(item.metalBalances).forEach(([type, balance]) => {
+        if (balance && Math.abs(balance) > 0.001) {
+          const isGold = type.includes('gold') || type === 'rani';
+          const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
+
+          const typeName = type === 'gold999' ? 'Gold999' :
+            type === 'gold995' ? 'Gold995' :
+              type === 'rani' ? 'Rani' :
+                type === 'silver' ? 'Silver' :
+                  type === 'rupu' ? 'Rupu' : type;
+
+          const label = `${typeName} ${formattedBalance}g`;
+
+          if (balance < 0) {
+            // Debt
+            badges.push(
+              <View key={`metal-${type}`} style={[styles.badge, styles.badgeRed]}>
+                <Text style={styles.badgeTextRed}>Debt: {label}</Text>
+              </View>
+            );
+          } else {
+            // Balance (Credit)
+            badges.push(
+              <View key={`metal-${type}`} style={[styles.badge, styles.badgeMetal]}>
+                <Text style={styles.badgeTextMetal}>Bal: {label}</Text>
+              </View>
+            );
+          }
+        }
+      });
     }
 
     return (
       <View style={styles.customerItemContainer}>
-        <TouchableOpacity 
-            style={styles.customerMain} 
-            onPress={() => toggleCardExpansion(item.id)}
-            activeOpacity={0.7}
+        <TouchableOpacity
+          style={styles.customerMain}
+          onPress={() => toggleCardExpansion(item.id)}
+          activeOpacity={0.7}
         >
-            <View style={styles.avatarContainer}>
-                <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+          <View style={styles.avatarContainer}>
+            <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+          </View>
+
+          <View style={styles.infoContainer}>
+            <Text style={styles.customerName}>{item.name}</Text>
+            <View style={styles.statusRow}>
+              {badges}
             </View>
-            
-            <View style={styles.infoContainer}>
-                <Text style={styles.customerName}>{item.name}</Text>
-                <View style={styles.statusRow}>
-                    {badges}
-                </View>
-            </View>
-            
-            <View style={styles.actionsContainer}>
-                {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
-                    <TouchableOpacity onPress={() => handleDeleteCustomer(item)} style={styles.actionIconBtn}>
-                        <MaterialCommunityIcons name="delete-outline" size={22} color="#BA1A1A" />
-                    </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => exportCustomerTransactionHistoryToPDF(item)} style={styles.actionIconBtn}>
-                    <MaterialCommunityIcons name="export-variant" size={20} color="#44474F" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => toggleCardExpansion(item.id)} style={styles.actionIconBtn}>
-                    <MaterialCommunityIcons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#44474F" />
-                </TouchableOpacity>
-            </View>
+          </View>
+
+          <View style={styles.actionsContainer}>
+            {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
+              <TouchableOpacity onPress={() => handleDeleteCustomer(item)} style={styles.actionIconBtn}>
+                <MaterialCommunityIcons name="delete-outline" size={22} color="#BA1A1A" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => exportCustomerTransactionHistoryToPDF(item)} style={styles.actionIconBtn}>
+              <MaterialCommunityIcons name="export-variant" size={20} color="#44474F" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => toggleCardExpansion(item.id)} style={styles.actionIconBtn}>
+              <MaterialCommunityIcons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#44474F" />
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
 
         {isExpanded && (
@@ -1094,15 +1094,15 @@ export const CustomerListScreen: React.FC = () => {
                 <Text style={[styles.th, styles.colMoney]}>Money</Text>
                 <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
               </View>
-              
+
               {ledgerData.length === 0 ? (
-                  <Text style={styles.noLedgerData}>No transactions found</Text>
+                <Text style={styles.noLedgerData}>No transactions found</Text>
               ) : (
-                  ledgerData.map((entry, index) => (
-                      <React.Fragment key={index}>
-                          {renderLedgerEntry(entry)}
-                      </React.Fragment>
-                  ))
+                ledgerData.map((entry, index) => (
+                  <React.Fragment key={index}>
+                    {renderLedgerEntry(entry)}
+                  </React.Fragment>
+                ))
               )}
             </ScrollView>
           </View>
@@ -1115,51 +1115,51 @@ export const CustomerListScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-            <View style={styles.headerLeft}>
-                <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
-                    <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
-                </TouchableOpacity>
-                <Text style={styles.screenTitle}>Customers</Text>
-            </View>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backButton} onPress={navigateToSettings}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B1B1F" />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Customers</Text>
         </View>
+      </View>
 
-        {/* Toolbar Island (Search + Share) */}
-        <View style={styles.toolbarIsland}>
-            <View style={styles.searchContainer}>
-                <MaterialCommunityIcons name="magnify" size={24} color="#44474F" style={styles.searchIcon} />
-                <TextInput
-                    placeholder="Search customers..."
-                    placeholderTextColor="#44474F"
-                    onChangeText={setSearchQuery}
-                    value={searchQuery}
-                    style={styles.searchInput}
-                />
-            </View>
-            <TouchableOpacity style={styles.exportBtn} onPress={exportCustomersToPDF}>
-                <MaterialCommunityIcons name="export-variant" size={24} color="#1B1B1F" />
-            </TouchableOpacity>
+      {/* Toolbar Island (Search + Share) */}
+      <View style={styles.toolbarIsland}>
+        <View style={styles.searchContainer}>
+          <MaterialCommunityIcons name="magnify" size={24} color="#44474F" style={styles.searchIcon} />
+          <TextInput
+            placeholder="Search customers..."
+            placeholderTextColor="#44474F"
+            onChangeText={setSearchQuery}
+            value={searchQuery}
+            style={styles.searchInput}
+          />
         </View>
+        <TouchableOpacity style={styles.exportBtn} onPress={exportCustomersToPDF}>
+          <MaterialCommunityIcons name="export-variant" size={24} color="#1B1B1F" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.listContainer}>
-            {error ? (
-                <Text style={styles.errorText}>{error}</Text>
-            ) : (
-                <FlatList
-                    data={displayedCustomers}
-                    renderItem={renderCustomerItem}
-                    keyExtractor={item => item.id}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 40 }}
-                    ListEmptyComponent={
-                        <Text style={styles.noResults}>
-                            {searchQuery.trim() !== '' ? 'No customers found' : 'No customers yet'}
-                        </Text>
-                    }
-                />
-            )}
-        </View>
+      <View style={styles.listContainer}>
+        {error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : (
+          <FlatList
+            data={displayedCustomers}
+            renderItem={renderCustomerItem}
+            keyExtractor={item => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            ListEmptyComponent={
+              <Text style={styles.noResults}>
+                {searchQuery.trim() !== '' ? 'No customers found' : 'No customers yet'}
+              </Text>
+            }
+          />
+        )}
+      </View>
 
       {/* Delete Confirmation Alert */}
       <CustomAlert
@@ -1385,7 +1385,7 @@ const styles = StyleSheet.create({
   colDate: { width: '30%' },
   colMoney: { width: '30%', textAlign: 'center' },
   colBullion: { flex: 1, textAlign: 'center' },
-  
+
   txnRow: {
     flexDirection: 'row',
     paddingVertical: 10,

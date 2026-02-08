@@ -299,7 +299,7 @@ export const HomeScreen = ({ navigation }: any) => {
                   <View style={styles.itemDetails}>
                     <View style={styles.itemHeaderRow}>
                       <Text style={styles.itemName}>
-                        {isSell ? 'Sell' : isPurchase ? 'Purchase' : 'Money'}: {getItemDisplayName(entry)}
+                        {isSell ? 'Sell' : isPurchase ? 'Buy' : 'Money'}: {getItemDisplayName(entry)}
                       </Text>
                       {/* Price on the right (WITH SIGNS) */}
                       {(entry.subtotal || 0) !== 0 && (

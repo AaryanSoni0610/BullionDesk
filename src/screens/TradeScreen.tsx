@@ -10,20 +10,35 @@ import {
   Text,
 } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withTiming, 
+  Easing 
+} from 'react-native-reanimated';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
-import { Trade } from '../types';
+import { Trade, Customer, ItemType } from '../types';
 import { theme } from '../theme';
 import { TradeService } from '../services/trade.service';
+import { CustomerService } from '../services/customer.service';
 import { formatFullDate, formatIndianNumber } from '../utils/formatting';
 import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
+import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
+import { AnimatedAccordion } from '../components/AnimatedAccordion';
 
 export const TradeScreen: React.FC = () => {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [tradeInputs, setTradeInputs] = useState<any[]>([]);
   const [collectedTradeData, setCollectedTradeData] = useState<any>({});
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
 
-  const { showAlert, navigateToSettings, tradeDialogVisible, setTradeDialogVisible } = useAppContext();
+  const { showAlert, navigateToSettings, tradeDialogVisible, setTradeDialogVisible, 
+    currentCustomer, setCurrentCustomer, customerModalVisible, 
+    isCustomerSelectionForTrade, setIsCustomerSelectionForTrade,
+    setLastEntryState, navigateToEntry, setTradeIdToDeleteOnSave } = useAppContext();
 
   // Load trades on focus
   useFocusEffect(
@@ -31,6 +46,52 @@ export const TradeScreen: React.FC = () => {
       loadTrades();
     }, [])
   );
+
+  // Handle customer selection completion from global modal
+  React.useEffect(() => {
+    if (!customerModalVisible && isCustomerSelectionForTrade && currentCustomer) {
+      const selectedCust = currentCustomer;
+      
+      // Clear both immediately to prevent re-triggering
+      setCurrentCustomer(null);
+      setIsCustomerSelectionForTrade(false);
+      
+      // Add small delay to allow customer modal to fully close before opening trade dialog
+      setTimeout(() => {
+        setSelectedCustomer(selectedCust);
+        
+        // Add customer info to collected data
+        const updatedData = {
+          customerId: selectedCust.id,
+          customerName: selectedCust.name,
+        };
+        setCollectedTradeData(updatedData);
+        
+        // Now show trade type and item type selection
+        const inputs = [
+          {
+            key: 'tradeType',
+            label: 'Trade Type',
+            value: '',
+            type: 'radio',
+            options: [
+              { label: 'Sell', value: 'sell' },
+              { label: 'Buy', value: 'purchase' }
+            ]
+          },
+          {
+            key: 'itemType',
+            label: 'Item Type',
+            value: '',
+            type: 'radio',
+            options: [] // Will be populated based on tradeType
+          }
+        ];
+        setTradeInputs(inputs);
+        setTradeDialogVisible(true);
+      }, 300); // 300ms delay
+    }
+  }, [customerModalVisible, isCustomerSelectionForTrade, currentCustomer]);
 
   const loadTrades = async () => {
     try {
@@ -45,6 +106,27 @@ export const TradeScreen: React.FC = () => {
       showAlert('Error', 'Failed to load trades');
     }
   };
+
+  // Group trades by customer
+  const groupedTrades = trades.reduce((acc, trade) => {
+    const customerId = trade.customerId || 'unknown';
+    if (!acc[customerId]) {
+      acc[customerId] = {
+        customerId,
+        customerName: trade.customerName,
+        trades: [],
+      };
+    }
+    acc[customerId].trades.push(trade);
+    return acc;
+  }, {} as Record<string, { customerId: string; customerName: string; trades: Trade[] }>);
+
+  const customerGroups = Object.values(groupedTrades).sort((a, b) => {
+    // Sort by most recent trade date
+    const aLatest = Math.max(...a.trades.map(t => new Date(t.date).getTime()));
+    const bLatest = Math.max(...b.trades.map(t => new Date(t.date).getTime()));
+    return bLatest - aLatest;
+  });
 
   const handleDeleteTrade = async (trade: Trade) => {
     showAlert(
@@ -78,18 +160,10 @@ export const TradeScreen: React.FC = () => {
     const updatedData = { ...collectedTradeData, ...values };
     setCollectedTradeData(updatedData);
 
-    if (!updatedData.customerName) {
-      // Move to customer name input
-      setTradeInputs([
-        {
-          key: 'customerName',
-          label: 'Customer Name',
-          value: '',
-          placeholder: 'Enter customer name',
-          type: 'text',
-          keyboardType: 'default'
-        }
-      ]);
+    if (!updatedData.customerId) {
+      // Show customer selection modal instead of text input
+      setTradeDialogVisible(false);
+      setShowCustomerModal(true);
     } else if (!updatedData.tradeType || !updatedData.itemType) {
       // Move to trade type and item type selection (both in same dialog)
       const tradeType = updatedData.tradeType || 'sell';
@@ -115,7 +189,7 @@ export const TradeScreen: React.FC = () => {
           type: 'radio',
           options: [
             { label: 'Sell', value: 'sell' },
-            { label: 'Purchase', value: 'purchase' }
+            { label: 'Buy', value: 'purchase' }
           ]
         },
         {
@@ -159,6 +233,7 @@ export const TradeScreen: React.FC = () => {
       setTradeInputs([]); // Reset inputs after saving
 
       const tradeData = {
+        customerId: updatedData.customerId,
         customerName: updatedData.customerName,
         type: updatedData.tradeType,
         itemType: updatedData.itemType,
@@ -171,6 +246,7 @@ export const TradeScreen: React.FC = () => {
         if (success) {
           showAlert('Success', 'Trade added successfully', undefined, 'check-circle');
           loadTrades(); // Refresh the list
+          setSelectedCustomer(null); // Clear selected customer
         } else {
           showAlert('Error', 'Failed to add trade');
         }
@@ -178,10 +254,81 @@ export const TradeScreen: React.FC = () => {
     }
   };
 
+  const handleCustomerSelect = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setShowCustomerModal(false);
+    
+    // Add customer info to collected data
+    const updatedData = {
+      customerId: customer.id,
+      customerName: customer.name,
+    };
+    setCollectedTradeData(updatedData);
+    
+    // Now show trade type and item type selection
+    setTradeInputs([
+      {
+        key: 'tradeType',
+        label: 'Trade Type',
+        value: '',
+        type: 'radio',
+        options: [
+          { label: 'Sell', value: 'sell' },
+          { label: 'Buy', value: 'purchase' }
+        ]
+      },
+      {
+        key: 'itemType',
+        label: 'Item Type',
+        value: '',
+        type: 'radio',
+        options: [] // Will be populated based on tradeType
+      }
+    ]);
+    setTradeDialogVisible(true);
+  };
+
+  const handleCustomerCreate = async (customerName: string) => {
+    const newCustomer = {
+      id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: customerName,
+      balance: 0,
+      metalBalances: { gold999: 0, gold995: 0, silver: 0 },
+    };
+    
+    await CustomerService.saveCustomer(newCustomer);
+    handleCustomerSelect(newCustomer);
+  };
+
+  const handleAddTrade = async (trade: Trade) => {
+    // Get the customer from the trade
+    const customer = await CustomerService.getCustomerById(trade.customerId || '');
+    
+    if (!customer) {
+      showAlert('Error', 'Customer not found');
+      return;
+    }
+    
+    // Set last entry state to pre-fill the entry screen
+    setLastEntryState({
+      transactionType: trade.type,
+      itemType: trade.itemType as ItemType,
+      weight: trade.weight,
+      price: trade.price,
+    });
+    
+    // Set the trade ID to be deleted upon successful save
+    setTradeIdToDeleteOnSave(trade.id);
+    
+    // Navigate to entry screen with the customer
+    navigateToEntry(customer);
+  };
+
   const handleTradeDialogCancel = () => {
     setTradeDialogVisible(false);
     setCollectedTradeData({});
     setTradeInputs([]); // Reset inputs on cancel
+    setSelectedCustomer(null); // Clear selected customer
   };
 
   const handleRadioChange = (key: string, value: string) => {
@@ -245,7 +392,6 @@ export const TradeScreen: React.FC = () => {
           <View style={styles.userBlock}>
             <Text style={[styles.dateLabel, labelColor]}>{formatFullDate(item.date)}</Text>
             <View style={styles.nameRow}>
-              <Text style={[styles.userName, textColor, { marginRight: 8 }]}>{item.customerName}</Text>
               <View style={[styles.typeBadge]}>
                 <Text style={[styles.typeText, { color: accentColor }]}>{item.type}</Text>
               </View>
@@ -260,7 +406,7 @@ export const TradeScreen: React.FC = () => {
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.addButton} 
-              onPress={() => {}}
+              onPress={() => handleAddTrade(item)}
             >
               <Text style={styles.addButtonText}>+ Add</Text>
             </TouchableOpacity>
@@ -301,6 +447,68 @@ export const TradeScreen: React.FC = () => {
     </View>
   );
 
+  // Customer Group Header Component
+  const renderCustomerGroup = ({ item }: { item: { customerId: string; customerName: string; trades: Trade[] } }) => {
+    const isExpanded = expandedCustomerId === item.customerId;
+    const tradeCount = item.trades.length;
+    
+    // Calculate total weight by metal type
+    const totals = item.trades.reduce((acc, trade) => {
+      const key = trade.itemType;
+      if (!acc[key]) acc[key] = 0;
+      acc[key] += trade.weight;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return (
+      <View style={styles.customerGroupContainer}>
+        <TouchableOpacity
+          style={styles.customerGroupHeader}
+          onPress={() => setExpandedCustomerId(isExpanded ? null : item.customerId)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.customerGroupLeft}>
+            <View style={styles.customerAvatar}>
+              <Text style={styles.customerAvatarText}>
+                {item.customerName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.customerGroupInfo}>
+              <Text style={styles.customerGroupName}>{item.customerName}</Text>
+              <Text style={styles.customerGroupMeta}>
+                {tradeCount} trade{tradeCount !== 1 ? 's' : ''}
+                {Object.entries(totals).length > 0 && (
+                  <Text style={styles.customerGroupMetaSecondary}>
+                    {' • '}
+                    {Object.entries(totals).map(([type, weight], idx) => (
+                      <Text key={type}>
+                        {idx > 0 && ', '}
+                        {formatItemType(type)}: {type.includes('gold') ? weight.toFixed(3) : weight.toFixed(1)}g
+                      </Text>
+                    ))}
+                  </Text>
+                )}
+              </Text>
+            </View>
+          </View>
+          <Animated.View style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}>
+            <Icon name="chevron-down" size={24} color={theme.colors.onSurfaceVariant} />
+          </Animated.View>
+        </TouchableOpacity>
+        
+        <AnimatedAccordion isExpanded={isExpanded}>
+          <View style={styles.tradesContainer}>
+            {item.trades.map((trade, index) => (
+              <View key={trade.id} style={{ marginBottom: index < item.trades.length - 1 ? 12 : 0 }}>
+                {renderTradeItem({ item: trade })}
+              </View>
+            ))}
+          </View>
+        </AnimatedAccordion>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -317,29 +525,30 @@ export const TradeScreen: React.FC = () => {
           <EmptyState />
         ) : (
           <FlatList
-            data={trades}
-            renderItem={renderTradeItem}
-            keyExtractor={item => item.id}
+            data={customerGroups}
+            renderItem={renderCustomerGroup}
+            keyExtractor={item => item.customerId}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
         )}
       </View>
 
+      {/* Customer Selection Modal */}
+      <CustomerSelectionModal
+        visible={showCustomerModal}
+        onDismiss={() => setShowCustomerModal(false)}
+        onSelectCustomer={handleCustomerSelect}
+        onCreateCustomer={handleCustomerCreate}
+        allowCreateCustomer={true}
+      />
+
       {/* Trade Input Dialog */}
       {tradeDialogVisible && (
         <InventoryInputDialog
           visible={tradeDialogVisible}
-          title={
-            !collectedTradeData.customerName ? 'Add Trade - Customer' :
-            (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Add Trade - Details' :
-            'Add Trade - Amount'
-          }
-          message={
-            !collectedTradeData.customerName ? 'Enter the customer name:' :
-            (!collectedTradeData.tradeType || !collectedTradeData.itemType) ? 'Select trade type and item:' :
-            'Enter weight and price:'
-          }
+          title='Add Trade Details'
+          message=''
           inputs={tradeInputs}
           onSubmit={handleTradeDialogSubmit}
           onCancel={handleTradeDialogCancel}
@@ -396,12 +605,11 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 100,
+    paddingBottom: 80,
   },
   tradeCard: {
     borderRadius: 32,
     padding: 24,
-    marginBottom: 16,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -532,5 +740,67 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
     color: theme.colors.onSurfaceVariant,
     fontFamily: 'Outfit_400Regular',
+  },
+  // Customer Group Styles
+  customerGroupContainer: {
+    marginBottom: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  customerGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline + '20',
+    borderTopColor: theme.colors.outline + '20',
+    borderTopWidth: 1,
+  },
+  customerGroupLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  customerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  customerAvatarText: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 18,
+    color: theme.colors.onPrimary,
+  },
+  customerGroupInfo: {
+    flex: 1,
+  },
+  customerGroupName: {
+    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 16,
+    color: theme.colors.onSurface,
+    marginBottom: 2,
+  },
+  customerGroupMeta: {
+    fontFamily: 'Outfit_400Regular',
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+  },
+  customerGroupMetaSecondary: {
+    opacity: 0.7,
+  },
+  tradesContainer: {
+    backgroundColor: theme.colors.surface,
+    padding: 12,
   },
 });

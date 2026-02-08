@@ -75,13 +75,15 @@ export class DatabaseService {
         -- Trades Table
         CREATE TABLE IF NOT EXISTS trades (
           id TEXT PRIMARY KEY NOT NULL,
+          customer_id TEXT,
           customerName TEXT NOT NULL,
           type TEXT NOT NULL CHECK(type IN ('sell', 'purchase')),
           itemType TEXT NOT NULL CHECK(itemType IN ('gold999', 'gold995', 'silver', 'rani', 'rupu')),
           price REAL NOT NULL,
           weight REAL NOT NULL,
           date DATETIME NOT NULL,
-          createdAt DATETIME NOT NULL
+          createdAt DATETIME NOT NULL,
+          FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
         );
 
         -- Ledger Entries Table (Flattened)
@@ -123,6 +125,7 @@ export class DatabaseService {
           total_amount REAL NOT NULL,
           cut_date INTEGER NOT NULL,
           created_at DATETIME NOT NULL,
+          direction TEXT DEFAULT 'sell' CHECK(direction IN ('sell', 'purchase')),
           FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
         );
 
@@ -202,6 +205,20 @@ export class DatabaseService {
       }
       try {
         await db.execAsync('ALTER TABLE customer_balances ADD COLUMN last_silver_lock_date INTEGER DEFAULT 0;');
+      } catch (e) {
+        // Column likely already exists, ignore error
+      }
+
+      // Add direction column to rate_cut_history table if it doesn't exist
+      try {
+        await db.execAsync('ALTER TABLE rate_cut_history ADD COLUMN direction TEXT DEFAULT \'sell\' CHECK(direction IN (\'sell\', \'purchase\'));');
+      } catch (e) {
+        // Column likely already exists, ignore error
+      }
+
+      // Add customer_id column to trades table if it doesn't exist
+      try {
+        await db.execAsync('ALTER TABLE trades ADD COLUMN customer_id TEXT;');
       } catch (e) {
         // Column likely already exists, ignore error
       }

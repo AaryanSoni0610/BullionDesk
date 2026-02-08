@@ -188,28 +188,32 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
         animationType="fade"
         onRequestClose={handleCancel}
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.overlay}
-        >
-          <Surface style={styles.dialog}>
-            
-            {/* Same Line Header */}
-            <View style={styles.headerContainer}>
-                <View style={styles.iconBadge}>
-                   <MaterialCommunityIcons name="pencil-box-outline" size={24} color={theme.colors.primary} />
+            <KeyboardAvoidingView 
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={styles.overlay}
+            >
+              <Surface style={styles.dialog}>
+                
+                {/* Same Line Header */}
+                <View style={styles.headerContainer}>
+                    <View style={styles.iconBadge}>
+                       <MaterialCommunityIcons name="pencil-box-outline" size={24} color={theme.colors.primary} />
+                    </View>
+                    <Text variant="titleLarge" style={styles.title}>
+                      {title}
+                    </Text>
                 </View>
-                <Text variant="titleLarge" style={styles.title}>
-                  {title}
+                
+                <Text variant="bodyMedium" style={styles.message}>
+                  {message}
                 </Text>
-            </View>
-            
-            <Text variant="bodyMedium" style={styles.message}>
-              {message}
-            </Text>
 
-            <ScrollView style={styles.inputsScroll} showsVerticalScrollIndicator={false}>
-              {inputs.map((input) => {
+                <ScrollView 
+                  style={styles.inputsScroll} 
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {inputs.map((input) => {
                 if (input.type === 'radio' && input.options) {
                   return (
                     <View key={input.key} style={styles.inputContainer}>
@@ -220,9 +224,9 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                         onValueChange={(value) => handleRadioChange(input.key, value)}
                         value={values[input.key] || ''}
                       >
-                        <View style={styles.radioGroupHorizontal}>
+                        <View style={styles.radioGrid}>
                           {input.options.map((option) => (
-                            <View key={option.value} style={styles.radioOptionHorizontal}>
+                            <View key={option.value} style={styles.radioGridItem}>
                               <RadioButton value={option.value} color={theme.colors.primary} />
                               <Text style={styles.radioText}>{option.label}</Text>
                             </View>
@@ -394,7 +398,7 @@ const styles = StyleSheet.create({
   },
   inputsScroll: {
     marginBottom: 16,
-    flexGrow: 0, // IMPORTANT: Prevents ScrollView from taking 0 height if items are few
+    flexGrow: 1, // Changed to 1 to ensure it takes available space
   },
   inputContainer: {
     marginBottom: 12,
@@ -416,10 +420,33 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_500Medium',
     marginBottom: 8,
   },
+  // Grid layout for radio buttons (2-column table structure)
+  radioGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    backgroundColor: 'rgba(225, 226, 236, 0.5)',
+    borderRadius: 12,
+    padding: 8,
+  },
+  radioGridItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '48%', // 2 columns with gap
+    paddingHorizontal: 4,
+  },
+  radioText: {
+    color: theme.colors.onSurface,
+    fontFamily: 'Outfit_500Medium',
+    marginLeft: 4,
+    flex: 1,
+  },
+  // Old horizontal radio styles (kept for backward compatibility)
   radioGroupHorizontal: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: theme.colors.surfaceVariant,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    backgroundColor: 'rgba(225, 226, 236, 0)',
     borderRadius: 12,
     padding: 4,
   },
@@ -428,11 +455,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 8,
-  },
-  radioText: {
-    color: theme.colors.onSurface,
-    fontFamily: 'Outfit_500Medium',
-    marginLeft: 4,
+    marginRight: 4,
+    marginBottom: 2,
   },
   selectButton: {
     flexDirection: 'row',

@@ -68,6 +68,7 @@ export type ItemType = 'gold999' | 'gold995' | 'silver' | 'rani' | 'rupu' | 'mon
 // Trade Entry - separate from main transaction system
 export interface Trade {
   id: string;
+  customerId?: string; // FK to customers table
   customerName: string;
   type: 'sell' | 'purchase';
   itemType: 'gold999' | 'gold995' | 'silver' | 'rani' | 'rupu';

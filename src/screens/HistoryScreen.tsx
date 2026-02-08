@@ -232,14 +232,7 @@ export const HistoryScreen: React.FC = () => {
         );
       });
 
-      const CHUNK_HEIGHT = 400; // Smaller chunks for better Bluetooth stability
-
-      // first paper feed before the first chunk
-      await ThermalPrinterModule.printBluetooth({
-        payload: '\n',
-        printerWidthMM: 80,
-        printerNbrCharactersPerLine: 48,
-      });
+      const CHUNK_HEIGHT = 375; // Smaller chunks for better Bluetooth stability
 
       const { default: ImageEditor } = require('@react-native-community/image-editor');
       const numChunks = Math.ceil(height / CHUNK_HEIGHT);
@@ -268,12 +261,12 @@ export const HistoryScreen: React.FC = () => {
         await FileSystem.deleteAsync(chunkUri, { idempotent: true });
       }
 
-      // // Final paper feed after the last chunk
-      // await ThermalPrinterModule.printBluetooth({
-      //   payload: '\n',
-      //   printerWidthMM: 80,
-      //   printerNbrCharactersPerLine: 48,
-      // });
+      // Final paper feed after the last chunk
+      await ThermalPrinterModule.printBluetooth({
+        payload: '\n',
+        printerWidthMM: 80,
+        printerNbrCharactersPerLine: 48,
+      });
     } catch (error) {
       console.error("Print execution failed:", error);
       throw error;

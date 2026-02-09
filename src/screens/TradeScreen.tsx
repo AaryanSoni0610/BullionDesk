@@ -420,7 +420,7 @@ export const TradeScreen: React.FC = () => {
           </View>
           <View style={styles.dataPill}>
             <Text style={[styles.pillLabel, labelColor]}>Weight</Text>
-            <Text style={[styles.pillValue, textColor]}>{item.itemType.includes('gold') ? `${item.weight.toFixed(3)}g` : `${item.weight.toFixed(1)}g`}</Text>
+            <Text style={[styles.pillValue, textColor]}>{item.itemType.includes('gold') ? `${item.weight.toFixed(3)}g` : item.itemType.includes('rani') ? `${item.weight.toFixed(3)}g` :`${item.weight.toFixed(1)}g`}</Text>
           </View>
           <View style={styles.dataPill}>
             <Text style={[styles.pillLabel, labelColor]}>Price</Text>

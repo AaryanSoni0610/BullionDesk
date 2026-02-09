@@ -20,7 +20,7 @@ export const AnimatedAccordion: React.FC<AnimatedAccordionProps> = ({ isExpanded
     if (contentHeight !== null) {
       if (isExpanded) {
         height.value = withTiming(contentHeight, {
-          duration: 300,
+          duration: 250,
           easing: Easing.bezier(0.25, 0.1, 0.25, 1),
         });
       } else {

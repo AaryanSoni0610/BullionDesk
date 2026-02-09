@@ -21,7 +21,7 @@ export const AnimatedScreen: React.FC<AnimatedScreenProps> = ({
   children,
   isVisible,
   direction = 'right',
-  duration = 500,
+  duration = 350,
 }) => {
   const translateX = useSharedValue(direction === 'right' ? SCREEN_WIDTH : -SCREEN_WIDTH);
   const opacity = useSharedValue(0);

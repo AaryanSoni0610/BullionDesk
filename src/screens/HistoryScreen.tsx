@@ -232,7 +232,7 @@ export const HistoryScreen: React.FC = () => {
         );
       });
 
-      const CHUNK_HEIGHT = 375; // Smaller chunks for better Bluetooth stability
+      const CHUNK_HEIGHT = 350; // Smaller chunks for better Bluetooth stability
 
       const { default: ImageEditor } = require('@react-native-community/image-editor');
       const numChunks = Math.ceil(height / CHUNK_HEIGHT);

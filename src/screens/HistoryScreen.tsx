@@ -232,10 +232,11 @@ export const HistoryScreen: React.FC = () => {
         );
       });
 
-      const CHUNK_HEIGHT = 360; // Smaller chunks for better Bluetooth stability
+      const CHUNK_HEIGHT = 400; // Smaller chunks for better Bluetooth stability
 
       const { default: ImageEditor } = require('@react-native-community/image-editor');
       const numChunks = Math.ceil(height / CHUNK_HEIGHT);
+      const chunkUrisToDelete: string[] = []; // Store URIs for cleanup after printing
 
       for (let i = 0; i < numChunks; i++) {
         const offsetY = i * CHUNK_HEIGHT;
@@ -247,6 +248,8 @@ export const HistoryScreen: React.FC = () => {
         });
 
         const chunkUri = typeof chunkResult === 'string' ? chunkResult : chunkResult.uri;
+        chunkUrisToDelete.push(chunkUri); // Store for later deletion
+        
         const chunkBase64 = await FileSystem.readAsStringAsync(chunkUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -257,8 +260,6 @@ export const HistoryScreen: React.FC = () => {
           printerWidthMM: 80,
           printerNbrCharactersPerLine: 48,
         });
-
-        await FileSystem.deleteAsync(chunkUri, { idempotent: true });
       }
 
       // Final paper feed after the last chunk
@@ -267,6 +268,15 @@ export const HistoryScreen: React.FC = () => {
         printerWidthMM: 80,
         printerNbrCharactersPerLine: 48,
       });
+
+      // Clean up all chunk files after printing is complete
+      for (const chunkUri of chunkUrisToDelete) {
+        try {
+          await FileSystem.deleteAsync(chunkUri, { idempotent: true });
+        } catch (e) {
+          console.warn('Failed to delete chunk file:', chunkUri, e);
+        }
+      }
     } catch (error) {
       console.error("Print execution failed:", error);
       throw error;

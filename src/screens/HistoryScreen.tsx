@@ -271,7 +271,7 @@ export const HistoryScreen: React.FC = () => {
         payload: '[L]\n[L]\n[L]\n',
         printerWidthMM: 80,
         printerNbrCharactersPerLine: 48,
-        mmFeedPaper: 15,
+        mmFeedPaper: 20,
         autoCut: false,
       });
 
@@ -396,8 +396,6 @@ export const HistoryScreen: React.FC = () => {
         result: 'tmpfile',
         width: 400, // Reduced width for safe printing on 80mm paper
       });
-      
-      console.log(`Captured image URI type: ${typeof uri}, value: ${JSON.stringify(uri)}`);
       
       // Print the image
       await printImage(uri);
@@ -1462,8 +1460,8 @@ export const HistoryScreen: React.FC = () => {
             }}>
               {balances.length > 0 && (
                 <Text style={{
-                  fontFamily: 'Outfit_500Medium',
-                  fontSize: 14,
+                  fontFamily: 'Outfit_700Bold',
+                  fontSize: 18,
                   color: theme.colors.success,
                   marginBottom: debts.length > 0 ? 4 : 0,
                 }}>
@@ -1472,8 +1470,8 @@ export const HistoryScreen: React.FC = () => {
               )}
               {debts.length > 0 && (
                 <Text style={{
-                  fontFamily: 'Outfit_500Medium',
-                  fontSize: 14,
+                  fontFamily: 'Outfit_700Bold',
+                  fontSize: 18,
                   color: theme.colors.debtColor,
                 }}>
                   Debt: {debts.join(', ')}

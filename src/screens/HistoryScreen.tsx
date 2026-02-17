@@ -32,7 +32,8 @@ import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, customFormatPureSilver, formatIndianNumber, formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
-import { Transaction } from '../types';
+import { CustomerService } from '../services/customer.service';
+import { Transaction, Customer } from '../types';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
 
@@ -219,24 +220,22 @@ export const HistoryScreen: React.FC = () => {
   // Print image to thermal printer - chunked approach to prevent height-based scaling
   const printImage = async (imageUri: string | any): Promise<void> => {
     try {
-      // 1. Handle cases where captureRef returns an object instead of string
       let uri: string = typeof imageUri === 'string' ? imageUri : imageUri?.uri;
       if (!uri) throw new Error('Invalid URI');
 
-      // Load image size to determine if chunking is needed for the P2600
-      const { width, height } = await new Promise<{width: number, height: number}>((resolve, reject) => {
-        const Image = require('react-native').Image;
-        Image.getSize(uri, 
-          (w: number, h: number) => resolve({ width: w, height: h }),
-          (err: any) => reject(err)
-        );
-      });
-
-      const CHUNK_HEIGHT = 400; // Smaller chunks for better Bluetooth stability
+      const { width, height } = await new Promise<{ width: number; height: number }>(
+        (resolve, reject) => {
+          const Image = require('react-native').Image;
+          Image.getSize(uri, (w: number, h: number) => resolve({ width: w, height: h }), reject);
+        }
+      );
 
       const { default: ImageEditor } = require('@react-native-community/image-editor');
+
+      const CHUNK_HEIGHT = 256; // ← was 400, must be ≤256 or library rescales the chunk
       const numChunks = Math.ceil(height / CHUNK_HEIGHT);
-      const chunkUrisToDelete: string[] = []; // Store URIs for cleanup after printing
+      const chunkUrisToDelete: string[] = [];
+      let combinedPayload = '';
 
       for (let i = 0; i < numChunks; i++) {
         const offsetY = i * CHUNK_HEIGHT;
@@ -244,41 +243,43 @@ export const HistoryScreen: React.FC = () => {
 
         const chunkResult = await ImageEditor.cropImage(uri, {
           offset: { x: 0, y: offsetY },
-          size: { width: width, height: currentChunkHeight },
+          size: { width, height: currentChunkHeight },
         });
 
         const chunkUri = typeof chunkResult === 'string' ? chunkResult : chunkResult.uri;
-        chunkUrisToDelete.push(chunkUri); // Store for later deletion
-        
-        const chunkBase64 = await FileSystem.readAsStringAsync(chunkUri, {
+        chunkUrisToDelete.push(chunkUri);
+
+        const base64 = await FileSystem.readAsStringAsync(chunkUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        // Print each chunk individually. Only the first chunk gets the [L] tag.
-        await ThermalPrinterModule.printBluetooth({
-          payload: `<img>data:image/png;base64,${chunkBase64}</img>`,
-          printerWidthMM: 80,
-          printerNbrCharactersPerLine: 48,
-        });
+        // \n after </img> is required by the parser — it is NOT a paper feed
+        combinedPayload += `[C]<img>data:image/png;base64,${base64}</img>\n`;
       }
 
-      // Final paper feed after the last chunk
+      // Single call = single job = no hardware end-of-job gap between chunks
       await ThermalPrinterModule.printBluetooth({
-        payload: '\n',
+        payload: combinedPayload,
         printerWidthMM: 80,
         printerNbrCharactersPerLine: 48,
+        mmFeedPaper: 0,  // ← suppress the default 20mm auto-feed at job end
+        autoCut: false,
       });
 
-      // Clean up all chunk files after printing is complete
+      // Intentional paper feed after the full image is done
+      await ThermalPrinterModule.printBluetooth({
+        payload: '[L]\n[L]\n[L]\n',
+        printerWidthMM: 80,
+        printerNbrCharactersPerLine: 48,
+        mmFeedPaper: 15,
+        autoCut: false,
+      });
+
       for (const chunkUri of chunkUrisToDelete) {
-        try {
-          await FileSystem.deleteAsync(chunkUri, { idempotent: true });
-        } catch (e) {
-          console.warn('Failed to delete chunk file:', chunkUri, e);
-        }
+        try { await FileSystem.deleteAsync(chunkUri, { idempotent: true }); } catch (e) {}
       }
     } catch (error) {
-      console.error("Print execution failed:", error);
+      console.error('Print execution failed:', error);
       throw error;
     }
   };
@@ -1023,7 +1024,22 @@ export const HistoryScreen: React.FC = () => {
 
   // Transaction Card Component
   const TransactionCard: React.FC<{ transaction: Transaction; hideActions?: boolean; allowFontScaling?: boolean }> = ({ transaction, hideActions = false, allowFontScaling = true }) => {
+    const [customerBalance, setCustomerBalance] = useState<Customer | null>(null);
     const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+    
+    // Check if this is a Rani/Rupa sell transaction (metal-only with stock_id)
+    const isRaniRupaSellTransaction = transaction.entries.some(e => e.stock_id && e.metalOnly && e.type === 'sell');
+    
+    // Fetch customer balance when rendering for print/share
+    useEffect(() => {
+      if (hideActions && !isRaniRupaSellTransaction) {
+        CustomerService.getCustomerById(transaction.customerId).then(customer => {
+          setCustomerBalance(customer);
+        }).catch(err => {
+          console.error('Failed to load customer balance:', err);
+        });
+      }
+    }, [hideActions, transaction.customerId, isRaniRupaSellTransaction]);
     
     // Preprocess entries to add numbered labels for Rani/Rupa when multiple
     const processedEntries = transaction.entries.map((entry, index) => {
@@ -1395,6 +1411,77 @@ export const HistoryScreen: React.FC = () => {
             ]}>{transaction.note}</Text>
           </View>
         )}
+        
+        {/* Customer Balance Section - Only for print/share, not for Rani/Rupa sell */}
+        {hideActions && !isRaniRupaSellTransaction && customerBalance && (() => {
+          const balances: string[] = [];
+          const debts: string[] = [];
+          
+          // Money balance/debt
+          if (customerBalance.balance && Math.abs(customerBalance.balance) >= 1) {
+            if (customerBalance.balance > 0) {
+              balances.push(`₹${formatIndianNumber(customerBalance.balance)}`);
+            } else {
+              debts.push(`₹${formatIndianNumber(Math.abs(customerBalance.balance))}`);
+            }
+          }
+          
+          // Metal balances/debts
+          if (customerBalance.metalBalances) {
+            if (customerBalance.metalBalances.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001) {
+              if (customerBalance.metalBalances.gold999 > 0) {
+                balances.push(`Gold 999 ${customerBalance.metalBalances.gold999.toFixed(3)}g`);
+              } else {
+                debts.push(`Gold 999 ${Math.abs(customerBalance.metalBalances.gold999).toFixed(3)}g`);
+              }
+            }
+            if (customerBalance.metalBalances.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001) {
+              if (customerBalance.metalBalances.gold995 > 0) {
+                balances.push(`Gold 995 ${customerBalance.metalBalances.gold995.toFixed(3)}g`);
+              } else {
+                debts.push(`Gold 995 ${Math.abs(customerBalance.metalBalances.gold995).toFixed(3)}g`);
+              }
+            }
+            if (customerBalance.metalBalances.silver && Math.abs(customerBalance.metalBalances.silver) >= 1) {
+              if (customerBalance.metalBalances.silver > 0) {
+                balances.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
+              } else {
+                debts.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
+              }
+            }
+          }
+          
+          const hasAnyBalanceOrDebt = balances.length > 0 || debts.length > 0;
+          
+          return hasAnyBalanceOrDebt ? (
+            <View style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(0,0,0,0.05)',
+            }}>
+              {balances.length > 0 && (
+                <Text style={{
+                  fontFamily: 'Outfit_500Medium',
+                  fontSize: 14,
+                  color: theme.colors.success,
+                  marginBottom: debts.length > 0 ? 4 : 0,
+                }}>
+                  Balance: {balances.join(', ')}
+                </Text>
+              )}
+              {debts.length > 0 && (
+                <Text style={{
+                  fontFamily: 'Outfit_500Medium',
+                  fontSize: 14,
+                  color: theme.colors.debtColor,
+                }}>
+                  Debt: {debts.join(', ')}
+                </Text>
+              )}
+            </View>
+          ) : null;
+        })()}
       </View>
     );
   };

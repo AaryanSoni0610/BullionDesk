@@ -37,9 +37,6 @@ export const SettingsScreen: React.FC = () => {
   const [isLoadingCustomers, setIsLoadingCustomers] = React.useState(true);
   const [isLoadingInventory, setIsLoadingInventory] = React.useState(true);
   const [showInventoryDialog, setShowInventoryDialog] = React.useState(false);
-  const [inventoryDialogStep, setInventoryDialogStep] = React.useState<'gold' | 'silver' | 'money'>('gold');
-  const [inventoryInputs, setInventoryInputs] = React.useState<any[]>([]);
-  const [collectedInventoryData, setCollectedInventoryData] = React.useState<any>({});
   const [showPrivacyPolicy, setShowPrivacyPolicy] = React.useState(false);
   const [showTermsOfService, setShowTermsOfService] = React.useState(false);
   const [showAbout, setShowAbout] = React.useState(false);
@@ -157,75 +154,30 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const handleSetBaseInventory = () => {
-    // Start with gold inventory
-    setInventoryDialogStep('gold');
-    setInventoryInputs([
-      {
-        key: 'gold999',
-        label: 'Gold 999 (g)',
-        value: (baseInventory?.gold999 || 0).toFixed(3),
-      },
-      {
-        key: 'gold995',
-        label: 'Gold 995 (g)',
-        value: (baseInventory?.gold995 || 0).toFixed(3),
-      }
-    ]);
-    setCollectedInventoryData({});
     setShowInventoryDialog(true);
   };
 
   const handleInventoryDialogSubmit = (values: Record<string, number>) => {
-    const updatedData = { ...collectedInventoryData, ...values };
-    setCollectedInventoryData(updatedData);
-
-    if (inventoryDialogStep === 'gold') {
-      // Move to silver - always allow progression with defaults
-      setInventoryDialogStep('silver');
-      setInventoryInputs([
-        {
-          key: 'silver',
-          label: 'Base Silver (g)',
-          value: (updatedData.silver !== undefined ? updatedData.silver : (baseInventory?.silver || 0)).toFixed(1),
-        }
-      ]);
-    } else if (inventoryDialogStep === 'silver') {
-      // Move to money - always allow progression with defaults
-      setInventoryDialogStep('money');
-      setInventoryInputs([
-        {
-          key: 'money',
-          label: 'Money (₹)',
-          value: (updatedData.money !== undefined ? updatedData.money : (baseInventory?.money || 0)).toString(),
-        }
-      ]);
-    } else if (inventoryDialogStep === 'money') {
-      // All steps complete, save the inventory with defaults if not provided
-      setShowInventoryDialog(false);
-
-      const finalInventory = {
-        gold999: updatedData.gold999 !== undefined ? updatedData.gold999 : 0,
-        gold995: updatedData.gold995 !== undefined ? updatedData.gold995 : 0,
-        silver: updatedData.silver !== undefined ? updatedData.silver : 0,
-        money: updatedData.money !== undefined ? updatedData.money : 0
-      };
-
-      InventoryService.setBaseInventory(finalInventory).then(async success => {
-        if (success) {
-          // Fetch fresh data from DB to ensure consistency and correct types
-          const freshInventory = await InventoryService.getBaseInventory();
-          setBaseInventory(freshInventory);
-          showAlert('Success', 'Base inventory has been set successfully.');
-        } else {
-          showAlert('Error', 'Failed to set base inventory.');
-        }
-      });
-    }
+    setShowInventoryDialog(false);
+    const finalInventory = {
+      gold999: values.gold999 ?? 0,
+      gold995: values.gold995 ?? 0,
+      silver:  values.silver  ?? 0,
+      money:   values.money   ?? 0,
+    };
+    InventoryService.setBaseInventory(finalInventory).then(async success => {
+      if (success) {
+        const freshInventory = await InventoryService.getBaseInventory();
+        setBaseInventory(freshInventory);
+        showAlert('Success', 'Base inventory has been set successfully.');
+      } else {
+        showAlert('Error', 'Failed to set base inventory.');
+      }
+    });
   };
 
   const handleInventoryDialogCancel = () => {
     setShowInventoryDialog(false);
-    setCollectedInventoryData({});
   };
 
   // Setup encryption key with Android-friendly dialogs
@@ -263,6 +215,12 @@ export const SettingsScreen: React.FC = () => {
 
       // Save key
       await SecureStore.setItemAsync('backup_encryption_key', key);
+
+      // Re-key the internal backup store to use this user key
+      // Fire-and-forget: runs in background, non-blocking
+      BackupService.syncInternalKeyWithUserKey().catch(e =>
+        console.error('SettingsScreen: Failed to sync internal backup key:', e)
+      );
 
       // Wait for user to acknowledge the success alert
       await new Promise<void>((resolve) => {
@@ -744,7 +702,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.8.5"
+              description="v7.9.0"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -777,24 +735,18 @@ export const SettingsScreen: React.FC = () => {
       {/* Inventory Input Dialog */}
       <InventoryInputDialog
         visible={showInventoryDialog}
-        title={
-          inventoryDialogStep === 'gold'
-            ? 'Set Gold Inventory'
-            : inventoryDialogStep === 'silver'
-              ? 'Set Silver Inventory'
-              : 'Set Money Inventory'
-        }
-        message={
-          inventoryDialogStep === 'gold'
-            ? 'Enter the base (opening) gold inventory levels:'
-            : inventoryDialogStep === 'silver'
-              ? 'Enter the base (opening) silver inventory levels:'
-              : 'Enter the base (opening) money balance:'
-        }
-        inputs={inventoryInputs}
+        title="Set Base Inventory"
+        message="Enter opening stock values. All fields optional (empty = 0)."
+        inputs={[
+          { key: 'gold999', label: 'Gold 999 (g)',  value: (baseInventory?.gold999 || 0).toFixed(3), type: 'text', keyboardType: 'numeric' },
+          { key: 'gold995', label: 'Gold 995 (g)',  value: (baseInventory?.gold995 || 0).toFixed(3), type: 'text', keyboardType: 'numeric' },
+          { key: 'silver',  label: 'Silver (g)',    value: (baseInventory?.silver  || 0).toFixed(1),  type: 'text', keyboardType: 'numeric' },
+          { key: 'money',   label: 'Money (₹)',     value: String(Math.round(baseInventory?.money || 0)), type: 'text', keyboardType: 'numeric' },
+        ]}
         onSubmit={handleInventoryDialogSubmit}
         onCancel={handleInventoryDialogCancel}
         allowDefaults={true}
+        submitLabel="Save"
       />
 
       {/* Privacy Policy Dialog */}
@@ -830,7 +782,7 @@ If you have any questions about this Privacy Policy, please contact the develope
 
 7. Changes to This Policy
 This privacy policy may be updated as needed. Continued use of the app constitutes acceptance of any changes.`}
-        maxHeight={400}
+        dynamicMaxHeight
         buttons={[{ text: 'OK', onPress: () => setShowPrivacyPolicy(false) }]}
         onDismiss={() => setShowPrivacyPolicy(false)}
       />
@@ -876,7 +828,7 @@ These terms are governed by applicable local laws.
 
 9. Contact
 For support or questions, please contact the developer.`}
-        maxHeight={400}
+        dynamicMaxHeight
         buttons={[{ text: 'OK', onPress: () => setShowTermsOfService(false) }]}
         onDismiss={() => setShowTermsOfService(false)}
       />
@@ -886,7 +838,7 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v7.8.5
+        message={`BullionDesk v7.9.0
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 
@@ -904,7 +856,7 @@ A passionate developer focused on creating practical business solutions. Bullion
 If you find this app helpful and would like to support its continued development, consider making a donation. Your support helps maintain and improve the app!
 
 Contact: For feedback, suggestions, or support, please reach out to the developer.`}
-        maxHeight={400}
+        dynamicMaxHeight
         buttons={[
           {
             text: 'Donate', onPress: () => {

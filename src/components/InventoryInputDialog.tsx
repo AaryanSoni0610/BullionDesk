@@ -25,6 +25,7 @@ interface InventoryInputDialogProps {
   requireAtLeastOneNumeric?: boolean;
   allowDefaults?: boolean;
   disableRequiredValidation?: boolean;
+  submitLabel?: string;
 }
 
 export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
@@ -38,6 +39,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
   requireAtLeastOneNumeric = false,
   allowDefaults = false,
   disableRequiredValidation = false,
+  submitLabel = 'Next',
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
@@ -307,7 +309,7 @@ export const InventoryInputDialog: React.FC<InventoryInputDialogProps> = ({
                 labelStyle={styles.buttonLabel}
                 disabled={!allowDefaults && !hasValuesChanged()}
               >
-                Next
+                {submitLabel}
               </Button>
             </View>
           </Surface>

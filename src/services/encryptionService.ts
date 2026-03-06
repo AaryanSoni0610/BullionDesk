@@ -31,6 +31,37 @@ export class EncryptionService {
     }
   }
 
+  /**
+   * Compute a stable hash of the user export password for change-detection.
+   * Uses PBKDF2 with a fixed salt so the hash is deterministic.
+   */
+  static async getUserKeyHash(userPassword: string): Promise<string> {
+    try {
+      const hash = await Aes.pbkdf2(userPassword, 'bulliondesk_key_hash_salt', PBKDF2_ITERATIONS, 256, 'sha256');
+      return hash;
+    } catch (error) {
+      console.error('Error computing user key hash:', error);
+      throw new Error('Failed to compute user key hash');
+    }
+  }
+
+  /**
+   * Derive a deterministic internal storage key from the user export password + a
+   * per-device salt, then store it in SecureStore under INTERNAL_KEY_ALIAS.
+   * Replaces whatever random key was there before.
+   */
+  static async deriveAndSetInternalKeyFromUserKey(userPassword: string, deviceSalt: string): Promise<void> {
+    try {
+      const derivedKey = await Aes.pbkdf2(userPassword, deviceSalt, PBKDF2_ITERATIONS, 256, 'sha256');
+      await SecureStore.setItemAsync(INTERNAL_KEY_ALIAS, derivedKey);
+      await Logger.logAction(`Internal key re-derived from user export key`);
+    } catch (error) {
+      console.error('Error deriving internal key from user key:', error);
+      await Logger.logAction(`ERROR: Failed to derive internal key from user key - ${error}`);
+      throw new Error('Failed to derive internal key from user key');
+    }
+  }
+
   // --- Core Encryption (Strings) ---
 
   /**

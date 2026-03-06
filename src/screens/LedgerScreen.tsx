@@ -622,8 +622,8 @@ export const LedgerScreen: React.FC = () => {
       // transactionsUpToDate and ledgerEntriesUpToDate already contain all data up to selected date
       // No need for additional filtering
 
-      // Calculate inventory data
-      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger);
+      // Calculate inventory data including opening balance from startDateStr
+      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger, startDateStr);
 
       // Get entries for each subledger using pre-filtered transactions
       const goldEntries: EntryData[] = [];
@@ -636,21 +636,23 @@ export const LedgerScreen: React.FC = () => {
         transaction.entries.forEach(entry => {
           const extEntry = entry as ExtendedTransactionEntry;
           if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
-            goldEntries.push({
-              transactionId: transaction.id,
-              customerName,
-              entry: {
-                ...extEntry,
-                type: 'sell',
-                itemType: 'gold999',
-                weight: extEntry.actualGoldGiven,
-                subtotal: 0
-              },
-              date: transaction.date
-            });
+            if (!showOnlyRaniRupu) {
+              goldEntries.push({
+                transactionId: transaction.id,
+                customerName,
+                entry: {
+                  ...extEntry,
+                  type: 'sell',
+                  itemType: 'gold999',
+                  weight: extEntry.actualGoldGiven,
+                  subtotal: 0
+                },
+                date: transaction.date
+              });
+            }
           }
-          // Filter based on showOnlyRaniRupu state - MODIFIED: Always include all types in PDF
-          // if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
+          // Filter based on showOnlyRaniRupu state
+          if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
             // Filter out 0 weight entries
             if ((extEntry.weight || 0) > 0) {
               goldEntries.push({
@@ -660,7 +662,7 @@ export const LedgerScreen: React.FC = () => {
                 date: transaction.date
               });
             }
-          // }
+          }
         });
       });
 
@@ -671,22 +673,24 @@ export const LedgerScreen: React.FC = () => {
           const extEntry = entry as ExtendedTransactionEntry;
           if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
             if (extEntry.silverWeight && extEntry.silverWeight > 0) {
-              silverEntries.push({
-                transactionId: transaction.id,
-                customerName,
-                entry: {
-                  ...extEntry,
-                  type: 'sell',
-                  itemType: 'silver',
-                  weight: extEntry.silverWeight,
-                  subtotal: 0
-                },
-                date: transaction.date
-              });
+              if (!showOnlyRaniRupu) {
+                silverEntries.push({
+                  transactionId: transaction.id,
+                  customerName,
+                  entry: {
+                    ...extEntry,
+                    type: 'sell',
+                    itemType: 'silver',
+                    weight: extEntry.silverWeight,
+                    subtotal: 0
+                  },
+                  date: transaction.date
+                });
+              }
             }
           }
-          // Filter based on showOnlyRaniRupu state - MODIFIED: Always include all types in PDF
-          // if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
+          // Filter based on showOnlyRaniRupu state
+          if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
             // Filter out 0 weight entries
             if ((extEntry.weight || 0) > 0) {
               silverEntries.push({
@@ -696,7 +700,7 @@ export const LedgerScreen: React.FC = () => {
                 date: transaction.date
               });
             }
-          // }
+          }
         });
       });
 
@@ -847,12 +851,12 @@ export const LedgerScreen: React.FC = () => {
               font-size: 12px;
             }
             th {
-              background-color: #f5f5f5;
+              background-color: #ffffff;
               font-weight: bold;
             }
             td {
               align-items: center;
-              width: 33.33%;
+              width: 50%;
             }
             .footer {
               margin-top: 20px;
@@ -867,13 +871,14 @@ export const LedgerScreen: React.FC = () => {
               display: inline-block;
               padding: 4px 8px;
               margin-right: 10px;
-              background-color: #e0e0e0;
+              background-color: #ffffff;
+              border: 1px solid #ccc;
               border-radius: 4px;
               font-size: 12px;
             }
           </style>
         </head>
-        <body>
+        <body style="background-color: #ffffff;">
           <div class="footer">
             Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
           </div>
@@ -882,6 +887,7 @@ export const LedgerScreen: React.FC = () => {
           <!-- Gold Subledger -->
           <h3 style="color: #E65100;">Gold Subledger</h3>
           <div class="chips">
+            <span class="chip">Opening:</span>
             ${showOnlyRaniRupu ? 
               `<span class="chip">Rani: ${formatWeight(goldOpeningBalances.rani)}</span>` :
               `<span class="chip">Gold 999: ${formatWeight(goldOpeningBalances.gold999)}</span>
@@ -891,59 +897,50 @@ export const LedgerScreen: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Customer</th>
-                <th>Buy</th>
-                <th>Sell</th>
+                <th>IN (Buy/Receive)</th>
+                <th>OUT (Sell/Given)</th>
               </tr>
             </thead>
             <tbody>
-              ${goldEntries.map(entry => {
-                const isPurchase = entry.entry.type === 'purchase';
-                let weight = entry.entry.pureWeight || entry.entry.weight || 0;
-                if (entry.entry.itemType === 'rani') {
-                  const touchNum = entry.entry.touch || 0;
-                  const weightNum = entry.entry.weight || 0;
-                  const pureGoldPrecise = (weightNum * touchNum) / 100;
-                  weight = formatPureGoldPrecise(pureGoldPrecise);
+              ${(() => {
+                const inList = goldEntries.filter(e => e.entry.type === 'purchase');
+                const outList = goldEntries.filter(e => e.entry.type === 'sell');
+                const maxLen = Math.max(inList.length, outList.length);
+                const rows = [];
+                for(let i=0; i<maxLen; i++) {
+                  const buildCell = (entry: any) => {
+                    if (!entry) return '-';
+                    let weight = entry.entry.pureWeight || entry.entry.weight || 0;
+                    if (entry.entry.itemType === 'rani') {
+                       const touchNum = entry.entry.touch || 0;
+                       const weightNum = entry.entry.weight || 0;
+                       const pureGoldPrecise = (weightNum * touchNum) / 100;
+                       weight = formatPureGoldPrecise(pureGoldPrecise);
+                       return `${entry.customerName} - ${weightNum.toFixed(3)}g - ${touchNum.toFixed(2)}% - ${weight.toFixed(3)}g`;
+                    }
+                    return `${entry.customerName} - ${formatWeight(weight, false)} ${entry.entry.itemType}`;
+                  };
+                  rows.push(`<tr><td>${buildCell(inList[i])}</td><td>${buildCell(outList[i])}</td></tr>`);
                 }
-                const purchaseWeight = isPurchase ? weight : 0;
-                const sellWeight = isPurchase ? 0 : weight;
-                
-                // Format detailed info for Rani entries
-                const formatRaniDetails = (entry: any, weight: number) => {
-                  if (entry.itemType === 'rani') {
-                    const touchNum = entry.touch || 0;
-                    const weightNum = entry.weight || 0;
-                    const pureGoldPrecise = (weightNum * touchNum) / 100;
-                    return `${weightNum.toFixed(3)}g - ${touchNum.toFixed(2)}% - ${formatPureGoldPrecise(pureGoldPrecise).toFixed(3)}g`;
-                  }
-                  return `${formatWeight(weight, false)}`;
-                };
-                
-                return `
-                  <tr>
-                    <td>${entry.customerName}</td>
-                    <td>${purchaseWeight > 0 ? formatRaniDetails(entry.entry, purchaseWeight) : '-'} ${purchaseWeight > 0 ? entry.entry.itemType : ''}</td>
-                    <td>${sellWeight > 0 ? formatRaniDetails(entry.entry, sellWeight) : '-'} ${sellWeight > 0 ? entry.entry.itemType : ''}</td>
-                  </tr>
-                `;
-              }).join('')}
+                return rows.join('');
+              })()}
             </tbody>
           </table>
           <div class="chips">
+            <span class="chip">Closing:</span>
             ${showOnlyRaniRupu ?
               `<span class="chip">Rani: ${calculateTotalStockWeight(raniStockData, 'rani').toFixed(3)}g</span>` :
               `<span class="chip">Gold 999: ${formatWeight(data.goldInventory.gold999)}</span>
-               <span class="chip">Gold 995: ${formatWeight(data.goldInventory.gold995)}</span>
-               <span class="chip">Rani: ${calculateTotalStockWeight(raniStockData, 'rani').toFixed(3)}g</span>`
+               <span class="chip">Gold 995: ${formatWeight(data.goldInventory.gold995)}</span>`
             }
           </div>
           
           <hr/>
           
           <!-- Silver Subledger -->
-          <h3 style="color: #B0BEC5;">Silver Subledger</h3>
+          <h3 style="color: #607D8B;">Silver Subledger</h3>
           <div class="chips">
+            <span class="chip">Opening:</span>
             ${showOnlyRaniRupu ?
               `<span class="chip">Rupu: ${formatWeight(silverOpeningBalances.rupu, true)}</span>` :
               `<span class="chip">Silver: ${formatWeight(silverOpeningBalances.silver, true)}</span>`
@@ -952,43 +949,38 @@ export const LedgerScreen: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Customer</th>
-                <th>Buy</th>
-                <th>Sell</th>
+                <th>IN (Buy/Receive)</th>
+                <th>OUT (Sell/Given)</th>
               </tr>
             </thead>
             <tbody>
-              ${silverEntries.map(entry => {
-                const isPurchase = entry.entry.type === 'purchase';
-                const weight = entry.entry.weight || 0;
-                const purchaseWeight = isPurchase ? weight : 0;
-                const sellWeight = isPurchase ? 0 : weight;
-                
-                // Format detailed info for Rupu entries
-                const formatRupuDetails = (entry: any, weight: number) => {
-                  if (entry.itemType === 'rupu') {
-                    const touchNum = entry.touch || 0;
-                    const weightNum = entry.weight || 0;
-                    return `${weightNum.toFixed(1)}g - ${touchNum.toFixed(2)}% - ${customFormatPureSilver(weightNum, touchNum).toFixed(1)}g`;
-                  }
-                  return `${formatWeight(weight, true)}`;
-                };
-                
-                return `
-                  <tr>
-                    <td>${entry.customerName}</td>
-                    <td>${purchaseWeight > 0 ? formatRupuDetails(entry.entry, purchaseWeight) : '-'}</td>
-                    <td>${sellWeight > 0 ? formatRupuDetails(entry.entry, sellWeight) : '-'}</td>
-                  </tr>
-                `;
-              }).join('')}
+              ${(() => {
+                const inList = silverEntries.filter(e => e.entry.type === 'purchase');
+                const outList = silverEntries.filter(e => e.entry.type === 'sell');
+                const maxLen = Math.max(inList.length, outList.length);
+                const rows = [];
+                for(let i=0; i<maxLen; i++) {
+                  const buildCell = (entry: any) => {
+                    if (!entry) return '-';
+                    const weight = entry.entry.weight || 0;
+                    if (entry.entry.itemType === 'rupu') {
+                       const touchNum = entry.entry.touch || 0;
+                       const pureSilv = customFormatPureSilver(weight, touchNum);
+                       return `${entry.customerName} - ${weight.toFixed(1)}g - ${touchNum.toFixed(2)}% - ${pureSilv.toFixed(1)}g`;
+                    }
+                    return `${entry.customerName} - ${formatWeight(weight, true)}`;
+                  };
+                  rows.push(`<tr><td>${buildCell(inList[i])}</td><td>${buildCell(outList[i])}</td></tr>`);
+                }
+                return rows.join('');
+              })()}
             </tbody>
           </table>
           <div class="chips">
+            <span class="chip">Closing:</span>
             ${showOnlyRaniRupu ?
               `<span class="chip">Rupu: ${calculateTotalStockWeight(rupuStockData, 'rupu').toFixed(1)}g</span>` :
-              `<span class="chip">Silver: ${formatWeight(data.silverInventory.silver, true)}</span>
-               <span class="chip">Rupu: ${calculateTotalStockWeight(rupuStockData, 'rupu').toFixed(1)}g</span>`
+              `<span class="chip">Silver: ${formatWeight(data.silverInventory.silver, true)}</span>`
             }
           </div>
 
@@ -1002,26 +994,25 @@ export const LedgerScreen: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Customer</th>
-                <th>Received</th>
-                <th>Given</th>
+                <th>IN (Buy/Receive)</th>
+                <th>OUT (Sell/Given)</th>
               </tr>
             </thead>
             <tbody>
-              ${moneyEntries.map(entry => {
-                const ledgerEntry = entry.entry._ledgerEntry;
-                const amount = ledgerEntry?.amount || 0;
-                const type = ledgerEntry?.type;
-                const receivedAmount = type === 'receive' ? amount : 0;
-                const givenAmount = type === 'give' ? amount : 0;
-                return `
-                  <tr>
-                    <td>${entry.customerName}</td>
-                    <td>${receivedAmount > 0 ? formatCurrency(receivedAmount) : '-'}</td>
-                    <td>${givenAmount > 0 ? formatCurrency(givenAmount) : '-'}</td>
-                  </tr>
-                `;
-              }).join('')}
+              ${(() => {
+                const inList = moneyEntries.filter(e => e.entry._ledgerEntry?.type === 'receive');
+                const outList = moneyEntries.filter(e => e.entry._ledgerEntry?.type === 'give');
+                const maxLen = Math.max(inList.length, outList.length);
+                const rows = [];
+                for(let i=0; i<maxLen; i++) {
+                  const buildCell = (entry: any) => {
+                    if (!entry) return '-';
+                    return `${entry.customerName} - ${formatCurrency(entry.entry.amount||0)}`;
+                  };
+                  rows.push(`<tr><td>${buildCell(inList[i])}</td><td>${buildCell(outList[i])}</td></tr>`);
+                }
+                return rows.join('');
+              })()}
             </tbody>
           </table>
           <div class="chips">

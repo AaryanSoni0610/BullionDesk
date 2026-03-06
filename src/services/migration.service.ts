@@ -4,6 +4,7 @@ import { CustomerService } from './customer.service';
 import { InventoryService } from './inventory.service';
 import { SettingsService } from './settings.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
+import { BackupService } from './backupService';
 import { Customer, Transaction, LedgerEntry, RaniRupaStock } from '../types';
 
 const OLD_STORAGE_KEYS = {
@@ -138,6 +139,10 @@ export class MigrationService {
       // Recalculate Inventory Chain (Full Rebuild)
       this.reportProgress('inventory_history', 95, 100, 'Building inventory history...');
       await InventoryService.recalculateBalancesFrom();
+
+      // Sync internal backup key with user export key (no-op if no key set yet)
+      this.reportProgress('backup_key_sync', 97, 100, 'Syncing backup encryption key...');
+      await BackupService.syncInternalKeyWithUserKey();
 
       // Mark migration as completed
       await SettingsService.setSetting('migration_completed', 'true');

@@ -32,6 +32,7 @@ const SECURE_STORE_KEYS = {
   SAF_DIRECTORY_URI: 'saf_directory_uri',
   FIRST_EXPORT_OR_AUTO_BACKUP: 'first_export_or_auto_backup',
   BACKUP_LOG_FILE_URI: 'backup_log_file_uri',
+  INTERNAL_BACKUP_KEY_HASH: 'internal_backup_key_hash',
 };
 
 // Background task constants
@@ -245,6 +246,68 @@ export class BackupService {
     } catch (error) {
       console.error('Error getting encryption key:', error);
       return null;
+    }
+  }
+
+  /**
+   * Sync the internal backup encryption key with the user's export key.
+   *
+   * Call this:
+   *   1. After the user sets/changes their export key (SettingsScreen)
+   *   2. At the end of data migration (MigrationService)
+   *
+   * If the user key has changed (detected via stored hash):
+   *   - Clears all internal backup objects (they were encrypted with the old key)
+   *   - Derives a new internal key from the user key + device ID (as salt)
+   *   - Persists the new key hash so we can detect future changes
+   *   - Schedules a background incremental backup to rebuild the internal store
+   */
+  static async syncInternalKeyWithUserKey(): Promise<void> {
+    try {
+      const userKey = await this.getEncryptionKey();
+      if (!userKey) {
+        // No user key set yet — leave the random internal key as-is
+        await Logger.logAction('syncInternalKeyWithUserKey: no user key set, skipping');
+        return;
+      }
+
+      // Compute hash of current user key
+      const currentHash = await EncryptionService.getUserKeyHash(userKey);
+
+      // Compare with stored hash
+      const storedHash = await SecureStore.getItemAsync(SECURE_STORE_KEYS.INTERNAL_BACKUP_KEY_HASH);
+
+      if (storedHash === currentHash) {
+        await Logger.logAction('syncInternalKeyWithUserKey: key unchanged, no action needed');
+        return;
+      }
+
+      await Logger.logAction('syncInternalKeyWithUserKey: key changed — clearing internal backup and re-keying');
+
+      // 1. Wipe the internal object store (all .enc files were with old key)
+      await ObjectStorageService.clearAll();
+
+      // 2. Derive a new deterministic internal key from user password + device ID
+      const deviceId = await this.getDeviceId();
+      await EncryptionService.deriveAndSetInternalKeyFromUserKey(userKey, deviceId);
+
+      // 3. Persist the new hash so we only rebuild once
+      await SecureStore.setItemAsync(SECURE_STORE_KEYS.INTERNAL_BACKUP_KEY_HASH, currentHash);
+
+      await Logger.logAction('syncInternalKeyWithUserKey: internal key updated, scheduling background rebuild');
+
+      // 4. Schedule a background incremental backup to re-populate the internal store
+      //    Run slightly deferred so the calling code can finish first
+      setTimeout(() => {
+        this.performAutoBackup().catch(e =>
+          console.error('syncInternalKeyWithUserKey: background rebuild failed:', e)
+        );
+      }, 2000);
+
+    } catch (error) {
+      console.error('syncInternalKeyWithUserKey error:', error);
+      await Logger.logAction(`syncInternalKeyWithUserKey ERROR: ${error}`);
+      // Non-fatal — internal backup will be rebuilt on next opportunity
     }
   }
 

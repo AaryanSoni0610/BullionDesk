@@ -435,8 +435,8 @@ export const HistoryScreen: React.FC = () => {
       const start = new Date(date); start.setHours(0,0,0,0);
       const end = new Date(date); end.setHours(23,59,59,999);
       
-      // Use getTransactionsWithActivityByDateRange to include transactions with payments on this date
-      const txs = await TransactionService.getTransactionsWithActivityByDateRange(start.toISOString(), end.toISOString());
+      // Only fetch transactions created on this date (not those with ledger activity on this date)
+      const txs = await TransactionService.getTransactionsByDateRange(start.toISOString(), end.toISOString());
       const validTxs = txs.filter(t => t.customerName.toLowerCase() !== 'adjust');
       
       if (validTxs.length === 0) {
@@ -507,6 +507,41 @@ export const HistoryScreen: React.FC = () => {
       return acc;
     }, {} as Record<string, typeof processedEntries>);
 
+    // Custom Rupu Summary Logic
+    const isAllRupu = transaction.entries.length > 1 && transaction.entries.every(e => e.itemType === 'rupu');
+    let customRupuSummaryLine: string | null = null;
+    
+    if (isAllRupu) {
+      const isPurchase = transaction.entries.some(e => e.type === 'purchase');
+      const isSell = transaction.entries.some(e => e.type === 'sell');
+      let showCustomSummary = false;
+      
+      if (isPurchase) {
+        const allPriceZero = transaction.entries.every(e => !e.price || e.price === 0);
+        const firstMetalOnly = transaction.entries[0].metalOnly;
+        if (allPriceZero || firstMetalOnly) {
+          showCustomSummary = true;
+        }
+      } else if (isSell) {
+        const allTouchHigh = transaction.entries.every(e => (e.touch || 0) >= 98);
+        if (allTouchHigh) {
+          showCustomSummary = true;
+        }
+      }
+
+      if (showCustomSummary) {
+        const totalW = transaction.entries.reduce((sum, e) => sum + (e.weight || 0), 0);
+        // Assuming customFormatPureSilver is available globally or imported
+        const totalP = transaction.entries.reduce((sum, e) => {
+           // Fallback logic inside the sum in case customFormatPureSilver doesn't exist here, 
+           // but it is available since it's used below in groupedRaniRupa.
+           return sum + customFormatPureSilver(e.weight || 0, e.touch || 100);
+        }, 0);
+        const avgT = totalW > 0 ? (totalP / totalW) * 100 : 0;
+        customRupuSummaryLine = `${totalW.toFixed(0)}g : ${avgT.toFixed(2)}% : ${totalP.toFixed(0)}g`;
+      }
+    }
+
     // Balance Logic
     let transactionBalanceLabel = 'Settled';
     let transactionBalanceColor = theme.colors.primary;
@@ -573,15 +608,13 @@ export const HistoryScreen: React.FC = () => {
              const isSell = entry.type === 'sell' || isMoneyGive;
              const isPurchase = entry.type === 'purchase' || isMoneyReceive;
              const iconChar = isSell ? '↗' : isPurchase ? '↙' : '₹';
-             const iconBg = isSell ? '#E8F5E9' : isPurchase ? '#E3F2FD' : '#FFF8E1';
-             const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
              
              const { line1, line2 } = getEntryDisplayData(entry, transaction);
 
              return `
                <div class="entry-row">
                  <div class="item-name-row">
-                   <div class="icon-box" style="background-color: ${iconBg}; color: ${iconColor}">${iconChar}</div>
+                   <div class="icon-box">${iconChar}</div>
                    <span class="item-name">${entry.displayName}</span>
                  </div>
                  <span class="item-val">${line1}</span>
@@ -589,13 +622,13 @@ export const HistoryScreen: React.FC = () => {
                ${(line2 !== '') ? `
                  <div class="entry-row" style="margin-top: -2px;">
                    <div></div>
-                   <span class="item-val" style="font-size: 11px; opacity: 0.8;">${line2}</span>
+                   <span class="item-val" style="font-size: 9px;">${line2}</span>
                  </div>
                ` : ''}
              `;
           }).join('')}
           
-          ${raniRupaEntries.length > 0 ? '<div class="divider"></div>' : ''}
+          ${(raniRupaEntries.length > 0 || customRupuSummaryLine) ? '<div class="divider"></div>' : ''}
           
           ${Object.entries(groupedRaniRupa).map(([itemType, entries]) => {
             const sumPure = entries.reduce((sum, e) => {
@@ -631,6 +664,8 @@ export const HistoryScreen: React.FC = () => {
             const firstCut = entries[0].cut || 0;
             const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${Math.abs(firstCut).toFixed(2)}%)` : `${sumPure.toFixed(decimals)}g`;
 
+            if (itemType === 'silver' && customRupuSummaryLine) return ''; // Skip default if custom will render
+            
             return `
               <div class="entry-row">
                 <div class="item-name-row">
@@ -641,6 +676,16 @@ export const HistoryScreen: React.FC = () => {
               </div>
             `;
           }).join('')}
+          
+          ${customRupuSummaryLine ? `
+            <div class="entry-row">
+              <div class="item-name-row">
+                <div class="icon-box">-</div>
+                <span class="item-name">Pure Silver</span>
+              </div>
+              <span class="item-val">${customRupuSummaryLine}</span>
+            </div>
+          ` : ''}
           
           ${(!isMetalOnly && processedEntries.length > 0) ? '<div class="divider"></div>' : ''}
           
@@ -708,35 +753,36 @@ export const HistoryScreen: React.FC = () => {
           <head>
             <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
-              body { font-family: 'Outfit', sans-serif; padding: 20px; background: #fff; }
-              h1 { text-align: center; color: #333; margin-bottom: 20px; font-size: 24px; font-weight: 700; }
-              .container { column-count: 2; column-gap: 15px; }
-              .card { break-inside: avoid; margin-bottom: 15px; background-color: #F0F2F5; border-radius: 12px; padding: 12px; }
-              .card-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
-              .customer-name { font-weight: 600; font-size: 14px; color: #1A1C1E; }
-              .date { font-size: 10px; color: #444746; font-weight: 400; }
-              .amount { font-weight: 700; font-size: 14px; text-align: right; }
-              .receipt-section { background-color: #FFFFFF; border-radius: 8px; padding: 8px; }
-              .entry-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+              @media print { body { -webkit-print-color-adjust: exact; } }
+              body { font-family: 'Outfit', sans-serif; padding: 16px; background: #fff; }
+              h1 { text-align: center; color: #000; margin-bottom: 16px; font-size: 20px; font-weight: 700; }
+              .container { column-count: 3; column-gap: 12px; column-fill: balance; }
+              .card { break-inside: avoid; margin-bottom: 12px; background-color: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 10px; }
+              .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+              .customer-name { font-weight: 700; font-size: 13px; color: #000; }
+              .date { font-size: 9px; color: #333; font-weight: 400; margin-top: 2px; }
+              .amount { font-weight: 700; font-size: 13px; color: #000; text-align: right; }
+              .receipt-section { background-color: #fff; border-radius: 6px; padding: 7px; border: 1px solid #e8e8e8; }
+              .entry-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
               .item-name-row { display: flex; align-items: center; }
-              .icon-box { width: 10px; height: 10px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; margin-right: 6px; }
-              .item-name { font-size: 12px; font-weight: 500; color: #1A1C1E; }
-              .item-val { font-size: 12px; color: #444746; font-weight: 400; }
-              .divider { height: 1px; background-color: rgba(0,0,0,0.05); margin: 6px 0; }
+              .icon-box { width: 14px; text-align: center; font-size: 10px; font-weight: 700; color: #000; margin-right: 4px; flex-shrink: 0; }
+              .item-name { font-size: 11px; font-weight: 600; color: #000; }
+              .item-val { font-size: 11px; color: #222; font-weight: 400; text-align: right; }
+              .divider { height: 1px; background-color: #ccc; margin: 5px 0; }
               .total-row { display: flex; justify-content: space-between; align-items: center; }
-              .total-label { font-size: 11px; font-weight: 500; color: #1A1C1E; }
-              .total-amount { font-size: 12px; font-weight: 600; color: #1A1C1E; }
+              .total-label { font-size: 10px; font-weight: 600; color: #000; }
+              .total-amount { font-size: 11px; font-weight: 700; color: #000; }
               .footer-row { display: flex; justify-content: space-between; align-items: center; }
-              .footer-label { font-size: 11px; font-weight: 500; color: #1A1C1E; margin-right: 4px; }
-              .footer-amount { font-size: 12px; font-weight: 600; }
-              .balance-label { font-size: 10px; font-weight: 600; text-transform: uppercase; }
-              .note-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.05); }
-              .note-label { font-size: 11px; font-weight: 500; color: #444746; }
-              .note-text { font-size: 11px; color: #1A1C1E; text-align: right; flex: 1; margin-left: 8px; }
+              .footer-label { font-size: 10px; font-weight: 600; color: #000; margin-right: 4px; }
+              .footer-amount { font-size: 11px; font-weight: 700; color: #000; }
+              .balance-label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #000; }
+              .note-row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ccc; }
+              .note-label { font-size: 10px; font-weight: 600; color: #444; }
+              .note-text { font-size: 10px; color: #000; text-align: right; flex: 1; margin-left: 6px; }
             </style>
           </head>
           <body>
-            <h1>Transaction History - ${formatDate(exportDate)}</h1>
+            <h1>Transaction History — ${formatDate(exportDate)}</h1>
             <div class="container">
               ${htmlBody}
             </div>
@@ -1084,6 +1130,36 @@ export const HistoryScreen: React.FC = () => {
       return acc;
     }, {} as Record<string, typeof processedEntries>);
 
+    // Custom Rupu Summary Logic
+    const isAllRupu = transaction.entries.length > 1 && transaction.entries.every(e => e.itemType === 'rupu');
+    let customRupuSummaryLine: string | null = null;
+    
+    if (isAllRupu) {
+      const isPurchase = transaction.entries.some(e => e.type === 'purchase');
+      const isSell = transaction.entries.some(e => e.type === 'sell');
+      let showCustomSummary = false;
+      
+      if (isPurchase) {
+        const allPriceZero = transaction.entries.every(e => !e.price || e.price === 0);
+        const firstMetalOnly = transaction.entries[0].metalOnly;
+        if (allPriceZero || firstMetalOnly) {
+          showCustomSummary = true;
+        }
+      } else if (isSell) {
+        const allTouchHigh = transaction.entries.every(e => (e.touch || 0) >= 98);
+        if (allTouchHigh) {
+          showCustomSummary = true;
+        }
+      }
+
+      if (showCustomSummary) {
+        const totalW = transaction.entries.reduce((sum, e) => sum + (e.weight || 0), 0);
+        const totalP = transaction.entries.reduce((sum, e) => sum + customFormatPureSilver(e.weight || 0, e.touch || 100), 0);
+        const avgT = totalW > 0 ? (totalP / totalW) * 100 : 0;
+        customRupuSummaryLine = `${totalW.toFixed(0)}g : ${avgT.toFixed(2)}% : ${totalP.toFixed(0)}g`;
+      }
+    }
+
     // Logic for Transaction Balance Label
     let transactionBalanceLabel = 'Settled';
     let transactionBalanceColor = theme.colors.primary; // Blue default
@@ -1134,9 +1210,10 @@ export const HistoryScreen: React.FC = () => {
         // Optimize for thermal printing when hideActions is true
         hideActions && {
           backgroundColor: '#FFFFFF', // Pure white for thermal
-          borderRadius: 0, // No rounded corners
-          padding: 4, // Minimal padding for thermal (reduced from 10)
-          paddingRight: 50, // Increase right padding for safety margin
+          borderRadius: 8, // Slight border radius like PDF
+          borderWidth: 1,
+          borderColor: '#cccccc',
+          padding: 10, // Match PDF padding
           marginBottom: 0,
           margin: 0, // No margins
           elevation: 0, // Remove shadow (prevents gray noise)
@@ -1208,11 +1285,11 @@ export const HistoryScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Receipt / Details Section */}
-        <View style={styles.receiptSection}>
+          {/* Receipt / Details Section */}
+        <View style={[styles.receiptSection, hideActions && { backgroundColor: '#FFFFFF', borderRadius: 6, borderWidth: 1, borderColor: '#e8e8e8', padding: 7 }]}>
             {/* Render all entries */}
             {processedEntries.map((entry, index) => (
-                <View key={index} style={styles.entryWrapper}>
+                <View key={index} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
                   {(() => {
                     // Logic for money entries: 'give' -> like sell (top-right), 'receive' -> like purchase (bottom-left)
                     const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
@@ -1222,8 +1299,8 @@ export const HistoryScreen: React.FC = () => {
                     const isPurchase = entry.type === 'purchase' || isMoneyReceive;
                     
                     const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
-                    const iconColor = isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00';
-                    const iconStyle = isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney;
+                    const iconColor = hideActions ? '#000000' : (isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00');
+                    const iconStyle = hideActions ? styles.iconPrint : (isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney);
                     
                     const { line1, line2 } = getEntryDisplayData(entry, transaction);
 
@@ -1232,12 +1309,12 @@ export const HistoryScreen: React.FC = () => {
                         {/* Item Row */}
                         <View style={styles.receiptRow}>
                           <View style={styles.itemNameRow}>
-                            <View style={[styles.iconBox, iconStyle]}>
-                              <Icon name={iconName} size={hideActions ? 20 : 14} color={iconColor} />
+                            <View style={[styles.iconBox, iconStyle, hideActions && { width: 14, height: 14, marginRight: 4, borderRadius: 0 }]}>
+                               <Icon name={iconName} size={hideActions ? 14 : 14} color={iconColor} />
                             </View>
                             <Text allowFontScaling={allowFontScaling} style={[
                               styles.itemNameText,
-                              hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                              hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2, bold like PDF
                             ]}>
                               {entry.displayName}
                             </Text>
@@ -1275,7 +1352,7 @@ export const HistoryScreen: React.FC = () => {
             ))}
 
             {/* Divider before summary */}
-            {raniRupaEntries.length > 0 && <Divider style={[styles.divider, { marginVertical: 2 }]} />}
+            {(raniRupaEntries.length > 0 || customRupuSummaryLine) && <Divider style={[styles.divider, { marginVertical: 2 }]} />}
 
             {/* Summary for Rani/Rupa pure metals */}
             {Object.entries(groupedRaniRupa).map(([itemType, entries]) => {
@@ -1312,14 +1389,18 @@ export const HistoryScreen: React.FC = () => {
               const firstCut = entries[0].cut || 0;
               const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${Math.abs(firstCut).toFixed(2)})` : `${sumPure.toFixed(decimals)}g`;
 
+              if (itemType === 'silver' && customRupuSummaryLine) return null; // Skip if custom line will handle it
+              
               return (
-                <View key={`summary-${itemType}`} style={styles.entryWrapper}>
+                <View key={`summary-${itemType}`} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
                   <View style={styles.receiptRow}>
                     <View style={styles.itemNameRow}>
+                      <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 14, height: 14, marginRight: 4, borderRadius: 0 }]}>
+                         <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
+                      </View>
                       <Text allowFontScaling={allowFontScaling} style={[
-                        styles.itemNameText, 
-                        { marginLeft: 2 },
-                        hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                        styles.itemNameText,
+                        hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2, bold like PDF
                       ]}>
                         {displayType}
                       </Text>
@@ -1334,9 +1415,36 @@ export const HistoryScreen: React.FC = () => {
                 </View>
               );
             })}
+            
+            {/* Custom Rupu Summary Line */}
+            {customRupuSummaryLine && (
+                <View style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
+                  <View style={styles.receiptRow}>
+                    <View style={styles.itemNameRow}>
+                      <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 14, height: 14, marginRight: 4, borderRadius: 0 }]}>
+                         <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
+                      </View>
+                      <Text allowFontScaling={allowFontScaling} style={[
+                        styles.itemNameText,
+                        hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2, bold like PDF
+                      ]}>
+                        Pure Silver
+                      </Text>
+                    </View>
+                    <Text allowFontScaling={allowFontScaling} style={[
+                      styles.itemVal,
+                      hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                    ]}>
+                      {customRupuSummaryLine}
+                    </Text>
+                  </View>
+                </View>
+            )}
 
             {/* Dividers & Totals */}
-            {!isMetalOnly && processedEntries.length > 0 && <Divider style={styles.divider} />}
+            {!isMetalOnly && processedEntries.length > 0 && 
+              (hideActions ? <View style={{ height: 1, backgroundColor: '#cccccc', marginVertical: 5 }} /> : <Divider style={styles.divider} />)
+            }
             
             {/* Total Row or Money-Only Label */}
             {!isMetalOnly && (
@@ -1344,18 +1452,18 @@ export const HistoryScreen: React.FC = () => {
                 <View style={styles.totalRow}>
                   <Text style={[
                     styles.totalLabel,
-                    hideActions && { fontSize: 15, color: '#000000' } // Base size +2
+                    hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2
                   ]}>Money-Only</Text>
                 </View>
               ) : (
                 <View style={styles.totalRow}>
                   <Text style={[
                     styles.totalLabel,
-                    hideActions && { fontSize: 15, color: '#000000' } // Base size +2
+                    hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2
                   ]}>Total</Text>
                   <Text style={[
                     styles.totalAmount,
-                    hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                    hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_700Bold' } // Base size +2
                   ]}>
                     ₹{formatIndianNumber(Math.abs(transaction.total))}
                   </Text>
@@ -1364,30 +1472,32 @@ export const HistoryScreen: React.FC = () => {
             )}
 
             {/* Divider */}
-            {!isMetalOnly && <Divider style={styles.divider} />}
+            {!isMetalOnly && 
+              (hideActions ? <View style={{ height: 1, backgroundColor: '#cccccc', marginVertical: 5 }} /> : <Divider style={styles.divider} />)
+            }
 
             {/* Payment/Balance Row */}
             {!isMetalOnly && (
                <View style={[styles.receiptRow, styles.footerRow]}>
                  <Text style={[
                    styles.footerLabel,
-                   hideActions && { fontSize: 15, color: '#000000' } // Base size +2
+                   hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2
                  ]}>
                    {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
                  </Text>
                  <Text style={[
                    styles.footerAmount, 
                    { color: hideActions ? '#000000' : (transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary) },
-                   hideActions && { fontSize: 16 } // Base size +2
+                   hideActions && { fontSize: 16, fontFamily: 'Outfit_700Bold' } // Base size +2
                  ]}>
-                   {' '}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
+                   {' '}{transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                  </Text>
                  <View style={{ flex: 1 }} />
                  <View>
                    <Text style={[
                      styles.balanceLabel, 
                      { color: hideActions ? '#000000' : transactionBalanceColor },
-                     hideActions && { fontSize: 12 } // Base size +2
+                     hideActions && { fontSize: 12, fontFamily: 'Outfit_700Bold' } // Base size +2
                    ]}>
                      {transactionBalanceLabel}
                    </Text>
@@ -1398,14 +1508,14 @@ export const HistoryScreen: React.FC = () => {
 
         {/* Note Section */}
         {transaction.note && transaction.note.trim() !== '' && (
-          <View style={styles.noteRow}>
+          <View style={[styles.noteRow, hideActions && { marginTop: 6, paddingTop: 6, borderTopColor: '#cccccc', borderTopWidth: 1 }]}>
             <Text style={[
               styles.noteLabel,
-              hideActions && { fontSize: 15, color: '#000000' } // Base size +2
+              hideActions && { fontSize: 14, color: '#444444', fontFamily: 'Outfit_600SemiBold' } // Base size +2
             ]}>NOTE</Text>
             <Text style={[
               styles.noteText,
-              hideActions && { fontSize: 15, color: '#000000' } // Base size +2
+              hideActions && { fontSize: 14, color: '#000000', marginLeft: 6, fontFamily: 'Outfit_400Regular' } // Base size +2
             ]}>{transaction.note}</Text>
           </View>
         )}
@@ -1449,20 +1559,26 @@ export const HistoryScreen: React.FC = () => {
             }
           }
           
-          const hasAnyBalanceOrDebt = balances.length > 0 || debts.length > 0;
+          // Check if there's any non-zero balance
+          const hasMoneyBalance = customerBalance.balance && Math.abs(customerBalance.balance) >= 1;
+          const hasGold999Balance = customerBalance.metalBalances?.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001;
+          const hasGold995Balance = customerBalance.metalBalances?.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001;
+          const hasSilverBalance = customerBalance.metalBalances?.silver && Math.abs(customerBalance.metalBalances.silver) >= 1;
+          
+          const hasAnyBalanceOrDebt = Boolean(hasMoneyBalance || hasGold999Balance || hasGold995Balance || hasSilverBalance);
           
           return hasAnyBalanceOrDebt ? (
             <View style={{
               marginTop: 12,
               paddingTop: 12,
               borderTopWidth: 1,
-              borderTopColor: 'rgba(0,0,0,0.05)',
+              borderTopColor: hideActions ? '#cccccc' : 'rgba(0,0,0,0.05)',
             }}>
               {balances.length > 0 && (
                 <Text style={{
                   fontFamily: 'Outfit_700Bold',
-                  fontSize: 18,
-                  color: theme.colors.success,
+                  fontSize: hideActions ? 14 : 18,
+                  color: hideActions ? '#000000' : theme.colors.success,
                   marginBottom: debts.length > 0 ? 4 : 0,
                 }}>
                   Balance: {balances.join(', ')}
@@ -1471,8 +1587,8 @@ export const HistoryScreen: React.FC = () => {
               {debts.length > 0 && (
                 <Text style={{
                   fontFamily: 'Outfit_700Bold',
-                  fontSize: 18,
-                  color: theme.colors.debtColor,
+                  fontSize: hideActions ? 14 : 18,
+                  color: hideActions ? '#000000' : theme.colors.debtColor,
                 }}>
                   Debt: {debts.join(', ')}
                 </Text>
@@ -1943,6 +2059,10 @@ const styles = StyleSheet.create({
   },
   iconMoney: {
     backgroundColor: '#FFF8E1', // Light Orange
+  },
+  iconPrint: {
+    backgroundColor: 'transparent',
+    // align text baseline in container for the purely textual icons
   },
   itemNameText: {
     fontFamily: 'Outfit_500Medium',

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { Modal, View, StyleSheet, ScrollView, Pressable, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Surface, Text, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
@@ -18,6 +19,7 @@ interface CustomAlertProps {
   icon?: string;
   onDismiss?: () => void;
   maxHeight?: number;
+  dynamicMaxHeight?: boolean;
 }
 
 const CustomAlert: React.FC<CustomAlertProps> = ({
@@ -28,7 +30,14 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   icon,
   onDismiss,
   maxHeight,
+  dynamicMaxHeight = false,
 }) => {
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  // Available height = window height minus top+bottom safe area insets minus 48px margin
+  const computedMaxHeight = windowHeight - insets.top - insets.bottom - 48;
+  const effectiveMaxHeight = dynamicMaxHeight ? computedMaxHeight : maxHeight;
   const finalButtons = buttons === undefined ? [{ text: 'OK' }] : buttons;
   const isDismissible = finalButtons && finalButtons.length > 0;
 
@@ -65,7 +74,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
           We use a View with onStartShouldSetResponder to block clicks passing through to the overlay.
         */}
         <View onStartShouldSetResponder={() => true}>
-          <Surface style={[styles.alertContainer, maxHeight ? { maxHeight } : {}]}>
+          <Surface style={[styles.alertContainer, effectiveMaxHeight ? { maxHeight: effectiveMaxHeight } : {}]}>
             
             {/* Header */}
             <View style={styles.headerContainer}>

@@ -25,6 +25,10 @@ import { formatFullDate, formatIndianNumber, formatPureGoldPrecise, formatPureSi
 import { useAppContext } from '../context/AppContext';
 import * as FileSystem from 'expo-file-system';
 import CustomAlert from '../components/CustomAlert';
+import { AnimatedAccordion } from '../components/AnimatedAccordion';
+import { InventoryInputDialog } from '../components/InventoryInputDialog';
+import { InventoryService } from '../services/inventory.service';
+import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
 
 // Define a local interface for display purposes
 interface CustomerLedgerItem {
@@ -49,7 +53,7 @@ export const CustomerListScreen: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string>('');
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [ledgerCache, setLedgerCache] = useState<Map<string, { data: CustomerLedgerItem[], timestamp: number }>>(new Map());
   const [customersWithTransactions, setCustomersWithTransactions] = useState<Set<string>>(new Set());
   const [areTransactionsChecked, setAreTransactionsChecked] = useState(false);
@@ -58,6 +62,12 @@ export const CustomerListScreen: React.FC = () => {
   const [deleteAlertMessage, setDeleteAlertMessage] = useState('');
   const [deleteAlertIcon, setDeleteAlertIcon] = useState<string | undefined>(undefined);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+
+  // Quick-add state
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showBalancesDialog, setShowBalancesDialog] = useState(false);
+  const [pendingCustomerId, setPendingCustomerId] = useState<string>('');
+  const [pendingCustomerName, setPendingCustomerName] = useState<string>('');
 
   const { navigateToSettings, showAlert } = useAppContext();
 
@@ -77,19 +87,19 @@ export const CustomerListScreen: React.FC = () => {
     [customers] // Depend on customers so it updates when customers load
   );
 
-  const expandedCardsRef = useRef(expandedCards);
+  const expandedCardIdRef = useRef(expandedCardId);
   useEffect(() => {
-    expandedCardsRef.current = expandedCards;
-  }, [expandedCards]);
+    expandedCardIdRef.current = expandedCardId;
+  }, [expandedCardId]);
 
   // Load all customers on focus and refresh expanded cards
   useFocusEffect(
     useCallback(() => {
       loadAllCustomers();
-      // Refresh ledger data for expanded cards
-      expandedCardsRef.current.forEach(id => {
-        fetchCustomerLedger(id);
-      });
+      // Refresh ledger data for the open card
+      if (expandedCardIdRef.current) {
+        fetchCustomerLedger(expandedCardIdRef.current);
+      }
     }, [])
   );
 
@@ -815,16 +825,68 @@ export const CustomerListScreen: React.FC = () => {
     setCustomerToDelete(null);
   };
 
+  // ── Quick-add handlers ──────────────────────────────────────────────────────
+  const openQuickAdd = () => setShowCustomerModal(true);
+
+  // Called when user picks an existing customer from the modal
+  const handleCustomerSelected = (customer: Customer) => {
+    setShowCustomerModal(false);
+    setPendingCustomerId(customer.id);
+    setPendingCustomerName(customer.name);
+    setShowBalancesDialog(true);
+  };
+
+  // Called when user types a new name and confirms creation in the modal
+  const handleCustomerCreated = async (name: string) => {
+    setShowCustomerModal(false);
+    const newId = `cust_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newCustomer: Customer = {
+      id: newId,
+      name,
+      balance: 0,
+      metalBalances: { gold999: 0, gold995: 0, silver: 0 },
+    };
+    await CustomerService.saveCustomer(newCustomer);
+    setPendingCustomerId(newId);
+    setPendingCustomerName(name);
+    setShowBalancesDialog(true);
+  };
+
+  const handleQuickAddStep2 = async (values: Record<string, any>) => {
+    const id = pendingCustomerId;
+    const moneyBal  = values.moneyBalance   || 0;
+    const g999Bal   = values.gold999Balance  || 0;
+    const g995Bal   = values.gold995Balance  || 0;
+    const silverBal = values.silverBalance   || 0;
+
+    // Update customer balances directly (no transactions)
+    if (moneyBal  !== 0) await CustomerService.updateCustomerBalance(id, moneyBal);
+    if (g999Bal   !== 0) await CustomerService.updateCustomerMetalBalance(id, 'gold999', g999Bal);
+    if (g995Bal   !== 0) await CustomerService.updateCustomerMetalBalance(id, 'gold995', g995Bal);
+    if (silverBal !== 0) await CustomerService.updateCustomerMetalBalance(id, 'silver',  silverBal);
+
+    setShowBalancesDialog(false);
+    setPendingCustomerId('');
+    setPendingCustomerName('');
+    await loadAllCustomers();
+  };
+
+  const handleQuickAddCancel = () => {
+    setShowCustomerModal(false);
+    setShowBalancesDialog(false);
+    setPendingCustomerId('');
+    setPendingCustomerName('');
+  };
+
   const toggleCardExpansion = async (customerId: string) => {
-    const newExpanded = new Set(expandedCards);
-    if (newExpanded.has(customerId)) {
-      newExpanded.delete(customerId);
+    if (expandedCardId === customerId) {
+      // Collapse
+      setExpandedCardId(null);
     } else {
-      newExpanded.add(customerId);
-      // Pre-fetch ledger data when expanding
+      // Pre-fetch ledger data, then open
       await fetchCustomerLedger(customerId);
+      setExpandedCardId(customerId);
     }
-    setExpandedCards(newExpanded);
   };
 
   const renderLedgerEntry = (entry: CustomerLedgerItem) => {
@@ -998,7 +1060,7 @@ export const CustomerListScreen: React.FC = () => {
   };
 
   const renderCustomerItem = ({ item }: { item: Customer }) => {
-    const isExpanded = expandedCards.has(item.id);
+    const isExpanded = expandedCardId === item.id;
     const ledgerData = ledgerCache.get(item.id)?.data || [];
 
     // Badge Logic
@@ -1086,9 +1148,9 @@ export const CustomerListScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
 
-        {isExpanded && (
+        <AnimatedAccordion isExpanded={isExpanded}>
           <View style={styles.expandedView}>
-            <ScrollView style={styles.scrollableContent}>
+            <ScrollView style={styles.scrollableContent} nestedScrollEnabled={true}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.th, styles.colDate]}>Date</Text>
                 <Text style={[styles.th, styles.colMoney]}>Money</Text>
@@ -1106,7 +1168,7 @@ export const CustomerListScreen: React.FC = () => {
               )}
             </ScrollView>
           </View>
-        )}
+        </AnimatedAccordion>
       </View>
     );
   };
@@ -1180,6 +1242,37 @@ export const CustomerListScreen: React.FC = () => {
           },
         ]}
         onDismiss={handleDeleteCancel}
+      />
+
+      {/* Floating + button */}
+      <TouchableOpacity style={styles.fab} onPress={openQuickAdd}>
+        <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Customer selection modal for quick-add */}
+      <CustomerSelectionModal
+        visible={showCustomerModal}
+        onDismiss={handleQuickAddCancel}
+        onSelectCustomer={handleCustomerSelected}
+        onCreateCustomer={handleCustomerCreated}
+        allowCreateCustomer={true}
+      />
+
+      {/* Opening balances dialog */}
+      <InventoryInputDialog
+        visible={showBalancesDialog}
+        title={`Opening Balances — ${pendingCustomerName}`}
+        message="All optional. Positive = balance, negative = debt."
+        allowDefaults
+        submitLabel="Save"
+        inputs={[
+          { key: 'moneyBalance',   label: 'Money Balance (₹)',    value: '', placeholder: '0', type: 'text', keyboardType: 'numeric' },
+          { key: 'gold999Balance', label: 'Gold 999 Balance (g)', value: '', placeholder: '0', type: 'text', keyboardType: 'numeric' },
+          { key: 'gold995Balance', label: 'Gold 995 Balance (g)', value: '', placeholder: '0', type: 'text', keyboardType: 'numeric' },
+          { key: 'silverBalance',  label: 'Silver Balance (g)',   value: '', placeholder: '0', type: 'text', keyboardType: 'numeric' },
+        ]}
+        onSubmit={handleQuickAddStep2}
+        onCancel={handleQuickAddCancel}
       />
     </SafeAreaView>
   );
@@ -1280,6 +1373,22 @@ const styles = StyleSheet.create({
   // List
   listContainer: {
     flex: 1,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 36,
+    right: 44,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#005AC1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#005AC1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
   customerItemContainer: {
     borderBottomWidth: 1,

@@ -3,6 +3,7 @@ import {
   View,
   StyleSheet,
   FlatList,
+  ScrollView,
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -331,6 +332,36 @@ export const TradeScreen: React.FC = () => {
     setSelectedCustomer(null); // Clear selected customer
   };
 
+  // Quick-add: opens dialog directly for a known customer, skipping customer selection
+  const handleQuickAddTrade = (customerId: string, customerName: string) => {
+    const data = { customerId, customerName };
+    setCollectedTradeData(data);
+    setTradeInputs([
+      {
+        key: 'tradeType',
+        label: 'Trade Type',
+        value: '',
+        type: 'radio',
+        options: [
+          { label: 'Sell', value: 'sell' },
+          { label: 'Buy', value: 'purchase' },
+        ],
+      },
+      {
+        key: 'itemType',
+        label: 'Item Type',
+        value: 'gold999',
+        type: 'select',
+        options: [
+          { label: 'Gold 999', value: 'gold999' },
+          { label: 'Gold 995', value: 'gold995' },
+          { label: 'Silver', value: 'silver' },
+        ],
+      },
+    ]);
+    setTradeDialogVisible(true);
+  };
+
   const handleRadioChange = (key: string, value: string) => {
     const updatedData = { ...collectedTradeData, [key]: value };
     setCollectedTradeData(updatedData);
@@ -491,19 +522,35 @@ export const TradeScreen: React.FC = () => {
               </Text>
             </View>
           </View>
-          <Animated.View style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}>
-            <Icon name="chevron-down" size={24} color={theme.colors.onSurfaceVariant} />
-          </Animated.View>
+          <View style={styles.customerGroupRight}>
+            {/* Quick-add button for this customer */}
+            <TouchableOpacity
+              style={styles.quickAddBtn}
+              onPress={() => handleQuickAddTrade(item.customerId, item.customerName)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Icon name="plus" size={18} color="#fff" />
+            </TouchableOpacity>
+            <Animated.View style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}>
+              <Icon name="chevron-down" size={24} color={theme.colors.onSurfaceVariant} />
+            </Animated.View>
+          </View>
         </TouchableOpacity>
         
         <AnimatedAccordion isExpanded={isExpanded}>
-          <View style={styles.tradesContainer}>
-            {item.trades.map((trade, index) => (
-              <View key={trade.id} style={{ marginBottom: index < item.trades.length - 1 ? 12 : 0 }}>
-                {renderTradeItem({ item: trade })}
-              </View>
-            ))}
-          </View>
+          <ScrollView
+            style={styles.tradesScrollView}
+            nestedScrollEnabled={true}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.tradesContainer}>
+              {item.trades.map((trade, index) => (
+                <View key={trade.id} style={{ marginBottom: index < item.trades.length - 1 ? 12 : 0 }}>
+                  {renderTradeItem({ item: trade })}
+                </View>
+              ))}
+            </View>
+          </ScrollView>
         </AnimatedAccordion>
       </View>
     );
@@ -798,6 +845,22 @@ const styles = StyleSheet.create({
   },
   customerGroupMetaSecondary: {
     opacity: 0.7,
+  },
+  customerGroupRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  quickAddBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tradesScrollView: {
+    maxHeight: 400, // ~2 trade cards visible at a time
   },
   tradesContainer: {
     backgroundColor: theme.colors.surface,

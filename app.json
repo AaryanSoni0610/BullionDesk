@@ -3,7 +3,7 @@
     "name": "BullionDesk",
     "slug": "BullionDesk",
     "sdkVersion": "52.0.0",
-    "version": "7.8.5",
+    "version": "7.9.0",
     "orientation": "portrait",
     "icon": "./assets/app-icon1.png",
     "userInterfaceStyle": "automatic",
@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true
     },
+    "jsEngine": "hermes",
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon1.png"
@@ -55,7 +56,16 @@
             "minSdkVersion": 24,
             "compileSdkVersion": 35,
             "targetSdkVersion": 34,
-            "buildToolsVersion": "35.0.0"
+            "buildToolsVersion": "35.0.0",
+            "enableProguardInReleaseBuilds": true,
+            "ndk": {
+              "abiFilters": ["armeabi-v7a", "arm64-v8a"]
+            },
+            "packagingOptions": {
+              "jniLibs": {
+                "useLegacyPackaging": false
+              }
+            }
           }
         }
       ],

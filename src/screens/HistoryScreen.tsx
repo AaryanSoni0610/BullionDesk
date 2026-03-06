@@ -394,7 +394,7 @@ export const HistoryScreen: React.FC = () => {
         format: 'png', 
         quality: 1, 
         result: 'tmpfile',
-        width: 400, // Reduced width for safe printing on 80mm paper
+        width: 380, // Reduced width for safe printing on 80mm paper
       });
       
       // Print the image
@@ -1218,7 +1218,7 @@ export const HistoryScreen: React.FC = () => {
           margin: 0, // No margins
           elevation: 0, // Remove shadow (prevents gray noise)
           shadowOpacity: 0,
-          width: 400, // Reduced width for safe printing on 80mm paper
+          width: 380, // Reduced width for safe printing on 80mm paper
         }
       ]}>
         {/* Action Buttons at Top Left */}
@@ -1256,13 +1256,13 @@ export const HistoryScreen: React.FC = () => {
           <View style={styles.infoBlock}>
             <Text allowFontScaling={allowFontScaling} style={[
               styles.customerName,
-              hideActions && { color: '#000000', fontSize: 20 } // Base size +2
+              hideActions && { color: '#000000', fontSize: 19 } // Base size +1
             ]}>
               {transaction.customerName}
             </Text>
             <Text allowFontScaling={allowFontScaling} style={[
               styles.transactionDate,
-              hideActions && { color: '#000000', fontSize: 14 } // Base size +2
+              hideActions && { color: '#000000', fontSize: 13 } // Base size +1
             ]}>
               {formatFullDate(transaction.date)}
             </Text>
@@ -1275,7 +1275,7 @@ export const HistoryScreen: React.FC = () => {
                   styles.mainAmount, 
                   { 
                     color: hideActions ? '#000000' : getAmountColor(transaction),
-                    fontSize: hideActions ? 20 : 18 // Base size +2
+                    fontSize: hideActions ? 19 : 18 // Base size +1
                   }
                 ]}
               >
@@ -1314,7 +1314,7 @@ export const HistoryScreen: React.FC = () => {
                             </View>
                             <Text allowFontScaling={allowFontScaling} style={[
                               styles.itemNameText,
-                              hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2, bold like PDF
+                              hideActions && { fontSize: 15, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +1, bold like PDF
                             ]}>
                               {entry.displayName}
                             </Text>
@@ -1323,7 +1323,7 @@ export const HistoryScreen: React.FC = () => {
                           {/* Line 1: Weight / Details */}
                           <Text allowFontScaling={allowFontScaling} style={[
                             styles.itemVal,
-                            hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                            hideActions && { fontSize: 15, color: '#000000' } // Base size +1
                           ]}>
                               {line1}
                           </Text>
@@ -1336,7 +1336,7 @@ export const HistoryScreen: React.FC = () => {
                               <Text allowFontScaling={allowFontScaling} style={[
                                 styles.itemVal, 
                                 { 
-                                  fontSize: hideActions ? 15 : 13, // Base size +2
+                                  fontSize: hideActions ? 14 : 13, // Base size +1
                                   opacity: hideActions ? 1 : 0.8,
                                   color: hideActions ? '#000000' : undefined
                                 }
@@ -1400,14 +1400,14 @@ export const HistoryScreen: React.FC = () => {
                       </View>
                       <Text allowFontScaling={allowFontScaling} style={[
                         styles.itemNameText,
-                        hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2, bold like PDF
+                        hideActions && { fontSize: 15, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +1, bold like PDF
                       ]}>
                         {displayType}
                       </Text>
                     </View>
                     <Text allowFontScaling={allowFontScaling} style={[
                       styles.itemVal,
-                      hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                      hideActions && { fontSize: 15, color: '#000000' } // Base size +1
                     ]}>
                       {line1}
                     </Text>
@@ -1426,14 +1426,14 @@ export const HistoryScreen: React.FC = () => {
                       </View>
                       <Text allowFontScaling={allowFontScaling} style={[
                         styles.itemNameText,
-                        hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2, bold like PDF
+                        hideActions && { fontSize: 15, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +1, bold like PDF
                       ]}>
                         Pure Silver
                       </Text>
                     </View>
                     <Text allowFontScaling={allowFontScaling} style={[
                       styles.itemVal,
-                      hideActions && { fontSize: 16, color: '#000000' } // Base size +2
+                      hideActions && { fontSize: 15, color: '#000000' } // Base size +1
                     ]}>
                       {customRupuSummaryLine}
                     </Text>
@@ -1452,18 +1452,18 @@ export const HistoryScreen: React.FC = () => {
                 <View style={styles.totalRow}>
                   <Text style={[
                     styles.totalLabel,
-                    hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2
+                    hideActions && { fontSize: 13, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +1
                   ]}>Money-Only</Text>
                 </View>
               ) : (
                 <View style={styles.totalRow}>
                   <Text style={[
                     styles.totalLabel,
-                    hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2
+                    hideActions && { fontSize: 13, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +1
                   ]}>Total</Text>
                   <Text style={[
                     styles.totalAmount,
-                    hideActions && { fontSize: 16, color: '#000000', fontFamily: 'Outfit_700Bold' } // Base size +2
+                    hideActions && { fontSize: 15, color: '#000000', fontFamily: 'Outfit_700Bold' } // Base size +1
                   ]}>
                     ₹{formatIndianNumber(Math.abs(transaction.total))}
                   </Text>
@@ -1481,14 +1481,14 @@ export const HistoryScreen: React.FC = () => {
                <View style={[styles.receiptRow, styles.footerRow]}>
                  <Text style={[
                    styles.footerLabel,
-                   hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +2
+                   hideActions && { fontSize: 13, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size +1
                  ]}>
                    {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
                  </Text>
                  <Text style={[
                    styles.footerAmount, 
                    { color: hideActions ? '#000000' : (transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary) },
-                   hideActions && { fontSize: 16, fontFamily: 'Outfit_700Bold' } // Base size +2
+                   hideActions && { fontSize: 15, fontFamily: 'Outfit_700Bold' } // Base size +1
                  ]}>
                    {' '}{transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
                  </Text>
@@ -1497,7 +1497,7 @@ export const HistoryScreen: React.FC = () => {
                    <Text style={[
                      styles.balanceLabel, 
                      { color: hideActions ? '#000000' : transactionBalanceColor },
-                     hideActions && { fontSize: 12, fontFamily: 'Outfit_700Bold' } // Base size +2
+                     hideActions && { fontSize: 11, fontFamily: 'Outfit_700Bold' } // Base size +1
                    ]}>
                      {transactionBalanceLabel}
                    </Text>
@@ -1577,7 +1577,7 @@ export const HistoryScreen: React.FC = () => {
               {balances.length > 0 && (
                 <Text style={{
                   fontFamily: 'Outfit_700Bold',
-                  fontSize: hideActions ? 14 : 18,
+                  fontSize: hideActions ? 13 : 18,
                   color: hideActions ? '#000000' : theme.colors.success,
                   marginBottom: debts.length > 0 ? 4 : 0,
                 }}>
@@ -1587,7 +1587,7 @@ export const HistoryScreen: React.FC = () => {
               {debts.length > 0 && (
                 <Text style={{
                   fontFamily: 'Outfit_700Bold',
-                  fontSize: hideActions ? 14 : 18,
+                  fontSize: hideActions ? 13 : 18,
                   color: hideActions ? '#000000' : theme.colors.debtColor,
                 }}>
                   Debt: {debts.join(', ')}
@@ -2204,7 +2204,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', // Pure white for thermal printing
     padding: 0, // Zero padding to prevent clipping
     margin: 0, // Ensure NO margins are present
-    width: 400, // Reduced width for safe printing on 80mm paper
+    width: 380, // Reduced width for safe printing on 80mm paper
   },
   sheetOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',

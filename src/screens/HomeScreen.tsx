@@ -174,15 +174,18 @@ export const HomeScreen = ({ navigation }: any) => {
 
       // If aggregated, show simplified format: "Total Weight : Pure Weight"
       if (entry._isAggregated) {
-        return `Total Weight: ${weight.toFixed(3)}g : Pure Weight: ${formattedPure.toFixed(3)}g`;
+        return `Total Weight: ${weight.toFixed(entry.itemType === 'rani' ? 3 : 1)}g : Pure Weight: ${formattedPure.toFixed(entry.itemType === 'rani' ? 3 : 1)}g`;
       }
 
       // Standard Format: "Weight : Touch% : Pure Weight"
-      return `${weight.toFixed(3)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(3)}g`;
+      return `${weight.toFixed(entry.itemType === 'rani' ? 3 : 1)}g : ${effectiveTouch.toFixed(2)}% : ${formattedPure.toFixed(entry.itemType === 'rani' ? 3 : 1)}g`;
     }
 
     // 2. Standard Metal Logic
     if (entry.weight) {
+      if (entry.itemType === 'silver') {
+         return `${weight.toFixed(1)}g`;
+      }
       return `${weight.toFixed(3)}g`;
     }
 
@@ -209,7 +212,8 @@ export const HomeScreen = ({ navigation }: any) => {
         if (entry.metalOnly) {
            const itemName = getItemDisplayName(entry);
            const w = entry.weight || 0;
-           metalItems.push(`${itemName} ${w.toFixed(3)}g`);
+           const isRupuOrSilver = entry.itemType === 'rupu' || entry.itemType === 'silver';
+           metalItems.push(`${itemName} ${w.toFixed(isRupuOrSilver ? 1 : 3)}g`);
         }
       });
       

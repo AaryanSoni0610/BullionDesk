@@ -22,7 +22,6 @@
     "expo": "^52.0.48",
     "expo-background-fetch": "~13.0.6",
     "expo-build-properties": "~0.13.3",
-    "expo-dev-client": "~5.0.20",
     "expo-device": "~7.0.3",
     "expo-document-picker": "~13.0.3",
     "expo-file-system": "~18.0.12",
@@ -51,6 +50,7 @@
   "devDependencies": {
     "@babel/core": "^7.24.0",
     "@types/react": "~18.3.12",
+    "expo-dev-client": "~5.0.20",
     "typescript": "~5.3.3"
   }
 }

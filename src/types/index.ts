@@ -23,7 +23,6 @@ export interface PaymentInput {
 
 export interface Transaction {
   id: string;
-  deviceId?: string; // Device ID for conflict-free merging
   customerId: string;
   customerName: string;
   date: string;

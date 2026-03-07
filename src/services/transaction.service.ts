@@ -2,45 +2,11 @@ import { Transaction, TransactionEntry, Customer, PaymentInput } from '../types'
 import { DatabaseService } from './database.sqlite';
 import { CustomerService } from './customer.service';
 import { LedgerService } from './ledger.service';
-import { InventoryService, InventoryDelta } from './inventory.service';
+import { InventoryService } from './inventory.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
-import * as SecureStore from 'expo-secure-store';
-import * as Device from 'expo-device';
 
 export class TransactionService {
   
-  // Helper to calculate inventory delta from entries
-  private static calculateInventoryDeltaFromEntries(entries: TransactionEntry[]): InventoryDelta {
-    const delta: InventoryDelta = {
-      gold999: 0,
-      gold995: 0,
-      silver: 0,
-      rani: 0,
-      rupu: 0,
-      money: 0
-    };
-
-    entries.forEach(entry => {
-      if (entry.itemType !== 'money') {
-        const weight = (entry.itemType === 'rani' || entry.itemType === 'rupu') 
-          ? (entry.pureWeight || 0) 
-          : (entry.weight || 0);
-        
-        // Sell = merchant gives metal = negative inventory effect
-        // Purchase = merchant receives metal = positive inventory effect
-        const metalFlow = entry.type === 'sell' ? -weight : weight;
-        
-        if (entry.itemType === 'gold999') delta.gold999 += metalFlow;
-        else if (entry.itemType === 'gold995') delta.gold995 += metalFlow;
-        else if (entry.itemType === 'silver') delta.silver += metalFlow;
-        else if (entry.itemType === 'rani') delta.rani += metalFlow;
-        else if (entry.itemType === 'rupu') delta.rupu += metalFlow;
-      }
-    });
-
-    return delta;
-  }
-
   // Get all transactions
   static async getAllTransactions(limit?: number): Promise<Transaction[]> {
     try {
@@ -59,7 +25,6 @@ export class TransactionService {
         query += ` LIMIT ${limit}`;
         transactions = await db.getAllAsync<{
           id: string;
-          deviceId: string | null;
           customerId: string;
           customerName: string;
           date: string;
@@ -75,7 +40,6 @@ export class TransactionService {
       } else {
         transactions = await DatabaseService.getAllAsyncBatch<{
           id: string;
-          deviceId: string | null;
           customerId: string;
           customerName: string;
           date: string;
@@ -120,7 +84,6 @@ export class TransactionService {
 
         result.push({
           id: trans.id,
-          deviceId: trans.deviceId || undefined,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
@@ -186,7 +149,6 @@ export class TransactionService {
 
         result.push({
           id: trans.id,
-          deviceId: trans.deviceId || undefined,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
@@ -216,10 +178,11 @@ export class TransactionService {
     startDate: string, 
     endDate: string, 
     itemTypes?: string[],
-    excludeCustomerName?: string
+    excludeCustomerName?: string,
+    limit?: number,
+    offset?: number
   ): Promise<Transaction[]> {
     try {
-      const db = DatabaseService.getDatabase();
 
       let query = `
         SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
@@ -246,6 +209,10 @@ export class TransactionService {
       }
 
       query += ' ORDER BY t.date DESC';
+      if (limit !== undefined) {
+        query += ' LIMIT ? OFFSET ?';
+        params.push(limit, offset ?? 0);
+      }
 
       const transactions = await DatabaseService.getAllAsyncBatch<any>(query, params);
 
@@ -308,7 +275,6 @@ export class TransactionService {
 
         result.push({
           id: trans.id,
-          deviceId: trans.deviceId || undefined,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
@@ -371,7 +337,6 @@ export class TransactionService {
 
       return {
         id: trans.id,
-        deviceId: trans.deviceId || undefined,
         customerId: trans.customerId,
         customerName: trans.customerName,
         date: trans.date,
@@ -593,41 +558,15 @@ export class TransactionService {
         } else {
           // CREATE new transaction
           transactionId = `txn_${Date.now()}`;
-          
-          // Get device ID with error handling
-          let deviceId: string;
-          try {
-            const storedDeviceId = await SecureStore.getItemAsync('device_id');
-            if (storedDeviceId) {
-              deviceId = storedDeviceId;
-            } else {
-              deviceId = `${Device.modelName}_${Device.osName}_${Date.now()}`;
-              await SecureStore.setItemAsync('device_id', deviceId);
-            }
-          } catch (error) {
-            try {
-              await SecureStore.deleteItemAsync('device_id');
-            } catch (deleteError) {
-              // Ignore delete errors
-            }
-            deviceId = `${Device.modelName}_${Device.osName}_${Date.now()}`;
-            try {
-              await SecureStore.setItemAsync('device_id', deviceId);
-            } catch (setError) {
-              console.error('Failed to set device_id, using temporary ID:', setError);
-              deviceId = `${Device.modelName}_${Device.osName}_${Date.now()}`;
-            }
-          }
 
           // Insert transaction
           await db.runAsync(
             `INSERT INTO transactions 
-             (id, deviceId, customerId, customerName, date, total, 
+             (id, customerId, customerName, date, total, 
               amountPaid, note, createdAt, lastUpdatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               transactionId,
-              deviceId,
               customer.id,
               customer.name.trim(),
               transactionDate,
@@ -971,7 +910,6 @@ export class TransactionService {
       
       const transactions = await DatabaseService.getAllAsyncBatch<{
         id: string;
-        deviceId: string | null;
         customerId: string;
         customerName: string;
         date: string;
@@ -1012,7 +950,6 @@ export class TransactionService {
 
         result.push({
           id: trans.id,
-          deviceId: trans.deviceId || undefined,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
@@ -1135,9 +1072,6 @@ export class TransactionService {
 
       await CustomerService.saveCustomer(updatedCustomer);
 
-      // Restoring transaction means applying its effects forwards again
-      // We calculate the delta based on its entries, just like saving a new one
-      const inventoryDelta = this.calculateInventoryDeltaFromEntries(transaction.entries);
 
       return new Promise<boolean>((resolve) => {
         db.withTransactionAsync(async () => {

@@ -36,7 +36,6 @@ export class DatabaseService {
         -- Transactions Table
         CREATE TABLE IF NOT EXISTS transactions (
           id TEXT PRIMARY KEY NOT NULL,
-          deviceId TEXT,
           customerId TEXT NOT NULL,
           customerName TEXT NOT NULL,
           date DATETIME NOT NULL,
@@ -223,6 +222,34 @@ export class DatabaseService {
         // Column likely already exists, ignore error
       }
 
+      // Remove device_id column from trades table if it exists
+      try {
+        await db.execAsync('ALTER TABLE trades DROP COLUMN device_id;');
+      } catch (e) {
+        // Column may not exist or already dropped, ignore
+      }
+
+      // Remove device_id column from rani_rupa_stock table if it exists
+      try {
+        await db.execAsync('ALTER TABLE rani_rupa_stock DROP COLUMN device_id;');
+      } catch (e) {
+        // Column may not exist or already dropped, ignore
+      }
+
+      // Remove device_id column from rate_cut_history table if it exists
+      try {
+        await db.execAsync('ALTER TABLE rate_cut_history DROP COLUMN device_id;');
+      } catch (e) {
+        // Column may not exist or already dropped, ignore
+      }
+
+      // Remove deviceId column from transactions table if it exists
+      try {
+        await db.execAsync('ALTER TABLE transactions DROP COLUMN deviceId;');
+      } catch (e) {
+        // Column may not exist or already dropped, ignore
+      }
+
     } catch (error) {
       console.error('Error initializing database:', error);
       throw error;
@@ -373,12 +400,11 @@ export class DatabaseService {
       for (const transaction of data.transactions) {
         await db.runAsync(
           `INSERT INTO transactions 
-           (id, deviceId, customerId, customerName, date, total, 
+           (id, customerId, customerName, date, total, 
             amountPaid, createdAt, lastUpdatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             transaction.id,
-            transaction.deviceId || null,
             transaction.customerId,
             transaction.customerName,
             transaction.date,
@@ -504,8 +530,8 @@ export class DatabaseService {
       if (data.trades) {
         for (const item of data.trades) {
           await db.runAsync(
-            'INSERT INTO trades (id, customerName, type, itemType, price, weight, date, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [item.id, item.customerName, item.type, item.itemType, item.price, item.weight, item.date, item.createdAt]
+            'INSERT INTO trades (id, customer_id, customerName, type, itemType, price, weight, date, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [item.id, item.customer_id || item.customerId || null, item.customerName, item.type, item.itemType, item.price, item.weight, item.date, item.createdAt]
           );
         }
       }

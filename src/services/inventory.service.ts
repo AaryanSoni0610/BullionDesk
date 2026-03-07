@@ -216,19 +216,7 @@ export class InventoryService {
       ORDER BY le.date ASC
     `, [startIso]);
 
-    // Source 2: transaction_entries (Direct Money Adjustments)
-    const moneyItemRows = await DatabaseService.getAllAsyncBatch<{
-      date: string;
-      moneyType: string;
-      amount: number;
-    }>(`
-      SELECT t.date, te.moneyType, te.amount
-      FROM transaction_entries te
-      JOIN transactions t ON te.transaction_id = t.id
-      WHERE t.date >= ? 
-        AND t.deleted_on IS NULL 
-        AND te.itemType = 'money'
-    `, [startIso]);
+
 
     // Source 3: Ghost Money Repair (Transactions with amountPaid but missing ledger)
     // This catches data from imports or manual edits where ledger might be desynced
@@ -264,21 +252,19 @@ export class InventoryService {
     const eventsByDay = new Map<string, {
       metals: typeof metalRows;
       ledger: typeof ledgerRows;
-      moneyItems: typeof moneyItemRows;
       txnPayments: typeof txnPaymentRows;
     }>();
 
-    const addEvent = (dateStr: string, type: 'metals' | 'ledger' | 'moneyItems' | 'txnPayments', item: any) => {
+    const addEvent = (dateStr: string, type: 'metals' | 'ledger' | 'txnPayments', item: any) => {
       const localDay = this.getLocalDayString(dateStr);
       if (!eventsByDay.has(localDay)) {
-        eventsByDay.set(localDay, { metals: [], ledger: [], moneyItems: [], txnPayments: [] });
+        eventsByDay.set(localDay, { metals: [], ledger: [], txnPayments: [] });
       }
       eventsByDay.get(localDay)![type].push(item);
     };
 
     metalRows.forEach(r => addEvent(r.date, 'metals', r));
     ledgerRows.forEach(r => addEvent(r.date, 'ledger', r));
-    moneyItemRows.forEach(r => addEvent(r.date, 'moneyItems', r));
     txnPaymentRows.forEach(r => addEvent(r.date, 'txnPayments', r));
 
     const daysToProcess = Array.from(eventsByDay.keys()).sort();
@@ -324,12 +310,6 @@ export class InventoryService {
         } else if (row.type === 'give') {
           dailyMoneyChange -= Number(row.amount || 0);
         }
-      }
-
-      // B. Money Items (Direct adjustments)
-      for (const row of events.moneyItems) {
-        if (row.moneyType === 'receive') dailyMoneyChange += Number(row.amount || 0);
-        else dailyMoneyChange -= Number(row.amount || 0);
       }
 
       // C. Ghost Money Repair (Fallback)

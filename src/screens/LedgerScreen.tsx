@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Platform, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Platform, BackHandler, Modal } from 'react-native';
 import {
   Text,
   Button,
   ActivityIndicator,
+  Surface,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -112,6 +113,7 @@ export const LedgerScreen: React.FC = () => {
   const [exportDate, setExportDate] = useState<Date>(new Date());
   const [raniStock, setRaniStock] = useState<any[]>([]);
   const [rupuStock, setRupuStock] = useState<any[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
   const { navigateToSettings, ledgerDialogVisible, setLedgerDialogVisible } = useAppContext();
   const navigation = useNavigation();
 
@@ -191,7 +193,6 @@ export const LedgerScreen: React.FC = () => {
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       let startDate: string;
       let endDate: string;
-      let upToEndDate: string;
       let localDateStr: string;
       
       const period = periodOverride || selectedPeriod;
@@ -201,27 +202,23 @@ export const LedgerScreen: React.FC = () => {
         case 'today':
           startDate = today.toISOString();
           endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-          upToEndDate = endDate;
           localDateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
           break;
         case 'yesterday':
           const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
           startDate = yesterday.toISOString();
           endDate = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-          upToEndDate = endDate;
           localDateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
           break;
         case 'custom':
           const customStart = new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate());
           startDate = customStart.toISOString();
           endDate = new Date(customStart.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-          upToEndDate = endDate;
           localDateStr = `${customStart.getFullYear()}-${String(customStart.getMonth()+1).padStart(2,'0')}-${String(customStart.getDate()).padStart(2,'0')}`;
           break;
         default:
           startDate = today.toISOString();
           endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-          upToEndDate = endDate;
           localDateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
       }
 
@@ -444,9 +441,9 @@ export const LedgerScreen: React.FC = () => {
   };
 
   const calculateInventoryData = async (
-    transactionsUpToDate: Transaction[], 
+    _transactionsUpToDate: Transaction[], 
     customers: Customer[], 
-    ledgerEntriesUpToDate: LedgerEntry[],
+    _ledgerEntriesUpToDate: LedgerEntry[],
     dayTransactions: Transaction[],
     dayLedgerEntries: LedgerEntry[],
     dateStr?: string
@@ -600,6 +597,7 @@ export const LedgerScreen: React.FC = () => {
   };
 
   const exportLedgerToPDF = async (date: Date, showOnlyRaniRupu: boolean = false) => {
+    setIsExporting(true);
     try {
       // Calculate date range for the selected date
       const selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -607,23 +605,30 @@ export const LedgerScreen: React.FC = () => {
       const startDateStr = selectedDate.toISOString();
       const endDateStr = endOfSelectedDay.toISOString();
 
-      // Use database-level filtering for better performance
-      const [filteredTrans, filteredLedger, transactionsUpToDate, ledgerEntriesUpToDate, goldTransactions, silverTransactions, raniStockData, rupuStockData] = await Promise.all([
+      // Fetch only the data needed for the selected day — no historical full-table scans.
+      // goldTransactions / silverTransactions are derived in JS from the single day fetch
+      // to avoid redundant JS-to-Native bridge crossings.
+      const [filteredTrans, filteredLedger, raniStockData, rupuStockData] = await Promise.all([
         TransactionService.getTransactionsByDateRange(startDateStr, endDateStr),
         LedgerService.getLedgerEntriesByDateRange(startDateStr, endDateStr),
-        TransactionService.getTransactionsByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
-        LedgerService.getLedgerEntriesByDateRange('1970-01-01T00:00:00.000Z', endDateStr),
-        TransactionService.getTransactionsByDateRange(startDateStr, endDateStr, ['gold999', 'gold995', 'rani']),
-        TransactionService.getTransactionsByDateRange(startDateStr, endDateStr, ['silver', 'rupu']),
         RaniRupaStockService.getStockByType('rani'),
         RaniRupaStockService.getStockByType('rupu')
       ]);
 
-      // transactionsUpToDate and ledgerEntriesUpToDate already contain all data up to selected date
-      // No need for additional filtering
+      // Derive gold/silver subsets in JS — no extra DB round-trips
+      const goldTransactions = filteredTrans.filter(t =>
+        t.entries.some(e => ['gold999', 'gold995', 'rani'].includes((e as any).itemType))
+      );
+      const silverTransactions = filteredTrans.filter(t =>
+        t.entries.some(e => ['silver', 'rupu'].includes((e as any).itemType))
+      );
 
-      // Calculate inventory data including opening balance from startDateStr
-      const data = await calculateInventoryData(transactionsUpToDate, customers, ledgerEntriesUpToDate, filteredTrans, filteredLedger, startDateStr);
+      // Calculate inventory data. Opening balance is fetched internally via
+      // InventoryService.getInventoryForDate(dateStr) — the legacy "upToDate" arrays
+      // are unused by calculateInventoryData and have been removed.
+      // Must use YYYY-MM-DD format — daily_opening_balances.date stores plain date strings.
+      const startDateOnly = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+      const data = await calculateInventoryData(filteredTrans, customers, filteredLedger, filteredTrans, filteredLedger, startDateOnly);
 
       // Get entries for each subledger using pre-filtered transactions
       const goldEntries: EntryData[] = [];
@@ -821,9 +826,10 @@ export const LedgerScreen: React.FC = () => {
         <head>
           <meta charset="utf-8">
           <title>Ledger Report - ${formatDateDisplay(date)}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
           <style>
             body {
-              font-family: 'Helvetica', sans-serif;
+              font-family: 'Outfit', sans-serif;
               margin: 20px;
               color: #333;
             }
@@ -832,12 +838,14 @@ export const LedgerScreen: React.FC = () => {
               text-align: center;
               margin-bottom: 30px;
               font-size: 24px;
+              font-weight: 700;
             }
             h3 {
               color: #455A64;
               margin-top: 20px;
               margin-bottom: 10px;
-              font-size: 16px;
+              font-size: 18px;
+              font-weight: 600;
             }
             table {
               width: 100%;
@@ -848,21 +856,15 @@ export const LedgerScreen: React.FC = () => {
               border: 1px solid #ddd;
               padding: 8px;
               text-align: left;
-              font-size: 12px;
+              font-size: 14px;
             }
             th {
               background-color: #ffffff;
-              font-weight: bold;
+              font-weight: 700;
             }
             td {
               align-items: center;
               width: 50%;
-            }
-            .footer {
-              margin-top: 20px;
-              text-align: center;
-              font-size: 10px;
-              color: #666;
             }
             .chips {
               margin-bottom: 10px;
@@ -874,14 +876,11 @@ export const LedgerScreen: React.FC = () => {
               background-color: #ffffff;
               border: 1px solid #ccc;
               border-radius: 4px;
-              font-size: 12px;
+              font-size: 14px;
             }
           </style>
         </head>
         <body style="background-color: #ffffff;">
-          <div class="footer">
-            Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
-          </div>
           <h1>Ledger Report - ${formatDateDisplay(date)}</h1>
 
           <!-- Gold Subledger -->
@@ -1061,11 +1060,9 @@ export const LedgerScreen: React.FC = () => {
 
     } catch (error) {
       console.error('Error generating PDF:', error);
+    } finally {
+      setIsExporting(false);
     }
-  };
-
-  const onRefresh = () => {
-    loadInventoryData(true);
   };
 
   const getFilteredEntries = useMemo((): PairedEntryData[] => {
@@ -1552,6 +1549,7 @@ export const LedgerScreen: React.FC = () => {
   }
 
   return (
+    <>
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* 1. Header Island */}
       <View style={styles.header}>
@@ -1603,10 +1601,13 @@ export const LedgerScreen: React.FC = () => {
         </ScrollView>
         
         <TouchableOpacity 
-          style={styles.exportBtn} 
-          onPress={() => setShowExportDatePicker(true)}
+          style={[styles.exportBtn, isExporting && { opacity: 0.5 }]} 
+          onPress={() => !isExporting && setShowExportDatePicker(true)}
+          disabled={isExporting}
         >
-          <Icon name="export-variant" size={24} color={theme.colors.onSurfaceVariant} />
+          {isExporting
+            ? <ActivityIndicator size={20} color={theme.colors.primary} />
+            : <Icon name="export-variant" size={24} color={theme.colors.onSurfaceVariant} />}
         </TouchableOpacity>
       </View>
 
@@ -1794,6 +1795,19 @@ export const LedgerScreen: React.FC = () => {
         disableRequiredValidation={true}
       />
     </SafeAreaView>
+
+    {/* Blocking export progress overlay — same pattern as HistoryScreen */}
+    <Modal visible={isExporting} transparent animationType="fade" onRequestClose={() => {}}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}>
+        <Surface style={{ padding: 24, borderRadius: 16, width: 300, alignItems: 'center', backgroundColor: theme.colors.surface, elevation: 4 }}>
+          <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginBottom: 16 }} />
+          <Text variant="titleMedium" style={{ fontFamily: 'Outfit_600SemiBold', color: theme.colors.onSurface }}>
+            Generating PDF...
+          </Text>
+        </Surface>
+      </View>
+    </Modal>
+    </>
   );
 };
 

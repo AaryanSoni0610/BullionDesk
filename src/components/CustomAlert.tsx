@@ -29,7 +29,10 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   buttons,
   icon,
   onDismiss,
-  maxHeight,
+  // Accept either an absolute pixel value (e.g. 400) or a fractional value
+  // between 0 and 1 to represent a percentage of device height.
+  // Default to 0.8 (80% of device height) for a reasonable modal size.
+  maxHeight = 0.8,
   dynamicMaxHeight = false,
 }) => {
   const { height: windowHeight } = useWindowDimensions();
@@ -37,7 +40,22 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
 
   // Available height = window height minus top+bottom safe area insets minus 48px margin
   const computedMaxHeight = windowHeight - insets.top - insets.bottom - 48;
-  const effectiveMaxHeight = dynamicMaxHeight ? computedMaxHeight : maxHeight;
+
+  // Resolve `maxHeight`:
+  // - if `dynamicMaxHeight` is true, use computed available height
+  // - else if `maxHeight` is a fractional value (0 < n <= 1), treat it as
+  //   a percentage of the device height and subtract safe area + margin
+  // - else treat `maxHeight` as an absolute pixel value
+  let resolvedMaxHeight: number | undefined = undefined;
+  if (!dynamicMaxHeight && typeof maxHeight === 'number') {
+    if (maxHeight > 0 && maxHeight <= 1) {
+      resolvedMaxHeight = Math.round(windowHeight * maxHeight) - insets.top - insets.bottom - 48;
+    } else {
+      resolvedMaxHeight = maxHeight;
+    }
+  }
+
+  const effectiveMaxHeight = dynamicMaxHeight ? computedMaxHeight : resolvedMaxHeight;
   const finalButtons = buttons === undefined ? [{ text: 'OK' }] : buttons;
   const isDismissible = finalButtons && finalButtons.length > 0;
 
@@ -73,7 +91,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
         {/* Stop Propagation: Pressing the actual card shouldn't close it.
           We use a View with onStartShouldSetResponder to block clicks passing through to the overlay.
         */}
-        <View onStartShouldSetResponder={() => true}>
+        <View onStartShouldSetResponder={() => true} style={{ width: '100%', alignItems: 'center' }}>
           <Surface style={[styles.alertContainer, effectiveMaxHeight ? { maxHeight: effectiveMaxHeight } : {}]}>
             
             {/* Header */}
@@ -141,6 +159,8 @@ const styles = StyleSheet.create({
   },
   alertContainer: {
     width: '100%',
+    minWidth: 300,  // Prevents shrinking too much for short alerts
+    minHeight: 100, // Maintains a decent minimum height for loading/importing empty alerts
     marginHorizontal: 0,
     backgroundColor: '#FDFBFF',
     borderRadius: 28,
@@ -178,6 +198,7 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     fontSize: 15,
     lineHeight: 22,
+    marginHorizontal: 30, 
   },
   buttonContainer: {
     flexDirection: 'row',

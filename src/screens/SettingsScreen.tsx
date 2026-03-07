@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, TouchableOpacity } from 'react-native';
 import { Text, Switch } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,14 +11,14 @@ import { useAppContext } from '../context/AppContext';
 import { CustomerService } from '../services/customer.service';
 import { InventoryService } from '../services/inventory.service';
 import { DatabaseService } from '../services/database.sqlite';
-import { RaniRupaStockService } from '../services/raniRupaStock.service';
+
 import { NotificationService } from '../services/notificationService';
 import { BackupService } from '../services/backupService';
 import { EncryptionService } from '../services/encryptionService';
 import { EncryptionKeyDialog } from '../components/EncryptionKeyDialog';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 import CustomAlert from '../components/CustomAlert';
-import { formatIndianNumber, formatPureGoldPrecise, formatPureSilver, customFormatPureSilver } from '../utils/formatting';
+import { formatIndianNumber, formatPureGoldPrecise, formatPureSilver } from '../utils/formatting';
 
 export const SettingsScreen: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(false);
@@ -31,9 +31,6 @@ export const SettingsScreen: React.FC = () => {
   const [keyDialogCallback, setKeyDialogCallback] = React.useState<((key: string | null) => void) | null>(null);
   const [customers, setCustomers] = React.useState<any[]>([]);
   const [baseInventory, setBaseInventory] = React.useState<any>(null);
-  const [raniTotal, setRaniTotal] = React.useState(0);
-  const [rupuTotal, setRupuTotal] = React.useState(0);
-  const [openingBalanceEffects, setOpeningBalanceEffects] = React.useState<any>(null);
   const [isLoadingCustomers, setIsLoadingCustomers] = React.useState(true);
   const [isLoadingInventory, setIsLoadingInventory] = React.useState(true);
   const [showInventoryDialog, setShowInventoryDialog] = React.useState(false);
@@ -58,24 +55,13 @@ export const SettingsScreen: React.FC = () => {
           setAutoBackupEnabled(backupEnabled);
 
           // Load customers and base inventory
-          const [customersData, inventoryData, effectsData, raniStock, rupuStock] = await Promise.all([
+          const [customersData, inventoryData] = await Promise.all([
             CustomerService.getAllCustomers(),
             InventoryService.getBaseInventory(),
-            InventoryService.calculateOpeningBalanceEffects(),
-            RaniRupaStockService.getStockByType('rani'),
-            RaniRupaStockService.getStockByType('rupu')
           ]);
 
           setCustomers(customersData);
           setBaseInventory(inventoryData);
-          setOpeningBalanceEffects(effectsData);
-
-          // Calculate Rani/Rupu totals
-          const raniPure = raniStock.reduce((sum, item) => sum + ((item.weight * item.touch) / 100), 0);
-          const rupuPure = rupuStock.reduce((sum, item) => sum + customFormatPureSilver(item.weight, item.touch), 0);
-
-          setRaniTotal(raniPure);
-          setRupuTotal(rupuPure);
 
           // Don't auto-initialize directories here
           // They will be created on demand when needed
@@ -162,8 +148,8 @@ export const SettingsScreen: React.FC = () => {
     const finalInventory = {
       gold999: values.gold999 ?? 0,
       gold995: values.gold995 ?? 0,
-      silver:  values.silver  ?? 0,
-      money:   values.money   ?? 0,
+      silver: values.silver ?? 0,
+      money: values.money ?? 0,
     };
     InventoryService.setBaseInventory(finalInventory).then(async success => {
       if (success) {
@@ -236,6 +222,67 @@ export const SettingsScreen: React.FC = () => {
       console.error('🔑 Error setting up encryption key:', error);
       showAlert('Error', 'Failed to set up encryption key');
       return false;
+    }
+  };
+
+  const handleChangePassword = async () => {
+    try {
+      // Step 1: Warn about implications first
+      const proceed = await new Promise<boolean>((resolve) => {
+        showAlert(
+          '⚠️ Change Backup Password',
+          'Changing your password will:\n\n• Invalidate ALL previous backup/export files — they cannot be restored with the new password\n• Wipe the internal incremental backup store\n• Rebuild a fresh internal backup in the background\n\nThis also works if you forgot your current password. Continue?',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continue', style: 'destructive', onPress: () => resolve(true) },
+          ],
+          'alert-outline'
+        );
+      });
+      if (!proceed) return;
+
+      // Step 2: Get new password
+      const newKey = await promptForEncryptionKey('setup');
+      if (!newKey) return;
+
+      const validation = EncryptionService.isValidKey(newKey);
+      if (!validation.valid) {
+        showAlert('Invalid Password', validation.message || 'Password is invalid');
+        return;
+      }
+
+      // Step 3: Confirm new password
+      const confirmKey = await promptForEncryptionKey('confirm');
+      if (!confirmKey) return;
+
+      if (newKey !== confirmKey) {
+        showAlert('Mismatch', 'Passwords do not match. Please try again.');
+        return;
+      }
+
+      // Step 4: Short-circuit if unchanged — silently abort
+      const currentKey = await SecureStore.getItemAsync('backup_encryption_key');
+      if (newKey === currentKey) {
+        return;
+      }
+
+      // Step 5: Persist the new key (creates or replaces)
+      await SecureStore.setItemAsync('backup_encryption_key', newKey);
+
+      // Step 6: Background re-key — clears old .enc objects and rebuilds internal backup
+      BackupService.syncInternalKeyWithUserKey().catch(e =>
+        console.error('SettingsScreen: Failed to sync internal backup key after password change:', e)
+      );
+
+      showAlert(
+        'Password Set',
+        'Your backup password has been updated. A new internal backup is being built in the background.\n\nPrevious export files cannot be restored with this new password.',
+        [{ text: 'OK' }],
+        'check-circle-outline'
+      );
+    } catch (error) {
+      console.error('Error changing password:', error);
+      showAlert('Error', 'Failed to change password. Please try again.');
     }
   };
 
@@ -424,39 +471,52 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const handleImportData = async () => {
-    try {
-      // Check if encryption key is set up
-      const hasKey = await BackupService.hasEncryptionKey();
-      if (!hasKey) {
-        const keySetup = await setupEncryptionKey();
-        if (!keySetup) {
-          return;
-        }
-      }
+    // Show warning before proceeding
+    showAlert(
+      'Warning: Data Will Be Replaced',
+      'Importing will permanently delete ALL existing data and replace it with the backup.\n\nThis action cannot be undone.\n\nMake sure you have the correct backup file before continuing.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Check if encryption key is set up
+              const hasKey = await BackupService.hasEncryptionKey();
+              if (!hasKey) {
+                const keySetup = await setupEncryptionKey();
+                if (!keySetup) {
+                  return;
+                }
+              }
 
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
+              const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                copyToCacheDirectory: true,
+              });
 
-      if (result.canceled) {
-        return;
-      }
+              if (result.canceled) {
+                return;
+              }
 
-      const file = result.assets[0];
+              const file = result.assets[0];
 
-      // Check if it's a SAF URI (content://) or regular file URI
-      if (file.uri.startsWith('content://')) {
-        // Use SAF import method
-        await BackupService.importDataFromSAF(file.uri);
-      } else {
-        // Use regular import method
-        await BackupService.importData(file.uri);
-      }
-    } catch (error) {
-      console.error('Error importing data:', error);
-      showAlert('Error', 'Failed to import data. Please try again.');
-    }
+              // Check if it's a SAF URI (content://) or regular file URI
+              if (file.uri.startsWith('content://')) {
+                await BackupService.importDataFromSAF(file.uri);
+              } else {
+                await BackupService.importData(file.uri);
+              }
+            } catch (error) {
+              console.error('Error importing data:', error);
+              showAlert('Error', 'Failed to import data. Please try again.');
+            }
+          },
+        },
+      ],
+      'alert-outline'
+    );
   };
 
   const handleClearAllData = () => {
@@ -626,7 +686,7 @@ export const SettingsScreen: React.FC = () => {
               isLast
               onPress={() => {
                 if (baseInventory) {
-                  let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nRani: ${formatPureGoldPrecise(raniTotal)}g\nRupu: ${formatPureSilver(rupuTotal)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
+                  let message = `Gold 999: ${formatPureGoldPrecise(baseInventory.gold999)}g\nGold 995: ${formatPureGoldPrecise(baseInventory.gold995)}g\nSilver: ${formatPureSilver(baseInventory.silver)}g\nMoney: ₹${formatIndianNumber(Math.round(baseInventory.money))}`;
 
                   showAlert(
                     'Base Inventory',
@@ -673,6 +733,12 @@ export const SettingsScreen: React.FC = () => {
               onPress={handleImportData}
             />
             <SettingsItem
+              icon="key"
+              title="Change Password"
+              description="Update backup encryption password"
+              onPress={handleChangePassword}
+            />
+            <SettingsItem
               icon="delete-forever-outline"
               title="Clear All Data"
               description={isClearing ? "Clearing data..." : "Reset app to empty state"}
@@ -702,7 +768,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.9.0"
+              description="v7.9.5"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -738,10 +804,10 @@ export const SettingsScreen: React.FC = () => {
         title="Set Base Inventory"
         message="Enter opening stock values. All fields optional (empty = 0)."
         inputs={[
-          { key: 'gold999', label: 'Gold 999 (g)',  value: (baseInventory?.gold999 || 0).toFixed(3), type: 'text', keyboardType: 'numeric' },
-          { key: 'gold995', label: 'Gold 995 (g)',  value: (baseInventory?.gold995 || 0).toFixed(3), type: 'text', keyboardType: 'numeric' },
-          { key: 'silver',  label: 'Silver (g)',    value: (baseInventory?.silver  || 0).toFixed(1),  type: 'text', keyboardType: 'numeric' },
-          { key: 'money',   label: 'Money (₹)',     value: String(Math.round(baseInventory?.money || 0)), type: 'text', keyboardType: 'numeric' },
+          { key: 'gold999', label: 'Gold 999 (g)', value: (baseInventory?.gold999 || 0).toFixed(3), type: 'text', keyboardType: 'numeric' },
+          { key: 'gold995', label: 'Gold 995 (g)', value: (baseInventory?.gold995 || 0).toFixed(3), type: 'text', keyboardType: 'numeric' },
+          { key: 'silver', label: 'Silver (g)', value: (baseInventory?.silver || 0).toFixed(1), type: 'text', keyboardType: 'numeric' },
+          { key: 'money', label: 'Money (₹)', value: String(Math.round(baseInventory?.money || 0)), type: 'text', keyboardType: 'numeric' },
         ]}
         onSubmit={handleInventoryDialogSubmit}
         onCancel={handleInventoryDialogCancel}
@@ -754,6 +820,7 @@ export const SettingsScreen: React.FC = () => {
         visible={showPrivacyPolicy}
         title="Privacy Policy"
         icon="shield-check-outline"
+        maxHeight={0.8}
         message={`Privacy Policy for BullionDesk
 
 Last Updated: November 20, 2025
@@ -782,7 +849,7 @@ If you have any questions about this Privacy Policy, please contact the develope
 
 7. Changes to This Policy
 This privacy policy may be updated as needed. Continued use of the app constitutes acceptance of any changes.`}
-        dynamicMaxHeight
+        
         buttons={[{ text: 'OK', onPress: () => setShowPrivacyPolicy(false) }]}
         onDismiss={() => setShowPrivacyPolicy(false)}
       />
@@ -792,6 +859,7 @@ This privacy policy may be updated as needed. Continued use of the app constitut
         visible={showTermsOfService}
         title="Terms of Service"
         icon="file-document-outline"
+        maxHeight={0.8}
         message={`Terms of Service for BullionDesk
 
 Last Updated: October 9, 2025
@@ -828,7 +896,7 @@ These terms are governed by applicable local laws.
 
 9. Contact
 For support or questions, please contact the developer.`}
-        dynamicMaxHeight
+        
         buttons={[{ text: 'OK', onPress: () => setShowTermsOfService(false) }]}
         onDismiss={() => setShowTermsOfService(false)}
       />
@@ -838,7 +906,8 @@ For support or questions, please contact the developer.`}
         visible={showAbout}
         title="About BullionDesk"
         icon="information-outline"
-        message={`BullionDesk v7.9.0
+        maxHeight={0.8}
+        message={`BullionDesk v7.9.5
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 
@@ -856,7 +925,7 @@ A passionate developer focused on creating practical business solutions. Bullion
 If you find this app helpful and would like to support its continued development, consider making a donation. Your support helps maintain and improve the app!
 
 Contact: For feedback, suggestions, or support, please reach out to the developer.`}
-        dynamicMaxHeight
+        
         buttons={[
           {
             text: 'Donate', onPress: () => {

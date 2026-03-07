@@ -18,7 +18,9 @@ import { LedgerService } from './ledger.service';
 import { InventoryService } from './inventory.service';
 import { SettingsService } from './settings.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
-import { Customer, Transaction, TransactionEntry, RaniRupaStock } from '../types';
+import { TradeService } from './trade.service';
+import { RaniRupaStock, Trade } from '../types';
+import { RateCutService } from './rateCut.service';
 import { ObjectStorageService } from './backup/ObjectStorageService';
 import { CanonicalService } from './backup/CanonicalService';
 import { HashService } from './backup/HashService';
@@ -42,7 +44,6 @@ interface BackupData {
   exportType: 'manual' | 'auto';
   timestamp: number;
   recordCount: number;
-  deviceId: string;
   records: {
     customers: any[];
     transactions: any[];
@@ -54,6 +55,8 @@ interface BackupData {
       money: number;
     };
     raniRupaStock: RaniRupaStock[];
+    trades: Trade[];
+    rateCutHistory?: any[]; // Making it optional for backwards compatibility
   };
 }
 
@@ -431,6 +434,8 @@ export class BackupService {
     const ledger = await LedgerService.getAllLedgerEntries();
     const baseInventory = await InventoryService.getBaseInventory();
     const raniRupaStock = await RaniRupaStockService.getAllStock();
+    const trades = await TradeService.getAllTrades();
+    const rateCutHistory = await RateCutService.getAllRateCutHistory(10000); // Pass large limit to get all
 
     return {
       customers,
@@ -438,6 +443,8 @@ export class BackupService {
       ledger,
       baseInventory,
       raniRupaStock,
+      trades,
+      rateCutHistory,
     } as BackupData['records'];
   }
 
@@ -560,6 +567,14 @@ export class BackupService {
       console.log(`BackupService: Total export time: ${Date.now() - startTime}ms`);
       await this.logAction(`SAF export completed: ${finalData.recordCount} records, file: ${fileName}`);
 
+      // Fire a normal background auto-backup so all items skipped during
+      // the fast export path (force=true) get individually encrypted as .enc files.
+      setTimeout(() => {
+        this.performAutoBackup(false).catch(e =>
+          console.error('BackupService: Post-export background backup failed:', e)
+        );
+      }, 3000); // Small delay so the export UI can settle first
+
       return { success: true, fileUri, fileName };
     } catch (error) {
       console.error('BackupService: SAF export error:', error);
@@ -570,28 +585,13 @@ export class BackupService {
   }
 
   /**
-   * Manual import with conflict-free merge
+   * Import data — clears all existing data and restores from backup file
    */
   static async importData(fileUri: string): Promise<boolean> {
     const startTime = Date.now();
     console.log('BackupService: Starting import, file:', fileUri);
     await this.logAction(`Starting import from file: ${fileUri}`);
     try {
-      
-      // Check storage permission first
-      const hasPermission = await this.hasStoragePermission();
-      if (!hasPermission) {
-        const granted = await this.requestStoragePermission();
-        if (!granted) {
-          await this.logAction('Import failed: storage permission denied');
-          this.showAlert(
-            'Permission Required',
-            'Storage permission is required to import data. Please grant permission to continue.',
-            [{ text: 'OK' }]
-          );
-          return false;
-        }
-      }
 
       // Get encryption key (should be set by UI before calling this)
       const key = await this.getEncryptionKey();
@@ -616,13 +616,11 @@ export class BackupService {
       try {
            console.log('BackupService: Attempting to decrypt as new JSON format');
            this.updateImportProgressAlert('Decrypting data... 40%');
-           // Try JSON first (Version 2)
            const decryptedString = await EncryptionService.decryptWithPassword(fileContent, key);
            decryptedData = JSON.parse(decryptedString);
            console.log('BackupService: Successfully decrypted as JSON format, record count:', decryptedData.recordCount);
       } catch (e) {
            console.log('BackupService: JSON decryption failed, trying legacy ZIP format');
-           // Fallback to Legacy Zip (Version 1)
            try {
                const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
                this.updateImportProgressAlert('Extracting files... 60%');
@@ -640,17 +638,17 @@ export class BackupService {
       }
       console.log(`BackupService: Decryption took ${Date.now() - startTime}ms`);
 
-      // Get current device ID
-      this.updateImportProgressAlert('Preparing data... 70%');
-      const currentDeviceId = await this.getDeviceId();
-      console.log('BackupService: Current device ID:', currentDeviceId, 'Import device ID:', decryptedData.deviceId);
-      console.log(`BackupService: Data preparation took ${Date.now() - startTime}ms`);
+      // Clear all existing data
+      this.updateImportProgressAlert('Clearing existing data... 60%');
+      console.log('BackupService: Clearing existing data');
+      await DatabaseService.clearAllData();
+      console.log(`BackupService: Data clearing took ${Date.now() - startTime}ms`);
 
-      // Perform conflict-free merge
-      this.updateImportProgressAlert('Merging data... 80%');
-      console.log('BackupService: Starting data merge');
-      await this.mergeData(decryptedData, currentDeviceId);
-      console.log(`BackupService: Data merging took ${Date.now() - startTime}ms`);
+      // Restore data from backup
+      this.updateImportProgressAlert('Restoring data... 80%');
+      console.log('BackupService: Restoring data from backup');
+      await DatabaseService.importData(decryptedData.records as any);
+      console.log(`BackupService: Data restore took ${Date.now() - startTime}ms`);
 
       // Recalculate Inventory Chain (Full Rebuild)
       this.updateImportProgressAlert('Recalculating inventory... 90%');
@@ -662,16 +660,14 @@ export class BackupService {
 
       console.log('BackupService: Import completed successfully');
       console.log(`BackupService: Total import time: ${Date.now() - startTime}ms`);
-      await this.logAction(
-        `Import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
-      );
+      await this.logAction(`Import completed: ${decryptedData.recordCount} records`);
 
       this.showAlert(
         'Import Successful',
-        `Imported ${decryptedData.recordCount} records successfully.`,
+        `Data restored successfully from backup.`,
         [{ text: 'OK' }]
       );
-      
+
       // Trigger Background Rehydration
       setTimeout(() => {
           this.logAction("Starting Background Rehydration...");
@@ -682,7 +678,7 @@ export class BackupService {
     } catch (error) {
       console.error('📥 Import error:', error);
       await this.logAction(`Import error: ${error}`);
-      
+
       if (error instanceof Error && error.message.includes('decrypt')) {
         this.showAlert(
           'Import Failed',
@@ -692,13 +688,13 @@ export class BackupService {
       } else {
         this.showAlert('Import Failed', 'Failed to import data. Please try again.');
       }
-      
+
       return false;
     }
   }
 
   /**
-   * Import from SAF URI
+   * Import from SAF URI — clears all existing data and restores from backup file
    */
   static async importDataFromSAF(fileUri: string): Promise<boolean> {
     const startTime = Date.now();
@@ -732,13 +728,11 @@ export class BackupService {
       try {
            console.log('BackupService: Attempting to decrypt as new JSON format');
            this.updateImportProgressAlert('Decrypting data... 40%');
-           // Try JSON first (Version 2)
            const decryptedString = await EncryptionService.decryptWithPassword(fileContent, key);
            decryptedData = JSON.parse(decryptedString);
            console.log('BackupService: Successfully decrypted as JSON format, record count:', decryptedData.recordCount);
       } catch (e) {
            console.log('BackupService: JSON decryption failed, trying legacy ZIP format');
-           // Fallback to Legacy Zip (Version 1)
            try {
                const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
                this.updateImportProgressAlert('Extracting files... 60%');
@@ -756,17 +750,17 @@ export class BackupService {
       }
       console.log(`BackupService: Decryption took ${Date.now() - startTime}ms`);
 
-      // Get current device ID
-      this.updateImportProgressAlert('Preparing data... 70%');
-      const currentDeviceId = await this.getDeviceId();
-      console.log('BackupService: Current device ID:', currentDeviceId, 'Import device ID:', decryptedData.deviceId);
-      console.log(`BackupService: Data preparation took ${Date.now() - startTime}ms`);
+      // Clear all existing data
+      this.updateImportProgressAlert('Clearing existing data... 60%');
+      console.log('BackupService: Clearing existing data');
+      await DatabaseService.clearAllData();
+      console.log(`BackupService: Data clearing took ${Date.now() - startTime}ms`);
 
-      // Perform conflict-free merge
-      this.updateImportProgressAlert('Merging data... 80%');
-      console.log('BackupService: Starting data merge');
-      await this.mergeData(decryptedData, currentDeviceId);
-      console.log(`BackupService: Data merging took ${Date.now() - startTime}ms`);
+      // Restore data from backup
+      this.updateImportProgressAlert('Restoring data... 80%');
+      console.log('BackupService: Restoring data from backup');
+      await DatabaseService.importData(decryptedData.records as any);
+      console.log(`BackupService: Data restore took ${Date.now() - startTime}ms`);
 
       // Recalculate Inventory Chain (Full Rebuild)
       this.updateImportProgressAlert('Recalculating inventory... 90%');
@@ -778,13 +772,11 @@ export class BackupService {
 
       console.log('BackupService: Import completed successfully');
       console.log(`BackupService: Total import time: ${Date.now() - startTime}ms`);
-      await this.logAction(
-        `SAF import completed: ${decryptedData.recordCount} records from device ${decryptedData.deviceId}`
-      );
+      await this.logAction(`SAF import completed: ${decryptedData.recordCount} records`);
 
       this.showAlert(
         'Import Successful',
-        `Imported ${decryptedData.recordCount} records successfully.`,
+        `Data restored successfully from backup.`,
         [{ text: 'OK' }]
       );
 
@@ -813,431 +805,43 @@ export class BackupService {
   }
 
   /**
-   * Conflict-free merge system
-   */
-  private static async mergeData(
-    backupData: BackupData,
-    currentDeviceId: string
-  ): Promise<void> {
-    await this.logAction(`Starting data merge: ${backupData.recordCount} records from device ${backupData.deviceId}`);
-    const { records } = backupData;
-    const db = DatabaseService.getDatabase();
-
-    // Stats tracking
-    let stats = {
-      customers: 0,
-      transactions: 0,
-      entries: 0,
-      ledger: 0,
-      stock: 0,
-      balanceUpdates: 0
-    };
-
-    // --- 1. Batch Merge Customers ---
-    await this.logAction('Starting customer merge');
-    const existingCustomers = await CustomerService.getAllCustomers();
-    const customerMap = new Map(existingCustomers.map((c) => [c.id, c]));
-    const customersToInsert: Customer[] = [];
-    const customersToUpdate: Customer[] = [];
-
-    for (const customer of records.customers) {
-      if (!customerMap.has(customer.id)) {
-        customersToInsert.push(customer);
-      } else {
-        const existing = customerMap.get(customer.id)!;
-        if (new Date(customer.lastTransaction || 0) > new Date(existing.lastTransaction || 0)) {
-          customersToUpdate.push(customer);
-        }
-      }
-    }
-
-    // Process Customer Batches
-    if (customersToInsert.length > 0) {
-      // For new customers, we insert them with their backup balances initially
-      // (Balances will be recalculated/aggregated later in the process)
-      for (const c of customersToInsert) {
-        await CustomerService.saveCustomer(c);
-      }
-      stats.customers += customersToInsert.length;
-    }
-    // Updates are handled individually for safety, but we could batch them too if needed
-    for (const c of customersToUpdate) {
-      await CustomerService.saveCustomer(c);
-      stats.customers++; // Count updates as activity
-    }
-    await this.logAction(`Customer merge completed: ${stats.customers} customers processed`);
-
-    // --- 2. Prepare Transactions & Aggregations ---
-    await this.logAction('Starting transaction preparation and aggregation');
-    const existingTransactions = await TransactionService.getAllTransactions();
-    // Create a Set for fast lookup of existing IDs
-    const existingTxnIds = new Set(existingTransactions.map(t => t.id));
-    // Composite key map to detect cross-device duplicates
-    const transactionMap = new Map(
-      existingTransactions.map((t) => [`${t.id}_${currentDeviceId}`, t])
-    );
-
-    const transactionsToInsert: any[] = [];
-    const entriesToInsert: any[] = [];
-    const legacyLedgerToInsert: any[] = []; // For old backups (payment migration)
-    
-    // Aggregation Map for Customer Balances: CustomerID -> { balance: 0, metal: { gold999: 0... } }
-    const customerBalanceEffects = new Map<string, {
-      moneyChange: number;
-      lastTxnDate: string;
-      metalChanges: Record<string, number>;
-    }>();
-
-    for (const transaction of records.transactions) {
-      const key = `${transaction.id}_${backupData.deviceId}`;
-      
-      // Skip if we already have this exact transaction from this device
-      if (transactionMap.has(key)) continue;
-
-      // Handle ID Conflict (Same ID, different device source)
-      if (existingTxnIds.has(transaction.id)) {
-        transaction.id = `${transaction.id}_imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      }
-
-      // Verify Customer Exists
-      // (We can use our local map since we just merged customers)
-      if (!customerMap.has(transaction.customerId) && !customersToInsert.find(c => c.id === transaction.customerId)) {
-        console.warn('Skipping orphan transaction:', transaction.id);
-        continue;
-      }
-
-      // Add to batch lists
-      transactionsToInsert.push(transaction);
-      
-      if (transaction.entries) {
-        // Fix entry parent IDs if transaction ID changed
-        transaction.entries.forEach((e: any) => e.transaction_id = transaction.id);
-        entriesToInsert.push(...transaction.entries);
-      }
-
-      // --- Calculate Balance Effects (In Memory) ---
-      // This replaces the N+1 DB calls for balance updates
-      if (!customerBalanceEffects.has(transaction.customerId)) {
-        customerBalanceEffects.set(transaction.customerId, { 
-          moneyChange: 0, 
-          lastTxnDate: '', 
-          metalChanges: {} 
-        });
-      }
-      
-      const effect = customerBalanceEffects.get(transaction.customerId)!;
-      
-      // Update last transaction date
-      if (!effect.lastTxnDate || new Date(transaction.createdAt) > new Date(effect.lastTxnDate)) {
-        effect.lastTxnDate = transaction.createdAt;
-      }
-
-      const isMetalOnly = transaction.entries?.some((entry: any) => entry.metalOnly === true);
-
-      if (!isMetalOnly) {
-        // Money Logic: Customer Balance = (Credit) - (Debit)
-        // Transaction Total = Amount customer owes merchant (Debit)
-        // Amount Paid = Amount merchant received (Credit)
-        // Net Change = AmountPaid - Total
-        effect.moneyChange += ((transaction.amountPaid || 0) - transaction.total);
-      } else {
-        // Metal Logic
-        transaction.entries?.forEach((entry: any) => {
-          if (entry.metalOnly && entry.type !== 'money') {
-            const itemType = entry.itemType;
-            let metalAmount = 0;
-            
-            // Calculate pure weight based on type
-            if (entry.itemType === 'rani') {
-              metalAmount = entry.pureWeight || 0;
-            } else if (entry.itemType === 'rupu') {
-               // Special case for rupu return
-               if (entry.rupuReturnType === 'silver' && entry.netWeight !== undefined) {
-                 metalAmount = entry.netWeight;
-               } else {
-                 metalAmount = entry.pureWeight || 0;
-               }
-            } else {
-              metalAmount = entry.weight || 0;
-            }
-
-            // Sell = Merchant gives metal = Customer owes metal (Positive debt? Depends on system)
-            // Based on previous logic: Sell = -Amount, Purchase = +Amount (Or vice versa, aligned with previous logic)
-            // Previous Logic: "metalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;"
-            const finalAmount = entry.type === 'sell' ? -metalAmount : metalAmount;
-            
-            effect.metalChanges[itemType] = (effect.metalChanges[itemType] || 0) + finalAmount;
-          }
-        });
-      }
-
-      // Handle Legacy Payments (Convert to Ledger)
-      const legacyTx = transaction as any;
-      if ((legacyTx.lastGivenMoney !== undefined || legacyTx.lastToLastGivenMoney !== undefined) && (transaction.amountPaid || 0) > 0) {
-         legacyLedgerToInsert.push({
-            id: `payment_${transaction.id}_imported`,
-            transactionId: transaction.id,
-            customerId: transaction.customerId,
-            customerName: transaction.customerName,
-            date: transaction.date,
-            type: transaction.total >= 0 ? 'receive' : 'give',
-            itemType: 'money',
-            amount: transaction.amountPaid,
-            createdAt: transaction.createdAt
-         });
-      }
-    }
-    await this.logAction(`Transaction preparation completed: ${transactionsToInsert.length} transactions to insert, ${entriesToInsert.length} entries to insert`);
-
-    // --- 3. Execute Batch Inserts (The Speedup) ---
-    await this.logAction('Starting batch inserts');
-    
-    // Batch Insert Transactions
-    if (transactionsToInsert.length > 0) {
-      await this.batchInsertTransactions(db, transactionsToInsert);
-      stats.transactions += transactionsToInsert.length;
-    }
-
-    // Batch Insert Entries
-    if (entriesToInsert.length > 0) {
-      await this.batchInsertTransactionEntries(db, entriesToInsert);
-      stats.entries += entriesToInsert.length;
-    }
-    await this.logAction(`Batch inserts completed: ${stats.transactions} transactions, ${stats.entries} entries`);
-
-    // --- 4. Batch Merge Ledger ---
-    await this.logAction('Starting ledger merge');
-    const existingLedger = await LedgerService.getAllLedgerEntries();
-    const ledgerMap = new Set(existingLedger.map(l => l.id));
-    const ledgerToInsert: any[] = [...legacyLedgerToInsert];
-
-    // Filter new ledger entries
-    for (const entry of records.ledger) {
-      if (!ledgerMap.has(entry.id)) {
-        // Convert legacy 'entries' array format to flat format if needed
-        if (entry.entries && Array.isArray(entry.entries)) {
-           // Flatten logic (Money)
-           const amtReceived = entry.amountReceived || 0;
-           const amtGiven = entry.amountGiven || 0;
-           if (amtReceived > 0 || amtGiven > 0) {
-             ledgerToInsert.push({
-               id: `${entry.id}_money`,
-               transactionId: entry.transactionId,
-               customerId: entry.customerId,
-               customerName: entry.customerName,
-               date: entry.date,
-               type: amtReceived > 0 ? 'receive' : 'give',
-               itemType: 'money',
-               amount: amtReceived + amtGiven,
-               createdAt: entry.createdAt
-             });
-           }
-           // Flatten logic (Items)
-           entry.entries.forEach((subItem: any) => {
-             ledgerToInsert.push({
-               id: subItem.id || `ledger_item_${Date.now()}_${Math.random()}`,
-               transactionId: entry.transactionId,
-               customerId: entry.customerId,
-               customerName: entry.customerName,
-               date: entry.date,
-               type: subItem.type,
-               itemType: subItem.itemType,
-               weight: subItem.weight || 0,
-               touch: subItem.touch || 0,
-               amount: 0,
-               createdAt: subItem.createdAt || entry.createdAt
-             });
-           });
-        } else {
-           // Standard new format
-           ledgerToInsert.push(entry);
-        }
-      }
-    }
-
-    if (ledgerToInsert.length > 0) {
-      await this.batchInsertLedgerEntries(db, ledgerToInsert);
-      stats.ledger += ledgerToInsert.length;
-    }
-    await this.logAction(`Ledger merge completed: ${stats.ledger} ledger entries`);
-
-    // --- 5. Apply Aggregated Balance Updates ---
-    await this.logAction('Starting aggregated balance updates');
-    // This reduces N updates to 1 update per active customer
-    for (const [customerId, effect] of customerBalanceEffects) {
-      // Fetch fresh balance (snapshot)
-      const current = await CustomerService.getCustomerById(customerId);
-      if (current) {
-        // Apply Money
-        let newBalance = current.balance + effect.moneyChange;
-        
-        // Apply Metals
-      const newMetals = { ...current.metalBalances };
-      for (const [type, change] of Object.entries(effect.metalChanges)) {
-        // Cast string to valid key type
-        const key = type as keyof typeof newMetals;
-        
-        // Now safely index
-        newMetals[key] = (newMetals[key] || 0) + change;
-      }
-
-        // Apply Date
-        const newDate = (!current.lastTransaction || new Date(effect.lastTxnDate) > new Date(current.lastTransaction))
-          ? effect.lastTxnDate
-          : current.lastTransaction;
-
-        // Save
-        // Optimization: We could add a specific update method for this, but standard save is okay since it's now 1 per customer
-        await CustomerService.saveCustomer({
-          ...current,
-          balance: newBalance,
-          metalBalances: newMetals,
-          lastTransaction: newDate
-        });
-        stats.balanceUpdates++;
-      }
-    }
-    await this.logAction(`Balance updates completed: ${stats.balanceUpdates} customers updated`);
-
-    // --- 6. Handle Inventory & Stock ---
-    await this.logAction('Starting inventory and stock handling');
-    // (Existing logic for Base Inventory & Stock is fine as-is, volume is low)
-    if (records.baseInventory) {
-       // ... existing base inventory logic ...
-       // (Keeping the logic provided in previous file for safety)
-       const currentBaseInventory = await InventoryService.getBaseInventory();
-       const isDifferent = Object.keys(records.baseInventory).some(key => 
-         records.baseInventory![key as keyof typeof records.baseInventory] !== currentBaseInventory[key as keyof typeof currentBaseInventory]
-       );
-       if (isDifferent) {
-          // In a background merge, we might auto-accept or skip.
-          // For now, let's auto-accept if it's an automated process to avoid blocking
-          await InventoryService.setBaseInventory(records.baseInventory);
-       }
-    }
-    
-    // Trigger full recalculation of inventory chain after restoration
-    await InventoryService.recalculateBalancesFrom();
-
-    if (records.raniRupaStock) {
-      const existingStock = await RaniRupaStockService.getAllStock();
-      const stockMap = new Set(existingStock.map(s => s.stock_id));
-      for (const item of records.raniRupaStock) {
-        if (!stockMap.has(item.stock_id)) {
-          await RaniRupaStockService.restoreStock(item.stock_id, item.itemtype, item.weight, item.touch);
-          stats.stock++;
-        }
-      }
-    }
-    await this.logAction(`Inventory and stock handling completed: ${stats.stock} stock items`);
-
-    console.log(`BackupService: Batch Import summary - Customers: ${stats.customers}, Txns: ${stats.transactions}, Entries: ${stats.entries}, Ledger: ${stats.ledger}`);
-    await this.logAction(`Batch Merge completed: +${stats.transactions} txns, +${stats.balanceUpdates} bal updates`);
-  }
-
-  // --- HELPER: Batch Insert Transactions ---
-  private static async batchInsertTransactions(db: any, transactions: any[]): Promise<void> {
-    const CHUNK_SIZE = 50; // Safe for SQLite variables
-    for (let i = 0; i < transactions.length; i += CHUNK_SIZE) {
-      const batch = transactions.slice(i, i + CHUNK_SIZE);
-      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(',');
-      const params: any[] = [];
-      
-      batch.forEach(t => {
-        params.push(
-          t.id, t.deviceId || null, t.customerId, t.customerName, 
-          t.date, t.total, t.amountPaid, t.createdAt, t.lastUpdatedAt
-        );
-      });
-
-      await db.runAsync(
-        `INSERT OR REPLACE INTO transactions 
-         (id, deviceId, customerId, customerName, date, total, amountPaid, createdAt, lastUpdatedAt) 
-         VALUES ${placeholders}`,
-        params
-      );
-    }
-  }
-
-  // --- HELPER: Batch Insert Entries ---
-  private static async batchInsertTransactionEntries(db: any, entries: any[]): Promise<void> {
-    const CHUNK_SIZE = 40; // Smaller chunk size because entries have many columns
-    for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
-      const batch = entries.slice(i, i + CHUNK_SIZE);
-      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(',');
-      const params: any[] = [];
-
-      batch.forEach(e => {
-        params.push(
-          e.id, e.transaction_id, e.type, e.itemType, 
-          e.weight || null, e.price || null, e.touch || null, e.cut || null, e.extraPerKg || null,
-          e.pureWeight || null, e.moneyType || null, e.amount || null, e.metalOnly ? 1 : 0,
-          e.stock_id || null, e.subtotal, e.createdAt, e.lastUpdatedAt
-        );
-      });
-
-      await db.runAsync(
-        `INSERT OR REPLACE INTO transaction_entries 
-         (id, transaction_id, type, itemType, weight, price, touch, cut, extraPerKg, 
-          pureWeight, moneyType, amount, metalOnly, stock_id, subtotal, createdAt, lastUpdatedAt)
-         VALUES ${placeholders}`,
-        params
-      );
-    }
-  }
-
-  // --- HELPER: Batch Insert Ledger ---
-  private static async batchInsertLedgerEntries(db: any, ledgerEntries: any[]): Promise<void> {
-    const CHUNK_SIZE = 50;
-    for (let i = 0; i < ledgerEntries.length; i += CHUNK_SIZE) {
-      const batch = ledgerEntries.slice(i, i + CHUNK_SIZE);
-      // Note: INSERT OR IGNORE to prevent crashing on duplicates
-      const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(',');
-      const params: any[] = [];
-
-      batch.forEach(e => {
-        params.push(
-          e.id, e.transactionId, e.customerId, e.customerName, e.date,
-          e.type, e.itemType, e.weight || 0, e.touch || 0, e.amount || 0, e.createdAt
-        );
-      });
-
-      await db.runAsync(
-        `INSERT OR IGNORE INTO ledger_entries 
-         (id, transactionId, customerId, customerName, date, type, itemType, weight, touch, amount, createdAt)
-         VALUES ${placeholders}`,
-        params
-      );
-    }
-  }
-  /**
    * Auto backup with Notification Support & Garbage Collection
    */
   static async performAutoBackup(force: boolean = false): Promise<boolean> {
-    console.log('BackupService: Starting incremental auto-backup, force:', force);
     try {
       await this.logAction('Starting incremental auto-backup...');
       
       // Load Manifest
-      console.log('BackupService: Loading current manifest');
       const manifest = await ObjectStorageService.getManifest();
       const newManifest: Record<string, string> = {};
       let changesCount = 0;
 
       // Helper to process a list of items
       const processItems = async (items: any[], prefix: string) => {
-           for (const item of items) {
-               const id = item.id || 'single';
-               const key = `${prefix}:${id}`;
-               const canonical = CanonicalService.stringify(item);
-               const hash = await HashService.computeHash(canonical);
-               
-               if (manifest[key] !== hash) {
-                   await ObjectStorageService.saveRawObject(canonical, hash);
-                   changesCount++;
-               }
-               newManifest[key] = hash;
-           }
+        // Step 1: stringify all items (CPU, sync — fast)
+        const canonicals = items.map(item => ({
+          id: item.id || 'single',
+          canonical: CanonicalService.stringify(item)
+        }));
+
+        // Step 2: hash ALL in parallel (native crypto, huge win)
+        const hashes = await Promise.all(
+          canonicals.map(c => HashService.computeHash(c.canonical))
+        );
+
+        // Step 3: only write changed items (still sequential to avoid disk thrash)
+        for (let i = 0; i < canonicals.length; i++) {
+          const key = `${prefix}:${canonicals[i].id}`;
+          const hash = hashes[i];
+          if (manifest[key] !== hash) {
+            if (!force) {
+              // Only write individual objects during background auto-backup
+              await ObjectStorageService.saveRawObject(canonicals[i].canonical, hash);
+            }
+            changesCount++;
+          }
+          newManifest[key] = hash;
+        }
       };
 
       // Gather Data
@@ -1247,6 +851,10 @@ export class BackupService {
       await processItems(recordData.transactions, 'transactions');
       await processItems(recordData.ledger, 'ledger');
       await processItems(recordData.raniRupaStock, 'stock');
+      await processItems(recordData.trades, 'trades');
+      if (recordData.rateCutHistory) {
+        await processItems(recordData.rateCutHistory, 'rate_cut_history');
+      }
       if (recordData.baseInventory) {
         await processItems([recordData.baseInventory], 'inventory');
       }
@@ -1257,12 +865,10 @@ export class BackupService {
       await this.logAction(`Manifest updated with ${changesCount} changes`);
       
       // Update Snapshot
-      const deviceId = await this.getDeviceId();
       const backupData: BackupData = {
           exportType: 'auto',
           timestamp: Date.now(),
           recordCount: Object.keys(newManifest).length,
-          deviceId,
           records: recordData
       };
       
@@ -1275,11 +881,14 @@ export class BackupService {
       const activeHashes = new Set(Object.values(newManifest));
       
       // Delete anything on disk that isn't in activeHashes
-      const deletedFiles = await ObjectStorageService.cleanupOrphanedObjects(activeHashes);
-      
-      if (deletedFiles > 0) {
-        console.log(`BackupService: Garbage collected ${deletedFiles} orphaned files`);
-        await this.logAction(`Garbage collection: Cleaned up ${deletedFiles} orphaned files`);
+      // Only run GC during background auto-backup, not during forced export
+      if (!force) {
+        const deletedFiles = await ObjectStorageService.cleanupOrphanedObjects(activeHashes);
+        
+        if (deletedFiles > 0) {
+          console.log(`BackupService: Garbage collected ${deletedFiles} orphaned files`);
+          await this.logAction(`Garbage collection: Cleaned up ${deletedFiles} orphaned files`);
+        }
       }
       // --- GARBAGE COLLECTION END ---
       

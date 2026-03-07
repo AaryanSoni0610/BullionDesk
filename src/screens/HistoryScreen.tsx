@@ -37,6 +37,488 @@ import { Transaction, Customer } from '../types';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
 
+// ─── Module-level pure helpers (stable references → no needless re-renders) ───
+
+const formatDateLabel = (date: Date) =>
+  date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+const getItemDisplayName = (entry: any): string => {
+  if (entry.type === 'money') return 'Money';
+  const typeMap: Record<string, string> = {
+    gold999: 'Gold 999', gold995: 'Gold 995', rani: 'Rani', silver: 'Silver', rupu: 'Rupu', money: 'Money',
+  };
+  return typeMap[entry.itemType] || entry.itemType;
+};
+
+const isRateCutLocked = (transaction: Transaction): boolean => {
+  const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
+  if (isMetalOnly) {
+    const txDate = new Date(transaction.date).getTime();
+    const lockDates = transaction.customerLockDates;
+    if (lockDates) {
+      return transaction.entries.some(entry => {
+        if (entry.itemType === 'gold999' && txDate <= (lockDates.gold999 || 0)) return true;
+        if (entry.itemType === 'gold995' && txDate <= (lockDates.gold995 || 0)) return true;
+        if (entry.itemType === 'silver' && txDate <= (lockDates.silver || 0)) return true;
+        return false;
+      });
+    }
+  }
+  return false;
+};
+
+const isEditLocked = (transaction: Transaction): boolean => isRateCutLocked(transaction);
+
+const getAmountColor = (transaction: Transaction) => {
+  const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
+  if (isMoneyOnly) {
+    return transaction.amountPaid > 0 ? theme.colors.sellColor : theme.colors.primary;
+  }
+  return transaction.total > 0 ? theme.colors.sellColor : theme.colors.primary;
+};
+
+const getEntryDisplayDataModule = (entry: any): { line1: string; line2: string } => {
+  const isMetalOnly = entry.metalOnly;
+  const isRaniRupa = ['rani', 'rupu'].includes(entry.itemType);
+  const isGoldSilver = !isRaniRupa && entry.type !== 'money';
+
+  if (entry.metalOnly && entry.stock_id && entry.type === 'sell') {
+    const weight = entry.weight || 0;
+    const touch = entry.touch || 100;
+    const cut = entry.cut || 0;
+    let effectiveTouch = touch;
+    let fixedDigits = 0;
+    let formattedPure = 0;
+    if (entry.itemType === 'rani') {
+      effectiveTouch = touch - cut;
+      fixedDigits = 3;
+      formattedPure = formatPureGoldPrecise((weight * effectiveTouch) / 100);
+    } else if (entry.itemType === 'rupu') {
+      fixedDigits = 0;
+      formattedPure = customFormatPureSilver(weight, touch);
+    } else if (entry.itemType.includes('gold')) {
+      effectiveTouch = entry.itemType === 'gold999' ? touch - cut : touch;
+      fixedDigits = 3;
+      formattedPure = formatPureGoldPrecise((weight * effectiveTouch) / 100);
+    } else {
+      fixedDigits = 0;
+      formattedPure = customFormatPureSilver(weight, touch);
+    }
+    const touchDisplay = cut > 0 ? `${touch.toFixed(2)}-${Math.abs(cut).toFixed(2)}` : effectiveTouch.toFixed(2);
+    return { line1: `${weight.toFixed(fixedDigits)}g : ${touchDisplay}% : ${formattedPure.toFixed(fixedDigits)}g`, line2: '' };
+  }
+
+  let line1 = '';
+  let line2 = '';
+  if (isRaniRupa) {
+    const weight = entry.weight || 0;
+    const touch = entry.touch || 100;
+    const cut = entry.cut || 0;
+    const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
+    const pureWeight = (weight * effectiveTouch) / 100;
+    let formattedPure = 0;
+    if (entry.itemType === 'rani') {
+      formattedPure = entry.type === 'sell' ? formatPureGoldPrecise(pureWeight) : formatPureGold(pureWeight);
+    } else {
+      formattedPure = entry.type === 'sell' ? customFormatPureSilver(weight, touch) : formatPureSilver(pureWeight);
+    }
+    const fixedDigits = entry.itemType === 'rani' ? 3 : 0;
+    const touchDisplay = (entry.itemType === 'rani' && cut > 0) ? `${touch.toFixed(2)}-${Math.abs(cut).toFixed(2)}` : effectiveTouch.toFixed(2);
+    line1 = `${weight.toFixed(fixedDigits)}g : ${touchDisplay}% : ${formattedPure.toFixed(fixedDigits)}g`;
+    if (!isMetalOnly && entry.price && entry.price > 0) {
+      line2 = `${formatCurrency(entry.price)} (${formatCurrency(entry.subtotal || 0)})`;
+    }
+  } else if (isGoldSilver) {
+    const isGold = entry.itemType.includes('gold');
+    const weightStr = `${(entry.weight || 0).toFixed(isGold ? 3 : 1)}g`;
+    if (!isMetalOnly && entry.price && entry.price > 0) {
+      line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
+      line2 = `(${formatCurrency(entry.subtotal || 0)})`;
+    } else {
+      line1 = weightStr;
+    }
+  } else if (entry.type === 'money') {
+    line1 = `₹${formatIndianNumber(Math.abs(entry.amount || 0))}`;
+  }
+  return { line1, line2 };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+type TransactionCardProps = {
+  transaction: Transaction;
+  hideActions?: boolean;
+  allowFontScaling?: boolean;
+  onDelete: (t: Transaction) => void;
+  onShare: (t: Transaction) => void;
+  onEdit: (id: string) => void;
+};
+
+const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideActions = false, allowFontScaling = true, onDelete, onShare, onEdit }) => {
+  const [customerBalance, setCustomerBalance] = useState<Customer | null>(null);
+  const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+  const isRaniRupaSellTransaction = transaction.entries.some(e => e.stock_id && e.metalOnly && e.type === 'sell');
+
+  useEffect(() => {
+    if (hideActions && !isRaniRupaSellTransaction) {
+      CustomerService.getCustomerById(transaction.customerId).then(customer => {
+        setCustomerBalance(customer);
+      }).catch(err => {
+        console.error('Failed to load customer balance:', err);
+      });
+    }
+  }, [hideActions, transaction.customerId, isRaniRupaSellTransaction]);
+
+  const processedEntries = transaction.entries.map((entry, index) => {
+    let displayName = getItemDisplayName(entry);
+    if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
+      const type = entry.itemType;
+      const count = transaction.entries.filter(e => e.itemType === type).length;
+      if (count > 1) {
+        const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
+        displayName = `${displayName} ${itemIndex}`;
+      }
+    } else if (entry.stock_id && entry.metalOnly && entry.type === 'sell') {
+      displayName = entry.itemType === 'gold999' || entry.itemType === 'gold995' ? 'Rani' : 'Rupu';
+    } else if (entry.type === 'money' && entry.createdAt) {
+      const date = new Date(entry.createdAt);
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const hours = date.getHours();
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'pm' : 'am';
+      const hour12 = hours % 12 || 12;
+      displayName = `Money (${day}/${month} ${hour12}:${minutes} ${ampm})`;
+    }
+    return { ...entry, displayName };
+  });
+
+  const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly && e.type === 'sell');
+
+  const groupedRaniRupa = raniRupaEntries.reduce((acc, entry) => {
+    let groupKey = entry.itemType;
+    if (entry.itemType === 'rani') groupKey = (entry.cut || 0) > 0 ? 'gold999' : 'gold995';
+    else if (entry.itemType === 'rupu') groupKey = 'silver';
+    if (!acc[groupKey]) acc[groupKey] = [];
+    acc[groupKey].push(entry);
+    return acc;
+  }, {} as Record<string, typeof processedEntries>);
+
+  const isAllRupu = transaction.entries.length > 1 && transaction.entries.every(e => e.itemType === 'rupu');
+  let customRupuSummaryLine: string | null = null;
+  if (isAllRupu) {
+    const isPurchase = transaction.entries.some(e => e.type === 'purchase');
+    const isSell = transaction.entries.some(e => e.type === 'sell');
+    let showCustomSummary = false;
+    if (isPurchase) {
+      const allPriceZero = transaction.entries.every(e => !e.price || e.price === 0);
+      const firstMetalOnly = transaction.entries[0].metalOnly;
+      if (allPriceZero || firstMetalOnly) showCustomSummary = true;
+    } else if (isSell) {
+      if (transaction.entries.every(e => (e.touch || 0) >= 98)) showCustomSummary = true;
+    }
+    if (showCustomSummary) {
+      const totalW = transaction.entries.reduce((sum, e) => sum + (e.weight || 0), 0);
+      const totalP = transaction.entries.reduce((sum, e) => sum + customFormatPureSilver(e.weight || 0, e.touch || 100), 0);
+      const avgT = totalW > 0 ? (totalP / totalW) * 100 : 0;
+      customRupuSummaryLine = `${totalW.toFixed(0)}g : ${avgT.toFixed(2)}% : ${totalP.toFixed(0)}g`;
+    }
+  }
+
+  let transactionBalanceLabel = 'Settled';
+  let transactionBalanceColor = theme.colors.primary;
+  if (isMetalOnly) {
+    const metalItems: string[] = [];
+    processedEntries.forEach(entry => {
+      if (entry.metalOnly) {
+        const itemName = entry.displayName;
+        const weight = entry.weight || 0;
+        const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
+        const formattedWeight = isGold ? weight.toFixed(3) : Math.floor(weight);
+        const label = entry.type === 'sell' ? 'Debt' : 'Balance';
+        metalItems.push(`${label}: ${itemName} ${formattedWeight}g`);
+      }
+    });
+    if (metalItems.length > 0) {
+      transactionBalanceLabel = metalItems.join(', ');
+      const isDebt = metalItems.some(item => item.startsWith('Debt'));
+      const isBalance = metalItems.some(item => item.startsWith('Balance'));
+      if (isDebt) transactionBalanceColor = theme.colors.debtColor;
+      else if (isBalance) transactionBalanceColor = theme.colors.success;
+    }
+  } else {
+    const transactionRemaining = transaction.amountPaid - transaction.total;
+    const hasRemainingBalance = Math.abs(transactionRemaining) >= 1;
+    const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
+    if (hasRemainingBalance) {
+      if (!isMoneyOnly) {
+        const isDebt = transactionRemaining < 0;
+        transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+        transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
+      } else {
+        const isBalance = transaction.amountPaid > 0;
+        transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
+        transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
+      }
+    } else {
+      transactionBalanceColor = theme.colors.primary;
+    }
+  }
+
+  return (
+    <View style={[
+      styles.historyCard,
+      hideActions && {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#cccccc',
+        paddingVertical: 10,
+        paddingHorizontal: 2,
+        marginBottom: 0,
+        margin: 0,
+        elevation: 0,
+        shadowOpacity: 0,
+        width: 576,
+      }
+    ]}>
+      {!hideActions && (
+        <View style={styles.cardTopActions}>
+          <View style={styles.actionPill}>
+            <TouchableOpacity
+              style={[styles.iconBtn, styles.btnDelete, isRateCutLocked(transaction) && styles.disabledButton]}
+              onPress={() => !isRateCutLocked(transaction) && onDelete(transaction)}
+              disabled={isRateCutLocked(transaction)}
+            >
+              <Icon name="delete" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.iconBtn, styles.btnShare]} onPress={() => onShare(transaction)}>
+              <Icon name="share-variant" size={20} color={theme.colors.success} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.iconBtn, styles.btnEdit, isEditLocked(transaction) && styles.disabledButton]}
+              onPress={() => !isEditLocked(transaction) && onEdit(transaction.id)}
+              disabled={isEditLocked(transaction)}
+            >
+              <Icon name="pencil" size={20} color={isEditLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.cardHeader}>
+        <View style={styles.infoBlock}>
+          <Text allowFontScaling={allowFontScaling} style={[styles.customerName, hideActions && { color: '#000000', fontSize: 32 }]}>
+            {transaction.customerName}
+          </Text>
+          <Text allowFontScaling={allowFontScaling} style={[styles.transactionDate, hideActions && { color: '#000000', fontSize: 22 }]}>
+            {formatFullDate(transaction.date)}
+          </Text>
+        </View>
+        <View style={styles.amountBlock}>
+          {!isMetalOnly && (
+            <Text
+              allowFontScaling={allowFontScaling}
+              style={[styles.mainAmount, { color: hideActions ? '#000000' : getAmountColor(transaction), fontSize: hideActions ? 32 : 18 }]}
+            >
+              {formatTransactionAmount(transaction)}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      <View style={[styles.receiptSection, hideActions && { backgroundColor: '#FFFFFF', borderRadius: 6, borderWidth: 1, borderColor: '#e8e8e8', paddingVertical: 7, paddingHorizontal: 0 }]}>
+        {processedEntries.map((entry, index) => (
+          <View key={index} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
+            {(() => {
+              const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
+              const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
+              const isSell = entry.type === 'sell' || isMoneyGive;
+              const isPurchase = entry.type === 'purchase' || isMoneyReceive;
+              const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
+              const iconColor = hideActions ? '#000000' : (isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00');
+              const iconStyle = hideActions ? styles.iconPrint : (isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney);
+              const { line1, line2 } = getEntryDisplayDataModule(entry);
+              return (
+                <>
+                  <View style={styles.receiptRow}>
+                    <View style={styles.itemNameRow}>
+                      <View style={[styles.iconBox, iconStyle, hideActions && { width: 25, height: 25, marginRight: 4, borderRadius: 0 }]}>
+                        <Icon name={iconName} size={hideActions ? 25 : 14} color={iconColor} />
+                      </View>
+                      <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+                        {entry.displayName}
+                      </Text>
+                    </View>
+                    <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 25, color: '#000000' }]}>
+                      {line1}
+                    </Text>
+                  </View>
+                  {line2 !== '' && (
+                    <View style={[styles.receiptRow, { marginTop: -4 }]}>
+                      <View />
+                      <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, { fontSize: hideActions ? 23 : 13, opacity: hideActions ? 1 : 0.8, color: hideActions ? '#000000' : undefined }]}>
+                        {line2}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              );
+            })()}
+          </View>
+        ))}
+
+        {(raniRupaEntries.length > 0 || customRupuSummaryLine) && <Divider style={[styles.divider, { marginVertical: 2 }]} />}
+
+        {Object.entries(groupedRaniRupa).map(([itemType, entries]) => {
+          const sumPure = entries.reduce((sum, e) => {
+            const weight = e.weight || 0; const touch = e.touch || 100;
+            if (itemType === 'rupu') return sum + customFormatPureSilver(weight, touch);
+            return sum + formatPureGoldPrecise(weight * touch / 100);
+          }, 0);
+          const sumDebt = entries.reduce((sum, e) => {
+            const weight = e.weight || 0; const touch = e.touch || 100; const cut = e.cut || 0;
+            if (itemType === 'rupu') return sum + customFormatPureSilver(weight, touch);
+            return sum + formatPureGoldPrecise(weight * (touch - cut) / 100);
+          }, 0);
+          const hasCut = entries.some(e => (e.cut || 0) > 0);
+          const displayType = itemType === 'gold999' ? 'Pure Gold 999' : itemType === 'gold995' ? 'Pure Gold 995' : 'Pure Silver';
+          const decimals = itemType === 'silver' ? 0 : 3;
+          const firstCut = entries[0].cut || 0;
+          const summaryLine = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${Math.abs(firstCut).toFixed(2)})` : `${sumPure.toFixed(decimals)}g`;
+          if (itemType === 'silver' && customRupuSummaryLine) return null;
+          return (
+            <View key={`summary-${itemType}`} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
+              <View style={styles.receiptRow}>
+                <View style={styles.itemNameRow}>
+                  <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 25, height: 25, marginRight: 4, borderRadius: 0 }]}>
+                    <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
+                  </View>
+                  <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+                    {displayType}
+                  </Text>
+                </View>
+                <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 25, color: '#000000' }]}>
+                  {summaryLine}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+
+        {customRupuSummaryLine && (
+          <View style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
+            <View style={styles.receiptRow}>
+              <View style={styles.itemNameRow}>
+                <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 25, height: 25, marginRight: 4, borderRadius: 0 }]}>
+                  <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
+                </View>
+                <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+                  Pure Silver
+                </Text>
+              </View>
+              <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 25, color: '#000000' }]}>
+                {customRupuSummaryLine}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {!isMetalOnly && processedEntries.length > 0 &&
+          (hideActions ? <View style={{ height: 1, backgroundColor: '#cccccc', marginVertical: 5 }} /> : <Divider style={styles.divider} />)
+        }
+
+        {!isMetalOnly && (
+          processedEntries.length === 0 ? (
+            <View style={styles.totalRow}>
+              <Text style={[styles.totalLabel, hideActions && { fontSize: 22, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>Money-Only</Text>
+            </View>
+          ) : (
+            <View style={styles.totalRow}>
+              <Text style={[styles.totalLabel, hideActions && { fontSize: 22, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>Total</Text>
+              <Text style={[styles.totalAmount, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_700Bold' }]}>
+                ₹{formatIndianNumber(Math.abs(transaction.total))}
+              </Text>
+            </View>
+          )
+        )}
+
+        {!isMetalOnly &&
+          (hideActions ? <View style={{ height: 1, backgroundColor: '#cccccc', marginVertical: 5 }} /> : <Divider style={styles.divider} />)
+        }
+
+        {!isMetalOnly && (
+          <View style={[styles.receiptRow, styles.footerRow]}>
+            <Text style={[styles.footerLabel, hideActions && { fontSize: 22, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+              {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
+            </Text>
+            <Text style={[styles.footerAmount, { color: hideActions ? '#000000' : (transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary) }, hideActions && { fontSize: 25, fontFamily: 'Outfit_700Bold' }]}>
+              {' '}{transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
+            </Text>
+            <View style={{ flex: 1 }} />
+            <View>
+              <Text style={[styles.balanceLabel, { color: hideActions ? '#000000' : transactionBalanceColor }, hideActions && { fontSize: 15, fontFamily: 'Outfit_700Bold' }]}>
+                {transactionBalanceLabel}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {transaction.note && transaction.note.trim() !== '' && (
+        <View style={[styles.noteRow, hideActions && { marginTop: 6, paddingTop: 6, borderTopColor: '#cccccc', borderTopWidth: 1 }]}>
+          <Text style={[styles.noteLabel, hideActions && { fontSize: 25, color: '#444444', fontFamily: 'Outfit_600SemiBold' }]}>NOTE</Text>
+          <Text style={[styles.noteText, hideActions && { fontSize: 25, color: '#000000', marginLeft: 6, fontFamily: 'Outfit_400Regular' }]}>{transaction.note}</Text>
+        </View>
+      )}
+
+      {hideActions && !isRaniRupaSellTransaction && customerBalance && (() => {
+        const balances: string[] = [];
+        const debts: string[] = [];
+        if (customerBalance.balance && Math.abs(customerBalance.balance) >= 1) {
+          if (customerBalance.balance > 0) balances.push(`₹${formatIndianNumber(customerBalance.balance)}`);
+          else debts.push(`₹${formatIndianNumber(Math.abs(customerBalance.balance))}`);
+        }
+        if (customerBalance.metalBalances) {
+          if (customerBalance.metalBalances.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001) {
+            if (customerBalance.metalBalances.gold999 > 0) balances.push(`Gold 999 ${customerBalance.metalBalances.gold999.toFixed(3)}g`);
+            else debts.push(`Gold 999 ${Math.abs(customerBalance.metalBalances.gold999).toFixed(3)}g`);
+          }
+          if (customerBalance.metalBalances.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001) {
+            if (customerBalance.metalBalances.gold995 > 0) balances.push(`Gold 995 ${customerBalance.metalBalances.gold995.toFixed(3)}g`);
+            else debts.push(`Gold 995 ${Math.abs(customerBalance.metalBalances.gold995).toFixed(3)}g`);
+          }
+          if (customerBalance.metalBalances.silver && Math.abs(customerBalance.metalBalances.silver) >= 1) {
+            if (customerBalance.metalBalances.silver > 0) balances.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
+            else debts.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
+          }
+        }
+        const hasMoneyBalance = customerBalance.balance && Math.abs(customerBalance.balance) >= 1;
+        const hasGold999Balance = customerBalance.metalBalances?.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001;
+        const hasGold995Balance = customerBalance.metalBalances?.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001;
+        const hasSilverBalance = customerBalance.metalBalances?.silver && Math.abs(customerBalance.metalBalances.silver) >= 1;
+        const hasAnyBalanceOrDebt = Boolean(hasMoneyBalance || hasGold999Balance || hasGold995Balance || hasSilverBalance);
+        return hasAnyBalanceOrDebt ? (
+          <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: hideActions ? '#cccccc' : 'rgba(0,0,0,0.05)' }}>
+            {balances.length > 0 && (
+              <Text style={{ fontFamily: 'Outfit_700Bold', fontSize: 18, color: hideActions ? '#000000' : theme.colors.success, marginBottom: debts.length > 0 ? 4 : 0 }}>
+                Balance: {balances.join(', ')}
+              </Text>
+            )}
+            {debts.length > 0 && (
+              <Text style={{ fontFamily: 'Outfit_700Bold', fontSize: 18, color: hideActions ? '#000000' : theme.colors.debtColor }}>
+                Debt: {debts.join(', ')}
+              </Text>
+            )}
+          </View>
+        ) : null;
+      })()}
+    </View>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Filter Options
 const ITEM_FILTER_OPTIONS = [
   { label: 'Gold 999', value: 'gold999' },
@@ -54,7 +536,6 @@ export const HistoryScreen: React.FC = () => {
   const [itemFilters, setItemFilters] = useState<string[]>([]);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSearching, setIsSearching] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'today' | 'last7days' | 'last30days' | 'custom'>('today');
   const [error, setError] = useState<string | null>(null);
   const { navigateToSettings, loadTransactionForEdit } = useAppContext();
@@ -90,36 +571,27 @@ export const HistoryScreen: React.FC = () => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [connectedPrinter, setConnectedPrinter] = useState<string | null>(null);
 
+  // Pagination
+  const PAGE_SIZE = 200;
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageOffsetRef = useRef(0);
+  const dateRangeRef = useRef({ startDate: '', endDate: '' });
+  // Prevents applyFilters useEffect from re-running after loadMore (it already updates filteredTransactions directly)
+  const skipNextApplyFiltersRef = useRef(false);
+  // Prevents loadTransactions from firing after a filter switch that reuses in-memory data
+  const skipNextLoadRef = useRef(false);
+  // Session cache: accumulates fetched transactions within a focus session.
+  // Cleared on screen focus so new transactions from other screens are picked up.
+  const txStoreRef = useRef<{
+    data: Transaction[];
+    coveredStart: string;  // requested startDate when this store was built
+    coveredEnd: string;    // requested endDate when this store was built
+    fullyLoaded: boolean;  // true = no more DB pages exist for this range
+  } | null>(null);
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  };
 
-  const isRateCutLocked = (transaction: Transaction): boolean => {
-    const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
-    if (isMetalOnly) {
-      const txDate = new Date(transaction.date).getTime();
-      const lockDates = transaction.customerLockDates;
-      if (lockDates) {
-        return transaction.entries.some(entry => {
-          if (entry.itemType === 'gold999' && txDate <= (lockDates.gold999 || 0)) return true;
-          if (entry.itemType === 'gold995' && txDate <= (lockDates.gold995 || 0)) return true;
-          if (entry.itemType === 'silver' && txDate <= (lockDates.silver || 0)) return true;
-          return false;
-        });
-      }
-    }
-    return false;
-  };
-
-  const isEditLocked = (transaction: Transaction): boolean => {
-    if (isRateCutLocked(transaction)) return true;
-    return false;
-  };
+  const formatDate = (date: Date) => formatDateLabel(date);
 
   const handleDeleteTransaction = async (transaction: Transaction) => {
     setAlertTitle('Delete Transaction');
@@ -394,7 +866,7 @@ export const HistoryScreen: React.FC = () => {
         format: 'png', 
         quality: 1, 
         result: 'tmpfile',
-        width: 300, // Reduced width for safe printing on 80mm paper
+        width: 576, // Native dot width for 80mm / 203 DPI printer — prevents upscaling
       });
       
       // Print the image
@@ -437,7 +909,10 @@ export const HistoryScreen: React.FC = () => {
       
       // Only fetch transactions created on this date (not those with ledger activity on this date)
       const txs = await TransactionService.getTransactionsByDateRange(start.toISOString(), end.toISOString());
-      const validTxs = txs.filter(t => t.customerName.toLowerCase() !== 'adjust');
+      const validTxs = txs.filter(t =>
+        t.customerName.toLowerCase() !== 'adjust' &&
+        !(t.entries.length === 1 && t.entries[0].type === 'money')
+      );
       
       if (validTxs.length === 0) {
         setIsExporting(false);
@@ -542,49 +1017,6 @@ export const HistoryScreen: React.FC = () => {
       }
     }
 
-    // Balance Logic
-    let transactionBalanceLabel = 'Settled';
-    let transactionBalanceColor = theme.colors.primary;
-    
-    if (isMetalOnly) {
-      const metalItems: string[] = [];
-      processedEntries.forEach(entry => {
-        if (entry.metalOnly) {
-          const itemName = entry.displayName;
-          const weight = entry.weight || 0;
-          const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
-          const formattedWeight = isGold ? weight.toFixed(3) : Math.floor(weight);
-          const label = entry.type === 'sell' ? 'Debt' : 'Balance';
-          metalItems.push(`${label}: ${itemName} ${formattedWeight}g`);
-        }
-      });
-      if (metalItems.length > 0) {
-        transactionBalanceLabel = metalItems.join(', ');
-        const isDebt = metalItems.some(item => item.startsWith('Debt'));
-        const isBalance = metalItems.some(item => item.startsWith('Balance'));
-        if (isDebt) transactionBalanceColor = theme.colors.debtColor;
-        else if (isBalance) transactionBalanceColor = theme.colors.success;
-      }
-    } else {
-      const transactionRemaining = transaction.amountPaid - transaction.total;
-      const hasRemainingBalance = Math.abs(transactionRemaining) >= 1;
-      const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
-
-      if (hasRemainingBalance) {
-        if (!isMoneyOnly) {
-          const isDebt = transactionRemaining < 0;
-          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
-          transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
-        } else {
-          const isBalance = transaction.amountPaid > 0;
-          transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
-          transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
-        }
-      } else {
-        transactionBalanceColor = theme.colors.primary;
-      }
-    }
-
     const amountColor = getAmountColor(transaction);
     const formattedDate = formatFullDate(transaction.date);
     const formattedAmount = !isMetalOnly ? formatTransactionAmount(transaction) : '';
@@ -609,7 +1041,7 @@ export const HistoryScreen: React.FC = () => {
              const isPurchase = entry.type === 'purchase' || isMoneyReceive;
              const iconChar = isSell ? '↗' : isPurchase ? '↙' : '₹';
              
-             const { line1, line2 } = getEntryDisplayData(entry, transaction);
+             const { line1, line2 } = getEntryDisplayDataModule(entry);
 
              return `
                <div class="entry-row">
@@ -710,8 +1142,6 @@ export const HistoryScreen: React.FC = () => {
                <span class="footer-amount" style="color: ${transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary}">
                  ${transaction.amountPaid >= 0 ? '+' : '-'}₹${formatIndianNumber(Math.abs(transaction.amountPaid))}
                </span>
-               <div style="flex:1"></div>
-               <span class="balance-label" style="color: ${transactionBalanceColor}">${transactionBalanceLabel}</span>
              </div>
           ` : ''}
         </div>
@@ -775,7 +1205,6 @@ export const HistoryScreen: React.FC = () => {
               .footer-row { display: flex; justify-content: space-between; align-items: center; }
               .footer-label { font-size: 10px; font-weight: 600; color: #000; margin-right: 4px; }
               .footer-amount { font-size: 11px; font-weight: 700; color: #000; }
-              .balance-label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #000; }
               .note-row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ccc; }
               .note-label { font-size: 10px; font-weight: 600; color: #444; }
               .note-text { font-size: 10px; color: #000; text-align: right; flex: 1; margin-left: 6px; }
@@ -836,54 +1265,110 @@ export const HistoryScreen: React.FC = () => {
     return typeMap[entry.itemType] || entry.itemType;
   };
 
+  const buildDateRange = (filterOverride?: typeof selectedFilter) => {
+    const filter = filterOverride ?? selectedFilter;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    switch (filter) {
+      case 'today':
+        return {
+          startDate: today.toISOString(),
+          endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString(),
+        };
+      case 'last7days':
+        return {
+          startDate: new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+          endDate: new Date(today.getTime() - 1).toISOString(),
+        };
+      case 'last30days':
+        return {
+          startDate: new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+          endDate: new Date(today.getTime() - 1).toISOString(),
+        };
+      case 'custom':
+        if (!customStartDate || !customEndDate) {
+          return {
+            startDate: today.toISOString(),
+            endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString(),
+          };
+        } else {
+          const start = new Date(customStartDate);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(customEndDate);
+          end.setHours(23, 59, 59, 999);
+          return { startDate: start.toISOString(), endDate: end.toISOString() };
+        }
+      default:
+        return {
+          startDate: today.toISOString(),
+          endDate: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString(),
+        };
+    }
+  };
+
   const loadTransactions = async (refresh = false) => {
+    if (skipNextLoadRef.current && !refresh) {
+      skipNextLoadRef.current = false;
+      return;
+    }
     try {
       if (!refresh) setIsLoading(true);
       setError(null);
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      let startDate: string;
-      let endDate: string;
-      
-      switch (selectedFilter) {
-        case 'today':
-          startDate = today.toISOString();
-          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-          break;
-        case 'last7days':
-          startDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          endDate = new Date(today.getTime() - 1).toISOString();
-          break;
-        case 'last30days':
-          startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-          endDate = new Date(today.getTime() - 1).toISOString();
-          break;
-        case 'custom':
-          if (!customStartDate || !customEndDate) {
-            startDate = today.toISOString();
-            endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-          } else {
-            const start = new Date(customStartDate);
-            start.setHours(0, 0, 0, 0);
-            startDate = start.toISOString();
-            const end = new Date(customEndDate);
-            end.setHours(23, 59, 59, 999);
-            endDate = end.toISOString();
-          }
-          break;
-        default:
-          startDate = today.toISOString();
-          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-      }
-      
-      const allTransactions = await TransactionService.getTransactionsByDateRange(startDate, endDate);
-      const sortedTransactions = allTransactions.filter(t => t.customerName.toLowerCase() !== 'adjust');
-      setTransactions(sortedTransactions);
+      pageOffsetRef.current = 0;
+
+      const { startDate, endDate } = buildDateRange();
+      dateRangeRef.current = { startDate, endDate };
+
+      const isPaginated = selectedFilter !== 'today';
+      const fetched = await TransactionService.getTransactionsByDateRange(
+        startDate, endDate,
+        undefined, undefined,
+        isPaginated ? PAGE_SIZE : undefined,
+        isPaginated ? 0 : undefined
+      );
+      const filtered = fetched.filter(t => t.customerName.toLowerCase() !== 'adjust');
+      setTransactions(filtered);
+      setHasMore(isPaginated && fetched.length === PAGE_SIZE);
     } catch (error) {
       setError('Unable to load transaction history');
       if (!refresh) setTransactions([]);
+      setHasMore(false);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMoreTransactions = async () => {
+    if (isLoadingMore || !hasMore) return;
+    try {
+      setIsLoadingMore(true);
+      pageOffsetRef.current += PAGE_SIZE;
+      const { startDate, endDate } = dateRangeRef.current;
+      const fetched = await TransactionService.getTransactionsByDateRange(
+        startDate, endDate,
+        undefined, undefined,
+        PAGE_SIZE,
+        pageOffsetRef.current
+      );
+      const newItems = fetched.filter(t => t.customerName.toLowerCase() !== 'adjust');
+      const newFiltered = filterTransactions(newItems);
+      // Extend the session store with the new page
+      if (txStoreRef.current) {
+        txStoreRef.current = {
+          ...txStoreRef.current,
+          data: [...txStoreRef.current.data, ...newItems],
+          fullyLoaded: fetched.length < PAGE_SIZE,
+        };
+      }
+      // Skip the applyFilters useEffect that fires when transactions state changes
+      skipNextApplyFiltersRef.current = true;
+      setTransactions(prev => [...prev, ...newItems]);
+      setFilteredTransactions(prev => [...prev, ...newFiltered]);
+      setHasMore(fetched.length === PAGE_SIZE);
+    } catch (error) {
+      console.error('Error loading more transactions:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -894,44 +1379,91 @@ export const HistoryScreen: React.FC = () => {
     });
   };
 
-  const applyFilters = useCallback(() => {
-    setIsSearching(true);
-    let result = transactions;
-
+  // Pure filter logic — no state updates, safe to call from anywhere
+  const filterTransactions = useCallback((data: Transaction[]) => {
+    let result = data;
     if (itemFilters.length > 0) {
       result = result.filter(tx => {
         const isMoneyOnly = !tx.entries || tx.entries.length === 0;
         if (itemFilters.includes('money') && isMoneyOnly) return true;
         if (!isMoneyOnly) {
-           const hasMatch = tx.entries.some(entry => itemFilters.includes(entry.itemType));
-           if (hasMatch) return true;
+          return tx.entries.some(entry => itemFilters.includes(entry.itemType));
         }
         return false;
       });
     }
-
     if (searchQuery.trim()) {
       const searchTerm = searchQuery.trim().toLowerCase();
-      result = result.filter(transaction => {
-        const customerMatch = transaction.customerName.trim().toLowerCase().includes(searchTerm);
-        const itemMatch = transaction.entries.some(entry => getItemDisplayName(entry).toLowerCase().includes(searchTerm));
+      result = result.filter(tx => {
+        const customerMatch = tx.customerName.trim().toLowerCase().includes(searchTerm);
+        const itemMatch = tx.entries.some(entry => getItemDisplayName(entry).toLowerCase().includes(searchTerm));
         return customerMatch || itemMatch;
       });
     }
-    setFilteredTransactions(result);
-    setIsSearching(false);
-  }, [transactions, itemFilters, searchQuery]);
+    return result;
+  }, [itemFilters, searchQuery]);
+
+  const applyFilters = useCallback(() => {
+    if (skipNextApplyFiltersRef.current) {
+      skipNextApplyFiltersRef.current = false;
+      return;
+    }
+    setFilteredTransactions(filterTransactions(transactions));
+  }, [transactions, filterTransactions]);
 
   const handleFilterChange = (filter: typeof selectedFilter) => {
     if (filter === 'custom') {
       if (selectedFilter !== 'custom') setPreviousFilter(selectedFilter);
       setShowStartDatePicker(true);
-    } else {
-      setCustomStartDate(null);
-      setCustomEndDate(null);
+      return;
+    }
+
+    setCustomStartDate(null);
+    setCustomEndDate(null);
+
+    if (filter === selectedFilter) return;
+
+    // Reuse already-loaded data when switching between last7days and last30days.
+    // Both share the same endDate (yesterday) and are strictly ordered by range size,
+    // so the 7-day dataset is always a prefix (newest items) of the 30-day dataset.
+    const canReuse =
+      transactions.length > 0 &&
+      ((filter === 'last30days' && selectedFilter === 'last7days') ||
+        (filter === 'last7days' && selectedFilter === 'last30days'));
+
+    if (canReuse) {
+      const newRange = buildDateRange(filter);
+      dateRangeRef.current = newRange;
+
+      if (filter === 'last30days') {
+        // Widening: existing data is already the newest portion of the 30-day window.
+        // Treat it as the first page and let the user scroll to fetch older records.
+        pageOffsetRef.current = transactions.length;
+        setHasMore(true);
+      } else {
+        // Narrowing to 7 days: discard transactions older than 7 days.
+        // Since data is sorted DESC, all 7-day items are at the front.
+        const filtered7 = transactions.filter(
+          t => t.date >= newRange.startDate && t.date <= newRange.endDate
+        );
+        // If every loaded item was within 7 days AND there were more pages, the
+        // next scroll must still fetch more (they might still be within 7 days).
+        const allWithin7Days = filtered7.length === transactions.length;
+        pageOffsetRef.current = filtered7.length;
+        setHasMore(allWithin7Days && hasMore);
+        skipNextApplyFiltersRef.current = true;
+        setTransactions(filtered7);
+        setFilteredTransactions(filterTransactions(filtered7));
+      }
+
+      skipNextLoadRef.current = true;
       setSelectedFilter(filter);
       setPreviousFilter(filter);
+      return;
     }
+
+    setSelectedFilter(filter);
+    setPreviousFilter(filter);
   };
 
   const handleStartDateChange = (event: any, selectedDate?: Date) => {
@@ -953,6 +1485,9 @@ export const HistoryScreen: React.FC = () => {
   };
 
   useEffect(() => { applyFilters(); }, [applyFilters]);
+  // Clear session cache whenever the screen is navigated to (picks up new/edited transactions)
+  useFocusEffect(useCallback(() => { txStoreRef.current = null; }, []));
+  // Reload on focus AND on filter change — loadTransactions will use cache if range is covered
   useFocusEffect(useCallback(() => { loadTransactions(); }, [selectedFilter, customStartDate, customEndDate]));
   useFocusEffect(useCallback(() => {
       const onBackPress = () => { (navigation as any).navigate('Home'); return true; };
@@ -960,646 +1495,18 @@ export const HistoryScreen: React.FC = () => {
       return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
   }, [navigation]));
 
-  // --- CORE COLOR & LABEL LOGIC (Preserved from Original) ---
-  const getAmountColor = (transaction: Transaction) => {
-    const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
-    if (isMoneyOnly) {
-      const isReceived = transaction.amountPaid > 0;
-      return isReceived ? theme.colors.sellColor : theme.colors.primary;
-    } else {
-      const isReceived = transaction.total > 0;
-      return isReceived ? theme.colors.sellColor : theme.colors.primary;
-    }
-  };
+  const handleCardDelete = useCallback((t: Transaction) => handleDeleteTransaction(t), []);
+  const handleCardShare = useCallback((t: Transaction) => handleShareTransaction(t), []);
+  const handleCardEdit = useCallback((id: string) => loadTransactionForEdit(id), [loadTransactionForEdit]);
 
-  const getEntryDisplayData = (entry: any, transaction: Transaction) => {
-    const isMetalOnly = entry.metalOnly;
-    
-    const isRaniRupa = ['rani', 'rupu'].includes(entry.itemType);
-    const isGoldSilver = !isRaniRupa && entry.type !== 'money';
-    
-    // Special handling for Rani/Rupa sell entries (metal-only with stock_id)
-    if (entry.metalOnly && entry.stock_id && entry.type === 'sell') {
-      const weight = entry.weight || 0;
-      const touch = entry.touch || 100;
-      const cut = entry.cut || 0;
-      let effectiveTouch = touch;
-      let pureWeight = 0;
-      let fixedDigits = 0;
-      let formattedPure = 0;
-
-      if (entry.itemType === 'rani') {
-        effectiveTouch = touch - cut;
-        pureWeight = (weight * effectiveTouch) / 100;
-        fixedDigits = 3;
-        formattedPure = formatPureGoldPrecise(pureWeight);
-      } else if (entry.itemType === 'rupu') {
-         effectiveTouch = touch;
-         pureWeight = (weight * effectiveTouch) / 100;
-         fixedDigits = 0;
-         formattedPure = customFormatPureSilver(weight, touch);
-      } else if (entry.itemType.includes('gold')) {
-         // Fallback if existing data has gold type
-         effectiveTouch = entry.itemType === 'gold999' ? touch - cut : touch;
-         pureWeight = (weight * effectiveTouch) / 100;
-         fixedDigits = 3;
-         formattedPure = formatPureGoldPrecise(pureWeight);
-      } else {
-         // Fallback for silver
-         effectiveTouch = touch;
-         pureWeight = (weight * effectiveTouch) / 100;
-         fixedDigits = 0;
-         formattedPure = customFormatPureSilver(weight, touch);
-      }
-
-      const touchDisplay = cut > 0 ? `${touch.toFixed(2)}-${Math.abs(cut).toFixed(2)}` : effectiveTouch.toFixed(2);
-      let line1 = `${weight.toFixed(fixedDigits)}g : ${touchDisplay}% : ${formattedPure.toFixed(fixedDigits)}g`;
-      let line2 = '';
-      return { line1, line2 };
-    }
-    
-    // New Logic
-    let line1 = '';
-    let line2 = '';
-
-    if (isRaniRupa) {
-         const weight = entry.weight || 0;
-         const touch = entry.touch || 100;
-         const cut = entry.cut || 0;
-         const effectiveTouch = entry.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-         const pureWeight = (weight * effectiveTouch) / 100;
-         
-         // Pure Weight Formatting Logic
-         let formattedPure = 0;
-         if (entry.itemType === 'rani') {
-             if (entry.type === 'sell') formattedPure = formatPureGoldPrecise(pureWeight);
-             else formattedPure = formatPureGold(pureWeight); // Purchase -> Normal
-         } else {
-             formattedPure = formatPureSilver(pureWeight);
-             if (entry.type === 'sell') formattedPure = customFormatPureSilver(weight, touch);
-             else formattedPure = formatPureSilver(pureWeight); // Purchase -> Normal
-         }
-         
-         const fixedDigits = entry.itemType === 'rani' ? 3 : 0;
-         const touchDisplay = (entry.itemType === 'rani' && cut > 0) ? `${touch.toFixed(2)}-${Math.abs(cut).toFixed(2)}` : effectiveTouch.toFixed(2);
-         
-         line1 = `${weight.toFixed(fixedDigits)}g : ${touchDisplay}% : ${formattedPure.toFixed(fixedDigits)}g`;
-         
-         if (!isMetalOnly && entry.price && entry.price > 0) {
-             line2 = `${formatCurrency(entry.price)} (${formatCurrency(entry.subtotal || 0)})`;
-         }
-    } else if (isGoldSilver) {
-         const isGold = entry.itemType.includes('gold');
-         const weightStr = `${(entry.weight || 0).toFixed(isGold?3:1)}g`;
-         
-         if (!isMetalOnly && entry.price && entry.price > 0) {
-             line1 = `${weightStr} : ${formatCurrency(entry.price)}`;
-             line2 = `(${formatCurrency(entry.subtotal || 0)})`;
-         } else {
-             line1 = weightStr;
-         }
-    } else if (entry.type === 'money') {
-        // Money Entry (Payment)
-        line1 = `₹${formatIndianNumber(Math.abs(entry.amount || 0))}`;
-    }
-
-    return { line1, line2 };
-  };
-
-  // Transaction Card Component
-  const TransactionCard: React.FC<{ transaction: Transaction; hideActions?: boolean; allowFontScaling?: boolean }> = ({ transaction, hideActions = false, allowFontScaling = true }) => {
-    const [customerBalance, setCustomerBalance] = useState<Customer | null>(null);
-    const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
-    
-    // Check if this is a Rani/Rupa sell transaction (metal-only with stock_id)
-    const isRaniRupaSellTransaction = transaction.entries.some(e => e.stock_id && e.metalOnly && e.type === 'sell');
-    
-    // Fetch customer balance when rendering for print/share
-    useEffect(() => {
-      if (hideActions && !isRaniRupaSellTransaction) {
-        CustomerService.getCustomerById(transaction.customerId).then(customer => {
-          setCustomerBalance(customer);
-        }).catch(err => {
-          console.error('Failed to load customer balance:', err);
-        });
-      }
-    }, [hideActions, transaction.customerId, isRaniRupaSellTransaction]);
-    
-    // Preprocess entries to add numbered labels for Rani/Rupa when multiple
-    const processedEntries = transaction.entries.map((entry, index) => {
-      let displayName = getItemDisplayName(entry);
-      if (entry.itemType === 'rani' || entry.itemType === 'rupu') {
-        const type = entry.itemType;
-        const count = transaction.entries.filter(e => e.itemType === type).length;
-        if (count > 1) {
-          const itemIndex = transaction.entries.slice(0, index).filter(e => e.itemType === type).length + 1;
-          displayName = `${displayName} ${itemIndex}`;
-        }
-      } else if (entry.stock_id && entry.metalOnly && entry.type === 'sell') {
-        // For Rani/Rupa sell entries, show as Rani or Rupu
-        displayName = entry.itemType === 'gold999' || entry.itemType === 'gold995' ? 'Rani' : 'Rupu';
-      } else if (entry.type === 'money' && entry.createdAt) {
-        // Format date as DD/MM HH:MM am/pm
-        const date = new Date(entry.createdAt);
-        const day = date.getDate().toString().padStart(2, '0');
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const hours = date.getHours();
-        const minutes = date.getMinutes().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'pm' : 'am';
-        const hour12 = hours % 12 || 12;
-        displayName = `Money (${day}/${month} ${hour12}:${minutes} ${ampm})`;
-      }
-      return { ...entry, displayName };
-    });
-
-    // Separate Rani/Rupa sell entries (metal-only with stock_id)
-    const raniRupaEntries = processedEntries.filter(e => e.stock_id && e.metalOnly && e.type === 'sell');
-
-    // Group Rani/Rupa entries by itemType for summary
-    const groupedRaniRupa = raniRupaEntries.reduce((acc, entry) => {
-      let groupKey = entry.itemType;
-      // Map to metal types for summary
-      if (entry.itemType === 'rani') {
-          groupKey = (entry.cut || 0) > 0 ? 'gold999' : 'gold995';
-      } else if (entry.itemType === 'rupu') {
-          groupKey = 'silver';
-      }
-      
-      if (!acc[groupKey]) acc[groupKey] = [];
-      acc[groupKey].push(entry);
-      return acc;
-    }, {} as Record<string, typeof processedEntries>);
-
-    // Custom Rupu Summary Logic
-    const isAllRupu = transaction.entries.length > 1 && transaction.entries.every(e => e.itemType === 'rupu');
-    let customRupuSummaryLine: string | null = null;
-    
-    if (isAllRupu) {
-      const isPurchase = transaction.entries.some(e => e.type === 'purchase');
-      const isSell = transaction.entries.some(e => e.type === 'sell');
-      let showCustomSummary = false;
-      
-      if (isPurchase) {
-        const allPriceZero = transaction.entries.every(e => !e.price || e.price === 0);
-        const firstMetalOnly = transaction.entries[0].metalOnly;
-        if (allPriceZero || firstMetalOnly) {
-          showCustomSummary = true;
-        }
-      } else if (isSell) {
-        const allTouchHigh = transaction.entries.every(e => (e.touch || 0) >= 98);
-        if (allTouchHigh) {
-          showCustomSummary = true;
-        }
-      }
-
-      if (showCustomSummary) {
-        const totalW = transaction.entries.reduce((sum, e) => sum + (e.weight || 0), 0);
-        const totalP = transaction.entries.reduce((sum, e) => sum + customFormatPureSilver(e.weight || 0, e.touch || 100), 0);
-        const avgT = totalW > 0 ? (totalP / totalW) * 100 : 0;
-        customRupuSummaryLine = `${totalW.toFixed(0)}g : ${avgT.toFixed(2)}% : ${totalP.toFixed(0)}g`;
-      }
-    }
-
-    // Logic for Transaction Balance Label
-    let transactionBalanceLabel = 'Settled';
-    let transactionBalanceColor = theme.colors.primary; // Blue default
-    
-    if (isMetalOnly) {
-      const metalItems: string[] = [];
-      processedEntries.forEach(entry => {
-        if (entry.metalOnly) {
-          const itemName = entry.displayName;
-          const weight = entry.weight || 0;
-          const isGold = entry.itemType.includes('gold') || entry.itemType === 'rani';
-          const formattedWeight = isGold ? weight.toFixed(3) : Math.floor(weight);
-          const label = entry.type === 'sell' ? 'Debt' : 'Balance';
-          metalItems.push(`${label}: ${itemName} ${formattedWeight}g`);
-        }
-      });
-      if (metalItems.length > 0) {
-        transactionBalanceLabel = metalItems.join(', ');
-        const isDebt = metalItems.some(item => item.startsWith('Debt'));
-        const isBalance = metalItems.some(item => item.startsWith('Balance'));
-        if (isDebt) transactionBalanceColor = theme.colors.debtColor;
-        else if (isBalance) transactionBalanceColor = theme.colors.success;
-      }
-    } else {
-      // Money Transaction Logic
-      const transactionRemaining = transaction.amountPaid - transaction.total;
-      const hasRemainingBalance = Math.abs(transactionRemaining) >= 1; // Tolerance
-      const isMoneyOnly = !transaction.entries || transaction.entries.length === 0;
-
-      if (hasRemainingBalance) {
-        if (!isMoneyOnly) {
-          const isDebt = transactionRemaining < 0;
-          transactionBalanceLabel = `${isDebt ? 'Debt' : 'Balance'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
-          transactionBalanceColor = isDebt ? theme.colors.debtColor : theme.colors.success;
-        } else {
-          const isBalance = transaction.amountPaid > 0;
-          transactionBalanceLabel = `${isBalance ? 'Balance' : 'Debt'}: ₹${formatIndianNumber(Math.abs(transactionRemaining))}`;
-          transactionBalanceColor = isBalance ? theme.colors.success : theme.colors.debtColor;
-        }
-      } else {
-        transactionBalanceColor = theme.colors.primary; // Blue for settled
-      }
-    }
-    
-    return (
-      <View style={[
-        styles.historyCard,
-        // Optimize for thermal printing when hideActions is true
-        hideActions && {
-          backgroundColor: '#FFFFFF', // Pure white for thermal
-          borderRadius: 8, // Slight border radius like PDF
-          borderWidth: 1,
-          borderColor: '#cccccc',
-          paddingVertical: 10, // Match PDF padding but remove horizontal
-          paddingHorizontal: 2,
-          marginBottom: 0,
-          margin: 0, // No margins
-          elevation: 0, // Remove shadow (prevents gray noise)
-          shadowOpacity: 0,
-          width: 300, // Reduced width for safe printing on 80mm paper
-        }
-      ]}>
-        {/* Action Buttons at Top Left */}
-        {!hideActions && (
-          <View style={styles.cardTopActions}>
-            <View style={styles.actionPill}>
-              <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnDelete, isRateCutLocked(transaction) && styles.disabledButton]}
-                onPress={() => !isRateCutLocked(transaction) && handleDeleteTransaction(transaction)}
-                disabled={isRateCutLocked(transaction)}
-              >
-                <Icon name="delete" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnShare]}
-                onPress={() => handleShareTransaction(transaction)}
-              >
-                <Icon name="share-variant" size={20} color={theme.colors.success} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.iconBtn, styles.btnEdit, isEditLocked(transaction) && styles.disabledButton]}
-                onPress={() => !isEditLocked(transaction) && loadTransactionForEdit(transaction.id)}
-                disabled={isEditLocked(transaction)}
-              >
-                <Icon name="pencil" size={20} color={isEditLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Card Header */}
-        <View style={styles.cardHeader}>
-          <View style={styles.infoBlock}>
-            <Text allowFontScaling={allowFontScaling} style={[
-              styles.customerName,
-              hideActions && { color: '#000000', fontSize: 18 } // Base size
-            ]}>
-              {transaction.customerName}
-            </Text>
-            <Text allowFontScaling={allowFontScaling} style={[
-              styles.transactionDate,
-              hideActions && { color: '#000000', fontSize: 12 } // Base size
-            ]}>
-              {formatFullDate(transaction.date)}
-            </Text>
-          </View>
-          <View style={styles.amountBlock}>
-            {!isMetalOnly && (
-              <Text 
-                allowFontScaling={allowFontScaling}
-                style={[
-                  styles.mainAmount, 
-                  { 
-                    color: hideActions ? '#000000' : getAmountColor(transaction),
-                    fontSize: hideActions ? 18 : 18 // Base size
-                  }
-                ]}
-              >
-                {formatTransactionAmount(transaction)}
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {/* Receipt / Details Section */}
-        <View style={[styles.receiptSection, hideActions && { backgroundColor: '#FFFFFF', borderRadius: 6, borderWidth: 1, borderColor: '#e8e8e8', paddingVertical: 7, paddingHorizontal: 0 }]}>
-            {/* Render all entries */}
-            {processedEntries.map((entry, index) => (
-                <View key={index} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
-                  {(() => {
-                    // Logic for money entries: 'give' -> like sell (top-right), 'receive' -> like purchase (bottom-left)
-                    const isMoneyGive = entry.type === 'money' && entry.moneyType === 'give';
-                    const isMoneyReceive = entry.type === 'money' && entry.moneyType === 'receive';
-
-                    const isSell = entry.type === 'sell' || isMoneyGive;
-                    const isPurchase = entry.type === 'purchase' || isMoneyReceive;
-                    
-                    const iconName = isSell ? 'arrow-top-right' : isPurchase ? 'arrow-bottom-left' : 'cash';
-                    const iconColor = hideActions ? '#000000' : (isSell ? theme.colors.success : isPurchase ? theme.colors.primary : '#F57C00');
-                    const iconStyle = hideActions ? styles.iconPrint : (isSell ? styles.iconSell : isPurchase ? styles.iconPurchase : styles.iconMoney);
-                    
-                    const { line1, line2 } = getEntryDisplayData(entry, transaction);
-
-                    return (
-                      <>
-                        {/* Item Row */}
-                        <View style={styles.receiptRow}>
-                          <View style={styles.itemNameRow}>
-                            <View style={[styles.iconBox, iconStyle, hideActions && { width: 14, height: 14, marginRight: 4, borderRadius: 0 }]}>
-                               <Icon name={iconName} size={hideActions ? 14 : 14} color={iconColor} />
-                            </View>
-                            <Text allowFontScaling={allowFontScaling} style={[
-                              styles.itemNameText,
-                              hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size
-                            ]}>
-                              {entry.displayName}
-                            </Text>
-                          </View>
-                    
-                          {/* Line 1: Weight / Details */}
-                          <Text allowFontScaling={allowFontScaling} style={[
-                            styles.itemVal,
-                            hideActions && { fontSize: 14, color: '#000000' } // Base size
-                          ]}>
-                              {line1}
-                          </Text>
-                        </View>
-
-                        {/* Line 2: Price / Subtotal (if applicable) */}
-                        {line2 !== '' && (
-                           <View style={[styles.receiptRow, { marginTop: -4 }]}>
-                              <View /> 
-                              <Text allowFontScaling={allowFontScaling} style={[
-                                styles.itemVal, 
-                                { 
-                                  fontSize: hideActions ? 13 : 13, // Base size
-                                  opacity: hideActions ? 1 : 0.8,
-                                  color: hideActions ? '#000000' : undefined
-                                }
-                              ]}>
-                                 {line2}
-                              </Text>
-                           </View>
-                        )}
-                      </>
-                    );
-                  })()}
-                </View>
-            ))}
-
-            {/* Divider before summary */}
-            {(raniRupaEntries.length > 0 || customRupuSummaryLine) && <Divider style={[styles.divider, { marginVertical: 2 }]} />}
-
-            {/* Summary for Rani/Rupa pure metals */}
-            {Object.entries(groupedRaniRupa).map(([itemType, entries]) => {
-              const sumPure = entries.reduce((sum, e) => {
-                const weight = e.weight || 0;
-                const touch = e.touch || 100;
-                
-                if (itemType === 'rupu') {
-                  return sum + customFormatPureSilver(weight, touch);
-                } else {
-                  const effectiveTouch = touch/100;
-                  const rawPure = (weight * effectiveTouch);
-                  return sum + (formatPureGoldPrecise(rawPure));
-                }
-              }, 0);
-              
-              const sumDebt = entries.reduce((sum, e) => {
-                const weight = e.weight || 0;
-                const touch = e.touch || 100;
-                const cut = e.cut || 0;
-                
-                if (itemType === 'rupu') {
-                  return sum + customFormatPureSilver(weight, touch);
-                } else {
-                  const effectiveTouch = (touch - cut)/100;
-                  const rawPure = (weight * effectiveTouch);
-                  return sum + formatPureGoldPrecise(rawPure);
-                }
-              }, 0);
-              
-              const hasCut = entries.some(e => (e.cut || 0) > 0);
-              const displayType = itemType === 'gold999' ? 'Pure Gold 999' : itemType === 'gold995' ? 'Pure Gold 995' : 'Pure Silver';
-              const decimals = itemType === 'silver' ? 0 : 3;
-              const firstCut = entries[0].cut || 0;
-              const line1 = hasCut && itemType === 'gold999' ? `${sumPure.toFixed(decimals)}g : ${sumDebt.toFixed(3)}g (-${Math.abs(firstCut).toFixed(2)})` : `${sumPure.toFixed(decimals)}g`;
-
-              if (itemType === 'silver' && customRupuSummaryLine) return null; // Skip if custom line will handle it
-              
-              return (
-                <View key={`summary-${itemType}`} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
-                  <View style={styles.receiptRow}>
-                    <View style={styles.itemNameRow}>
-                      <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 14, height: 14, marginRight: 4, borderRadius: 0 }]}>
-                         <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
-                      </View>
-                      <Text allowFontScaling={allowFontScaling} style={[
-                        styles.itemNameText,
-                        hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size
-                      ]}>
-                        {displayType}
-                      </Text>
-                    </View>
-                    <Text allowFontScaling={allowFontScaling} style={[
-                      styles.itemVal,
-                      hideActions && { fontSize: 14, color: '#000000' } // Base size
-                    ]}>
-                      {line1}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-            
-            {/* Custom Rupu Summary Line */}
-            {customRupuSummaryLine && (
-                <View style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
-                  <View style={styles.receiptRow}>
-                    <View style={styles.itemNameRow}>
-                      <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 14, height: 14, marginRight: 4, borderRadius: 0 }]}>
-                         <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
-                      </View>
-                      <Text allowFontScaling={allowFontScaling} style={[
-                        styles.itemNameText,
-                        hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size
-                      ]}>
-                        Pure Silver
-                      </Text>
-                    </View>
-                    <Text allowFontScaling={allowFontScaling} style={[
-                      styles.itemVal,
-                      hideActions && { fontSize: 14, color: '#000000' } // Base size
-                    ]}>
-                      {customRupuSummaryLine}
-                    </Text>
-                  </View>
-                </View>
-            )}
-
-            {/* Dividers & Totals */}
-            {!isMetalOnly && processedEntries.length > 0 && 
-              (hideActions ? <View style={{ height: 1, backgroundColor: '#cccccc', marginVertical: 5 }} /> : <Divider style={styles.divider} />)
-            }
-            
-            {/* Total Row or Money-Only Label */}
-            {!isMetalOnly && (
-              processedEntries.length === 0 ? (
-                <View style={styles.totalRow}>
-                  <Text style={[
-                    styles.totalLabel,
-                    hideActions && { fontSize: 12, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size
-                  ]}>Money-Only</Text>
-                </View>
-              ) : (
-                <View style={styles.totalRow}>
-                  <Text style={[
-                    styles.totalLabel,
-                    hideActions && { fontSize: 12, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size
-                  ]}>Total</Text>
-                  <Text style={[
-                    styles.totalAmount,
-                    hideActions && { fontSize: 14, color: '#000000', fontFamily: 'Outfit_700Bold' } // Base size
-                  ]}>
-                    ₹{formatIndianNumber(Math.abs(transaction.total))}
-                  </Text>
-                </View>
-              )
-            )}
-
-            {/* Divider */}
-            {!isMetalOnly && 
-              (hideActions ? <View style={{ height: 1, backgroundColor: '#cccccc', marginVertical: 5 }} /> : <Divider style={styles.divider} />)
-            }
-
-            {/* Payment/Balance Row */}
-            {!isMetalOnly && (
-               <View style={[styles.receiptRow, styles.footerRow]}>
-                 <Text style={[
-                   styles.footerLabel,
-                   hideActions && { fontSize: 12, color: '#000000', fontFamily: 'Outfit_600SemiBold' } // Base size
-                 ]}>
-                   {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
-                 </Text>
-                 <Text style={[
-                   styles.footerAmount, 
-                   { color: hideActions ? '#000000' : (transaction.amountPaid >= 0 ? theme.colors.success : theme.colors.primary) },
-                   hideActions && { fontSize: 14, fontFamily: 'Outfit_700Bold' } // Base size
-                 ]}>
-                   {' '}{transaction.amountPaid >= 0 ? '+' : '-'}₹{formatIndianNumber(Math.abs(transaction.amountPaid))}
-                 </Text>
-                 <View style={{ flex: 1 }} />
-                 <View>
-                   <Text style={[
-                     styles.balanceLabel, 
-                     { color: hideActions ? '#000000' : transactionBalanceColor },
-                     hideActions && { fontSize: 10, fontFamily: 'Outfit_700Bold' } // Base size
-                   ]}>
-                     {transactionBalanceLabel}
-                   </Text>
-                 </View>
-               </View>
-            )}
-        </View>
-
-        {/* Note Section */}
-        {transaction.note && transaction.note.trim() !== '' && (
-          <View style={[styles.noteRow, hideActions && { marginTop: 6, paddingTop: 6, borderTopColor: '#cccccc', borderTopWidth: 1 }]}>
-            <Text style={[
-              styles.noteLabel,
-              hideActions && { fontSize: 14, color: '#444444', fontFamily: 'Outfit_600SemiBold' } // Base size +2
-            ]}>NOTE</Text>
-            <Text style={[
-              styles.noteText,
-              hideActions && { fontSize: 14, color: '#000000', marginLeft: 6, fontFamily: 'Outfit_400Regular' } // Base size +2
-            ]}>{transaction.note}</Text>
-          </View>
-        )}
-        
-        {/* Customer Balance Section - Only for print/share, not for Rani/Rupa sell */}
-        {hideActions && !isRaniRupaSellTransaction && customerBalance && (() => {
-          const balances: string[] = [];
-          const debts: string[] = [];
-          
-          // Money balance/debt
-          if (customerBalance.balance && Math.abs(customerBalance.balance) >= 1) {
-            if (customerBalance.balance > 0) {
-              balances.push(`₹${formatIndianNumber(customerBalance.balance)}`);
-            } else {
-              debts.push(`₹${formatIndianNumber(Math.abs(customerBalance.balance))}`);
-            }
-          }
-          
-          // Metal balances/debts
-          if (customerBalance.metalBalances) {
-            if (customerBalance.metalBalances.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001) {
-              if (customerBalance.metalBalances.gold999 > 0) {
-                balances.push(`Gold 999 ${customerBalance.metalBalances.gold999.toFixed(3)}g`);
-              } else {
-                debts.push(`Gold 999 ${Math.abs(customerBalance.metalBalances.gold999).toFixed(3)}g`);
-              }
-            }
-            if (customerBalance.metalBalances.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001) {
-              if (customerBalance.metalBalances.gold995 > 0) {
-                balances.push(`Gold 995 ${customerBalance.metalBalances.gold995.toFixed(3)}g`);
-              } else {
-                debts.push(`Gold 995 ${Math.abs(customerBalance.metalBalances.gold995).toFixed(3)}g`);
-              }
-            }
-            if (customerBalance.metalBalances.silver && Math.abs(customerBalance.metalBalances.silver) >= 1) {
-              if (customerBalance.metalBalances.silver > 0) {
-                balances.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
-              } else {
-                debts.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
-              }
-            }
-          }
-          
-          // Check if there's any non-zero balance
-          const hasMoneyBalance = customerBalance.balance && Math.abs(customerBalance.balance) >= 1;
-          const hasGold999Balance = customerBalance.metalBalances?.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001;
-          const hasGold995Balance = customerBalance.metalBalances?.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001;
-          const hasSilverBalance = customerBalance.metalBalances?.silver && Math.abs(customerBalance.metalBalances.silver) >= 1;
-          
-          const hasAnyBalanceOrDebt = Boolean(hasMoneyBalance || hasGold999Balance || hasGold995Balance || hasSilverBalance);
-          
-          return hasAnyBalanceOrDebt ? (
-            <View style={{
-              marginTop: 12,
-              paddingTop: 12,
-              borderTopWidth: 1,
-              borderTopColor: hideActions ? '#cccccc' : 'rgba(0,0,0,0.05)',
-            }}>
-              {balances.length > 0 && (
-                <Text style={{
-                  fontFamily: 'Outfit_700Bold',
-                  fontSize: hideActions ? 12 : 18,
-                  color: hideActions ? '#000000' : theme.colors.success,
-                  marginBottom: debts.length > 0 ? 4 : 0,
-                }}>
-                  Balance: {balances.join(', ')}
-                </Text>
-              )}
-              {debts.length > 0 && (
-                <Text style={{
-                  fontFamily: 'Outfit_700Bold',
-                  fontSize: hideActions ? 12 : 18,
-                  color: hideActions ? '#000000' : theme.colors.debtColor,
-                }}>
-                  Debt: {debts.join(', ')}
-                </Text>
-              )}
-            </View>
-          ) : null;
-        })()}
-      </View>
-    );
-  };
+  const renderItem = useCallback(({ item }: { item: Transaction }) => (
+    <TransactionCard
+      transaction={item}
+      onDelete={handleCardDelete}
+      onShare={handleCardShare}
+      onEdit={handleCardEdit}
+    />
+  ), [handleCardDelete, handleCardShare, handleCardEdit]);
 
   // Empty State Component
   const EmptyState = () => (
@@ -1744,11 +1651,23 @@ export const HistoryScreen: React.FC = () => {
       <FlatList
         data={filteredTransactions}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <TransactionCard transaction={item} />}
+        renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={<EmptyState />}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={() => loadTransactions(true)} colors={[theme.colors.primary]} />
+        }
+        onEndReached={loadMoreTransactions}
+        onEndReachedThreshold={0.5}
+        maxToRenderPerBatch={15}
+        initialNumToRender={15}
+        windowSize={25}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            </View>
+          ) : null
         }
       />
     </SafeAreaView>
@@ -1835,7 +1754,9 @@ export const HistoryScreen: React.FC = () => {
          <View ref={shareableCardRef} style={styles.shareableCardWrapper} collapsable={false}>
             {(() => {
                const tx = transactions.find(t => t.id === sharingTransactionId);
-               return tx ? <TransactionCard transaction={tx} hideActions={true} allowFontScaling={false} /> : null;
+               // eslint-disable-next-line @typescript-eslint/no-empty-function
+               const noop = () => {};
+               return tx ? <TransactionCard transaction={tx} hideActions={true} allowFontScaling={false} onDelete={noop} onShare={noop} onEdit={noop} /> : null;
             })()}
          </View>
       </View>
@@ -2205,7 +2126,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', // Pure white for thermal printing
     padding: 0, // Zero padding to prevent clipping
     margin: 0, // Ensure NO margins are present
-    width: 300, // Reduced width for safe printing on 80mm paper
+    width: 576, // Native dot width for 80mm / 203 DPI printer — prevents upscaling
   },
   sheetOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'flex-end',

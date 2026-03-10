@@ -149,12 +149,13 @@ type TransactionCardProps = {
   transaction: Transaction;
   hideActions?: boolean;
   allowFontScaling?: boolean;
+  isPrint?: boolean;
   onDelete: (t: Transaction) => void;
   onShare: (t: Transaction) => void;
   onEdit: (id: string) => void;
 };
 
-const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideActions = false, allowFontScaling = true, onDelete, onShare, onEdit }) => {
+const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideActions = false, allowFontScaling = true, isPrint = false, onDelete, onShare, onEdit }) => {
   const [customerBalance, setCustomerBalance] = useState<Customer | null>(null);
   const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
   const isRaniRupaSellTransaction = transaction.entries.some(e => e.stock_id && e.metalOnly && e.type === 'sell');
@@ -274,7 +275,7 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         borderWidth: 1,
         borderColor: '#cccccc',
         paddingVertical: 10,
-        paddingHorizontal: 2,
+        ...(isPrint ? { paddingLeft: 8, paddingRight: 175 } : { paddingHorizontal: 10 }),
         marginBottom: 0,
         margin: 0,
         elevation: 0,
@@ -308,10 +309,10 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
 
       <View style={styles.cardHeader}>
         <View style={styles.infoBlock}>
-          <Text allowFontScaling={allowFontScaling} style={[styles.customerName, hideActions && { color: '#000000', fontSize: 32 }]}>
+          <Text allowFontScaling={allowFontScaling} style={[styles.customerName, hideActions && { color: '#000000', fontSize: 26 }]}>
             {transaction.customerName}
           </Text>
-          <Text allowFontScaling={allowFontScaling} style={[styles.transactionDate, hideActions && { color: '#000000', fontSize: 22 }]}>
+          <Text allowFontScaling={allowFontScaling} style={[styles.transactionDate, hideActions && { color: '#000000', fontSize: 18 }]}>
             {formatFullDate(transaction.date)}
           </Text>
         </View>
@@ -319,7 +320,7 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
           {!isMetalOnly && (
             <Text
               allowFontScaling={allowFontScaling}
-              style={[styles.mainAmount, { color: hideActions ? '#000000' : getAmountColor(transaction), fontSize: hideActions ? 32 : 18 }]}
+              style={[styles.mainAmount, { color: hideActions ? '#000000' : getAmountColor(transaction), fontSize: hideActions ? 26 : 18 }]}
             >
               {formatTransactionAmount(transaction)}
             </Text>
@@ -327,7 +328,7 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         </View>
       </View>
 
-      <View style={[styles.receiptSection, hideActions && { backgroundColor: '#FFFFFF', borderRadius: 6, borderWidth: 1, borderColor: '#e8e8e8', paddingVertical: 7, paddingHorizontal: 0 }]}>
+      <View style={[styles.receiptSection, hideActions && { backgroundColor: '#FFFFFF', borderRadius: 6, borderWidth: 1, borderColor: '#e8e8e8', paddingVertical: 7, paddingHorizontal: 2 }]}>
         {processedEntries.map((entry, index) => (
           <View key={index} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
             {(() => {
@@ -343,21 +344,21 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
                 <>
                   <View style={styles.receiptRow}>
                     <View style={styles.itemNameRow}>
-                      <View style={[styles.iconBox, iconStyle, hideActions && { width: 25, height: 25, marginRight: 4, borderRadius: 0 }]}>
-                        <Icon name={iconName} size={hideActions ? 25 : 14} color={iconColor} />
+                      <View style={[styles.iconBox, iconStyle, hideActions && { width: 20, height: 20, marginRight: 4, borderRadius: 0 }]}>
+                        <Icon name={iconName} size={hideActions ? 20 : 14} color={iconColor} />
                       </View>
-                      <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+                      <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 20, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
                         {entry.displayName}
                       </Text>
                     </View>
-                    <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 25, color: '#000000' }]}>
+                    <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 20, color: '#000000' }]}>
                       {line1}
                     </Text>
                   </View>
                   {line2 !== '' && (
                     <View style={[styles.receiptRow, { marginTop: -4 }]}>
                       <View />
-                      <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, { fontSize: hideActions ? 23 : 13, opacity: hideActions ? 1 : 0.8, color: hideActions ? '#000000' : undefined }]}>
+                      <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, { fontSize: hideActions ? 18 : 13, opacity: hideActions ? 1 : 0.8, color: hideActions ? '#000000' : undefined }]}>
                         {line2}
                       </Text>
                     </View>
@@ -391,14 +392,14 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
             <View key={`summary-${itemType}`} style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
               <View style={styles.receiptRow}>
                 <View style={styles.itemNameRow}>
-                  <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 25, height: 25, marginRight: 4, borderRadius: 0 }]}>
+                  <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 20, height: 20, marginRight: 4, borderRadius: 0 }]}>
                     <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
                   </View>
-                  <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+                  <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 20, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
                     {displayType}
                   </Text>
                 </View>
-                <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 25, color: '#000000' }]}>
+                <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 20, color: '#000000' }]}>
                   {summaryLine}
                 </Text>
               </View>
@@ -410,14 +411,14 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
           <View style={[styles.entryWrapper, hideActions && { marginBottom: 3 }]}>
             <View style={styles.receiptRow}>
               <View style={styles.itemNameRow}>
-                <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 25, height: 25, marginRight: 4, borderRadius: 0 }]}>
+                <View style={[styles.iconBox, hideActions ? styles.iconPrint : styles.iconPurchase, hideActions && { width: 20, height: 20, marginRight: 4, borderRadius: 0 }]}>
                   <Icon name="minus" size={14} color={hideActions ? '#000000' : theme.colors.onSurfaceVariant} />
                 </View>
-                <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
+                <Text allowFontScaling={allowFontScaling} style={[styles.itemNameText, hideActions && { fontSize: 20, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
                   Pure Silver
                 </Text>
               </View>
-              <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 25, color: '#000000' }]}>
+              <Text allowFontScaling={allowFontScaling} style={[styles.itemVal, hideActions && { fontSize: 20, color: '#000000' }]}>
                 {customRupuSummaryLine}
               </Text>
             </View>
@@ -434,7 +435,7 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
               <Text style={[styles.totalLabel, hideActions && { fontSize: 22, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>Money-Only</Text>
             </View>
           ) : (
-            <View style={styles.totalRow}>
+            <View style={[styles.totalRow, hideActions && { paddingHorizontal: 5 }]}>
               <Text style={[styles.totalLabel, hideActions && { fontSize: 22, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>Total</Text>
               <Text style={[styles.totalAmount, hideActions && { fontSize: 25, color: '#000000', fontFamily: 'Outfit_700Bold' }]}>
                 ₹{formatIndianNumber(Math.abs(transaction.total))}
@@ -448,7 +449,7 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         }
 
         {!isMetalOnly && (
-          <View style={[styles.receiptRow, styles.footerRow]}>
+          <View style={[styles.receiptRow, styles.footerRow, hideActions && { paddingHorizontal: 5 }]}>
             <Text style={[styles.footerLabel, hideActions && { fontSize: 22, color: '#000000', fontFamily: 'Outfit_600SemiBold' }]}>
               {transaction.amountPaid > 0 ? 'Received' : 'Given'}:
             </Text>
@@ -516,8 +517,6 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
     </View>
   );
 });
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Filter Options
 const ITEM_FILTER_OPTIONS = [
@@ -1756,7 +1755,7 @@ export const HistoryScreen: React.FC = () => {
                const tx = transactions.find(t => t.id === sharingTransactionId);
                // eslint-disable-next-line @typescript-eslint/no-empty-function
                const noop = () => {};
-               return tx ? <TransactionCard transaction={tx} hideActions={true} allowFontScaling={false} onDelete={noop} onShare={noop} onEdit={noop} /> : null;
+               return tx ? <TransactionCard transaction={tx} hideActions={true} allowFontScaling={false} isPrint={isPrinting} onDelete={noop} onShare={noop} onEdit={noop} /> : null;
             })()}
          </View>
       </View>

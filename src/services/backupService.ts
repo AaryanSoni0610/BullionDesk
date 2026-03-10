@@ -9,7 +9,6 @@ import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { NotificationService } from './notificationService';
 import { Logger } from '../utils/logger';
-import JSZip from 'jszip';
 import { EncryptionService } from './encryptionService';
 import { DatabaseService } from './database.sqlite';
 import { CustomerService } from './customer.service';
@@ -498,35 +497,22 @@ export class BackupService {
       }
 
       // Show initial progress
-      this.updateProgressAlert('Syncing internal backup... 0%');
+      this.updateProgressAlert('Reading database... 20%');
 
-      // Run incremental backup to ensure snapshot reflects latest changes
-      await this.performAutoBackup(true); // Force mode = no notifications during export
-      console.log(`BackupService: Internal backup sync took ${Date.now() - startTime}ms`);
-      await this.logAction('Internal backup sync completed');
+      // Read the raw SQLite DB file directly — much faster than JSON serialization
+      const dbPath = `${FileSystem.documentDirectory}SQLite/bulliondesk.db`;
+      const base64Db = await FileSystem.readAsStringAsync(dbPath, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log(`BackupService: DB file read took ${Date.now() - startTime}ms`);
+      await this.logAction(`DB file read (${base64Db.length} base64 chars)`);
 
-      this.updateProgressAlert('Loading snapshot... 50%');
-      // Load the now-up-to-date snapshot
-      let finalData = await ObjectStorageService.getSnapshot();
-      
-      if (!finalData) {
-         console.error('BackupService: Snapshot missing after backup - this should not happen');
-         await this.logAction('Export failed: snapshot missing after backup sync');
-         throw new Error("Internal snapshot missing after backup");
-      }
-
-      console.log('BackupService: Exporting', finalData.recordCount, 'records');
-      console.log(`BackupService: Snapshot loading took ${Date.now() - startTime}ms`);
-
-      this.updateProgressAlert('Encrypting data... 60%');
-      console.log('BackupService: Encrypting data with user password');
-      
-      // 3. Encrypt with User Password
-      // Convert to string first
-      const payload = JSON.stringify(finalData);
-      const encrypted = await EncryptionService.encryptWithPassword(payload, key);
+      this.updateProgressAlert('Encrypting database... 60%');
+      console.log('BackupService: Encrypting DB file with user password');
+      // Encrypt the base64 DB with the user password
+      const encrypted = await EncryptionService.encryptWithPassword(base64Db, key);
       console.log(`BackupService: Encryption took ${Date.now() - startTime}ms`);
-      await this.logAction(`Data encrypted successfully (${payload.length} characters)`);
+      await this.logAction(`DB encrypted (${encrypted.length} bytes)`);
 
       this.updateProgressAlert('Saving file... 90%');
       console.log('BackupService: Creating export file');
@@ -565,15 +551,7 @@ export class BackupService {
 
       console.log('BackupService: Export completed successfully, file:', fileName);
       console.log(`BackupService: Total export time: ${Date.now() - startTime}ms`);
-      await this.logAction(`SAF export completed: ${finalData.recordCount} records, file: ${fileName}`);
-
-      // Fire a normal background auto-backup so all items skipped during
-      // the fast export path (force=true) get individually encrypted as .enc files.
-      setTimeout(() => {
-        this.performAutoBackup(false).catch(e =>
-          console.error('BackupService: Post-export background backup failed:', e)
-        );
-      }, 3000); // Small delay so the export UI can settle first
+      await this.logAction(`SAF export completed: file: ${fileName}`);
 
       return { success: true, fileUri, fileName };
     } catch (error) {
@@ -610,69 +588,41 @@ export class BackupService {
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
       console.log(`BackupService: File reading took ${Date.now() - startTime}ms`);
 
-      let decryptedData: BackupData;
+      this.updateImportProgressAlert('Decrypting data... 40%');
+      console.log('BackupService: Decrypting backup file');
 
-      // Try Decrypt (New JSON format or Legacy Zip)
+      let decryptedBase64Db: string;
       try {
-           console.log('BackupService: Attempting to decrypt as new JSON format');
-           this.updateImportProgressAlert('Decrypting data... 40%');
-           const decryptedString = await EncryptionService.decryptWithPassword(fileContent, key);
-           decryptedData = JSON.parse(decryptedString);
-           console.log('BackupService: Successfully decrypted as JSON format, record count:', decryptedData.recordCount);
+        decryptedBase64Db = await EncryptionService.decryptWithPassword(fileContent, key);
+        console.log(`BackupService: Decryption took ${Date.now() - startTime}ms`);
       } catch (e) {
-           console.log('BackupService: JSON decryption failed, trying legacy ZIP format');
-           try {
-               const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
-               this.updateImportProgressAlert('Extracting files... 60%');
-               const zip = await JSZip.loadAsync(decryptedZipBuffer);
-               const backupJson = await zip.file('backup.json')?.async('string');
-               if (!backupJson) {
-                 throw new Error('Invalid backup file: missing backup.json');
-               }
-               decryptedData = JSON.parse(backupJson);
-               console.log('BackupService: Successfully decrypted as legacy ZIP format, record count:', decryptedData.recordCount);
-           } catch (zipError) {
-               console.error('BackupService: Both decryption methods failed');
-               throw new Error('Failed to decrypt. Invalid key or format.');
-           }
+        console.error('BackupService: Decryption failed');
+        throw new Error('Failed to decrypt. Wrong password or corrupted file.');
       }
-      console.log(`BackupService: Decryption took ${Date.now() - startTime}ms`);
 
-      // Clear all existing data
-      this.updateImportProgressAlert('Clearing existing data... 60%');
-      console.log('BackupService: Clearing existing data');
-      await DatabaseService.clearAllData();
-      console.log(`BackupService: Data clearing took ${Date.now() - startTime}ms`);
-
-      // Restore data from backup
-      this.updateImportProgressAlert('Restoring data... 80%');
-      console.log('BackupService: Restoring data from backup');
-      await DatabaseService.importData(decryptedData.records as any);
-      console.log(`BackupService: Data restore took ${Date.now() - startTime}ms`);
-
-      // Recalculate Inventory Chain (Full Rebuild)
-      this.updateImportProgressAlert('Recalculating inventory... 90%');
-      console.log('BackupService: Recalculating inventory balances');
-      await InventoryService.recalculateBalancesFrom();
-      console.log(`BackupService: Inventory recalculation took ${Date.now() - startTime}ms`);
+      // Replace the database file with the decrypted base64-encoded SQLite DB
+      this.updateImportProgressAlert('Replacing database... 70%');
+      console.log('BackupService: Replacing database file');
+      const dbPath = `${FileSystem.documentDirectory}SQLite/bulliondesk.db`;
+      await DatabaseService.closeDatabase();
+      await FileSystem.writeAsStringAsync(dbPath, decryptedBase64Db, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log(`BackupService: DB file replaced in ${Date.now() - startTime}ms`);
+      await DatabaseService.initDatabase();
+      console.log(`BackupService: DB reinitialized in ${Date.now() - startTime}ms`);
 
       this.updateImportProgressAlert('Import complete! 100%');
 
       console.log('BackupService: Import completed successfully');
       console.log(`BackupService: Total import time: ${Date.now() - startTime}ms`);
-      await this.logAction(`Import completed: ${decryptedData.recordCount} records`);
+      await this.logAction(`Import completed`);
 
       this.showAlert(
         'Import Successful',
         `Data restored successfully from backup.`,
         [{ text: 'OK' }]
       );
-
-      // Trigger Background Rehydration
-      setTimeout(() => {
-          this.logAction("Starting Background Rehydration...");
-          this.performAutoBackup().catch(e => console.error(e));
-      }, 2000);
 
       return true;
     } catch (error) {
@@ -722,68 +672,41 @@ export class BackupService {
       );
       console.log(`BackupService: File reading took ${Date.now() - startTime}ms`);
 
-      let decryptedData: BackupData;
+      this.updateImportProgressAlert('Decrypting data... 40%');
+      console.log('BackupService: Decrypting backup file');
 
-      // Try Decrypt (New JSON format or Legacy Zip)
+      let decryptedBase64Db: string;
       try {
-           console.log('BackupService: Attempting to decrypt as new JSON format');
-           this.updateImportProgressAlert('Decrypting data... 40%');
-           const decryptedString = await EncryptionService.decryptWithPassword(fileContent, key);
-           decryptedData = JSON.parse(decryptedString);
-           console.log('BackupService: Successfully decrypted as JSON format, record count:', decryptedData.recordCount);
+        decryptedBase64Db = await EncryptionService.decryptWithPassword(fileContent, key);
+        console.log(`BackupService: Decryption took ${Date.now() - startTime}ms`);
       } catch (e) {
-           console.log('BackupService: JSON decryption failed, trying legacy ZIP format');
-           try {
-               const decryptedZipBuffer = await EncryptionService.decryptZip(fileContent, key);
-               this.updateImportProgressAlert('Extracting files... 60%');
-               const zip = await JSZip.loadAsync(decryptedZipBuffer);
-               const backupJson = await zip.file('backup.json')?.async('string');
-               if (!backupJson) {
-                  throw new Error('Invalid backup file: missing backup.json');
-               }
-               decryptedData = JSON.parse(backupJson);
-               console.log('BackupService: Successfully decrypted as legacy ZIP format, record count:', decryptedData.recordCount);
-           } catch (zipError) {
-               console.error('BackupService: Both decryption methods failed');
-               throw new Error('Failed to decrypt. Invalid key or format.');
-           }
+        console.error('BackupService: Decryption failed');
+        throw new Error('Failed to decrypt. Wrong password or corrupted file.');
       }
-      console.log(`BackupService: Decryption took ${Date.now() - startTime}ms`);
 
-      // Clear all existing data
-      this.updateImportProgressAlert('Clearing existing data... 60%');
-      console.log('BackupService: Clearing existing data');
-      await DatabaseService.clearAllData();
-      console.log(`BackupService: Data clearing took ${Date.now() - startTime}ms`);
-
-      // Restore data from backup
-      this.updateImportProgressAlert('Restoring data... 80%');
-      console.log('BackupService: Restoring data from backup');
-      await DatabaseService.importData(decryptedData.records as any);
-      console.log(`BackupService: Data restore took ${Date.now() - startTime}ms`);
-
-      // Recalculate Inventory Chain (Full Rebuild)
-      this.updateImportProgressAlert('Recalculating inventory... 90%');
-      console.log('BackupService: Recalculating inventory balances');
-      await InventoryService.recalculateBalancesFrom();
-      console.log(`BackupService: Inventory recalculation took ${Date.now() - startTime}ms`);
+      // Replace the database file with the decrypted base64-encoded SQLite DB
+      this.updateImportProgressAlert('Replacing database... 70%');
+      console.log('BackupService: Replacing database file');
+      const dbPath = `${FileSystem.documentDirectory}SQLite/bulliondesk.db`;
+      await DatabaseService.closeDatabase();
+      await FileSystem.writeAsStringAsync(dbPath, decryptedBase64Db, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log(`BackupService: DB file replaced in ${Date.now() - startTime}ms`);
+      await DatabaseService.initDatabase();
+      console.log(`BackupService: DB reinitialized in ${Date.now() - startTime}ms`);
 
       this.updateImportProgressAlert('Import complete! 100%');
 
       console.log('BackupService: Import completed successfully');
       console.log(`BackupService: Total import time: ${Date.now() - startTime}ms`);
-      await this.logAction(`SAF import completed: ${decryptedData.recordCount} records`);
+      await this.logAction(`SAF import completed`);
 
       this.showAlert(
         'Import Successful',
         `Data restored successfully from backup.`,
         [{ text: 'OK' }]
       );
-
-      // Trigger Background Rehydration
-      setTimeout(() => {
-          this.performAutoBackup().catch(e => console.error('BackupService: Background rehydration failed:', e));
-      }, 2000);
 
       return true;
     } catch (error) {
@@ -807,7 +730,7 @@ export class BackupService {
   /**
    * Auto backup with Notification Support & Garbage Collection
    */
-  static async performAutoBackup(force: boolean = false): Promise<boolean> {
+  static async performAutoBackup(): Promise<boolean> {
     try {
       await this.logAction('Starting incremental auto-backup...');
       
@@ -834,10 +757,7 @@ export class BackupService {
           const key = `${prefix}:${canonicals[i].id}`;
           const hash = hashes[i];
           if (manifest[key] !== hash) {
-            if (!force) {
-              // Only write individual objects during background auto-backup
-              await ObjectStorageService.saveRawObject(canonicals[i].canonical, hash);
-            }
+            await ObjectStorageService.saveRawObject(canonicals[i].canonical, hash);
             changesCount++;
           }
           newManifest[key] = hash;
@@ -881,14 +801,11 @@ export class BackupService {
       const activeHashes = new Set(Object.values(newManifest));
       
       // Delete anything on disk that isn't in activeHashes
-      // Only run GC during background auto-backup, not during forced export
-      if (!force) {
-        const deletedFiles = await ObjectStorageService.cleanupOrphanedObjects(activeHashes);
-        
-        if (deletedFiles > 0) {
-          console.log(`BackupService: Garbage collected ${deletedFiles} orphaned files`);
-          await this.logAction(`Garbage collection: Cleaned up ${deletedFiles} orphaned files`);
-        }
+      const deletedFiles = await ObjectStorageService.cleanupOrphanedObjects(activeHashes);
+      
+      if (deletedFiles > 0) {
+        console.log(`BackupService: Garbage collected ${deletedFiles} orphaned files`);
+        await this.logAction(`Garbage collection: Cleaned up ${deletedFiles} orphaned files`);
       }
       // --- GARBAGE COLLECTION END ---
       
@@ -900,7 +817,7 @@ export class BackupService {
       const notifEnabled = await NotificationService.isNotificationsEnabled();
       const isAutoEnabled = await this.isAutoBackupEnabled();
       
-      if (notifEnabled && isAutoEnabled && !force && changesCount > 0) {
+      if (notifEnabled && isAutoEnabled && changesCount > 0) {
          console.log('BackupService: Sending backup success notification');
          await Notifications.scheduleNotificationAsync({
             content: {

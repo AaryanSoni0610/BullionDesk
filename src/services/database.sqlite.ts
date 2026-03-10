@@ -264,6 +264,14 @@ export class DatabaseService {
     return db;
   }
 
+  // Close database connection (used before replacing the DB file during import)
+  static async closeDatabase(): Promise<void> {
+    if (db) {
+      await db.closeAsync();
+      db = null;
+    }
+  }
+
   // Export all data
   static async exportData(): Promise<{
     customers: any[];

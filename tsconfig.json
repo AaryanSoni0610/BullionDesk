@@ -3,7 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "noUnusedParameters": true,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "ignoreDeprecations": "6.0",
   },
   "include": [
     "**/*.ts",

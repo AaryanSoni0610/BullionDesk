@@ -615,14 +615,6 @@ export const LedgerScreen: React.FC = () => {
         RaniRupaStockService.getStockByType('rupu')
       ]);
 
-      // Derive gold/silver subsets in JS — no extra DB round-trips
-      const goldTransactions = filteredTrans.filter(t =>
-        t.entries.some(e => ['gold999', 'gold995', 'rani'].includes((e as any).itemType))
-      );
-      const silverTransactions = filteredTrans.filter(t =>
-        t.entries.some(e => ['silver', 'rupu'].includes((e as any).itemType))
-      );
-
       // Calculate inventory data. Opening balance is fetched internally via
       // InventoryService.getInventoryForDate(dateStr) — the legacy "upToDate" arrays
       // are unused by calculateInventoryData and have been removed.
@@ -630,16 +622,19 @@ export const LedgerScreen: React.FC = () => {
       const startDateOnly = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
       const data = await calculateInventoryData(filteredTrans, customers, filteredLedger, filteredTrans, filteredLedger, startDateOnly);
 
-      // Get entries for each subledger using pre-filtered transactions
+      // Get entries for each subledger
       const goldEntries: EntryData[] = [];
       const silverEntries: EntryData[] = [];
       const moneyEntries: EntryData[] = [];
 
-      // Gold entries - use pre-filtered gold transactions
-      goldTransactions.forEach(transaction => {
+      // Gold entries — iterate ALL transactions but only pick gold/rani itemTypes
+      filteredTrans.forEach(transaction => {
         const customerName = transaction.customerName;
         transaction.entries.forEach(entry => {
           const extEntry = entry as ExtendedTransactionEntry;
+          const isGoldType = ['gold999', 'gold995', 'rani'].includes(extEntry.itemType);
+          if (!isGoldType) return; // skip silver/rupu/money entries entirely
+
           if (extEntry.itemType === 'rani' && extEntry.type === 'purchase' && extEntry.actualGoldGiven) {
             if (!showOnlyRaniRupu) {
               goldEntries.push({
@@ -655,10 +650,8 @@ export const LedgerScreen: React.FC = () => {
                 date: transaction.date
               });
             }
-          }
-          // Filter based on showOnlyRaniRupu state
-          if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : extEntry.itemType !== 'rani') {
-            // Filter out 0 weight entries
+          } else if (showOnlyRaniRupu ? extEntry.itemType === 'rani' : true) {
+            // Add normal gold entries, and also add rani entries
             if ((extEntry.weight || 0) > 0) {
               goldEntries.push({
                 transactionId: transaction.id,
@@ -671,11 +664,14 @@ export const LedgerScreen: React.FC = () => {
         });
       });
 
-      // Silver entries - use pre-filtered silver transactions
-      silverTransactions.forEach(transaction => {
+      // Silver entries — iterate ALL transactions but only pick silver/rupu itemTypes
+      filteredTrans.forEach(transaction => {
         const customerName = transaction.customerName;
         transaction.entries.forEach(entry => {
           const extEntry = entry as ExtendedTransactionEntry;
+          const isSilverType = ['silver', 'rupu'].includes(extEntry.itemType);
+          if (!isSilverType) return; // skip gold/money entries entirely
+
           if (extEntry.itemType === 'rupu' && extEntry.type === 'purchase' && extEntry.rupuReturnType === 'silver') {
             if (extEntry.silverWeight && extEntry.silverWeight > 0) {
               if (!showOnlyRaniRupu) {
@@ -693,10 +689,8 @@ export const LedgerScreen: React.FC = () => {
                 });
               }
             }
-          }
-          // Filter based on showOnlyRaniRupu state
-          if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : extEntry.itemType !== 'rupu') {
-            // Filter out 0 weight entries
+          } else if (showOnlyRaniRupu ? extEntry.itemType === 'rupu' : true) {
+            // Add normal silver entries, and also add rupu entries
             if ((extEntry.weight || 0) > 0) {
               silverEntries.push({
                 transactionId: transaction.id,
@@ -820,6 +814,9 @@ export const LedgerScreen: React.FC = () => {
       silverOpeningBalances.rupu = formatPureSilver(silverOpeningBalances.rupu);
 
       // Generate HTML
+      // Format export date as DD/MM/YY
+      const today = new Date();
+      const exportDateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${String(today.getFullYear()).slice(-2)}`;
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -833,12 +830,33 @@ export const LedgerScreen: React.FC = () => {
               margin: 20px;
               color: #333;
             }
+            .page-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 30px;
+            }
             h1 {
               color: #1976d2;
               text-align: center;
-              margin-bottom: 30px;
+              margin: 0;
+              flex: 1;
               font-size: 24px;
               font-weight: 700;
+            }
+            .export-date {
+              position: fixed;
+              bottom: 5px;
+              right: 15px;
+              font-size: 11px;
+              color: #000;
+              text-align: right;
+              white-space: nowrap;
+              background-color: #ffffff;
+              padding: 2px 6px;
+              border: 1px solid #eeeeee;
+              border-radius: 4px;
+              z-index: 1000;
             }
             h3 {
               color: #455A64;
@@ -881,7 +899,10 @@ export const LedgerScreen: React.FC = () => {
           </style>
         </head>
         <body style="background-color: #ffffff;">
-          <h1>Ledger Report - ${formatDateDisplay(date)}</h1>
+          <div class="export-date">${exportDateStr}</div>
+          <div class="page-header">
+            <h1>Ledger Report - ${formatDateDisplay(date)}</h1>
+          </div>
 
           <!-- Gold Subledger -->
           <h3 style="color: #E65100;">Gold Subledger</h3>
@@ -2258,10 +2279,10 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 32,
+    fontSize: 28,
     color: theme.colors.onPrimaryContainer,
     letterSpacing: -1,
-    lineHeight: 32,
+    lineHeight: 28,
   },
   headerSubtitle: {
     fontFamily: 'Outfit_500Medium',
@@ -2274,6 +2295,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     marginRight: -7,
+    marginTop: -2.5,
     borderRadius: 24,
     backgroundColor: theme.colors.surface,
     alignItems: 'center',

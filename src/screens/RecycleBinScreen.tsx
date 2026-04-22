@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Text,
-  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,7 +17,6 @@ import {
   formatFullDate,
   formatPureGoldPrecise,
   formatIndianNumber,
-  customFormatPureSilver,
   formatCurrency,
   formatPureGold,
   formatPureSilver
@@ -687,7 +685,7 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 28,
+    fontSize: 24,
     color: '#1B1B1F',
     letterSpacing: -1,
   },

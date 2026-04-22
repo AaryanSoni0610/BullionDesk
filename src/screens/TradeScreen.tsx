@@ -11,12 +11,7 @@ import {
   Text,
 } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withTiming, 
-  Easing 
-} from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { Trade, Customer, ItemType } from '../types';
 import { theme } from '../theme';
@@ -623,7 +618,7 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 32,
+    fontSize: 28,
     color: theme.colors.onPrimaryContainer,
     letterSpacing: -1,
   },
@@ -631,6 +626,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     marginRight: -7,
+    marginTop: -2.5,
     borderRadius: 24,
     backgroundColor: theme.colors.surface,
     alignItems: 'center',

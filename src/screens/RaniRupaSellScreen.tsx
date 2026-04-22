@@ -648,7 +648,7 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 28,
+    fontSize: 24,
     color: '#1B1B1F',
     letterSpacing: -1,
   },

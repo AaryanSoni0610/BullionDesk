@@ -768,7 +768,7 @@ export const SettingsScreen: React.FC = () => {
             <SettingsItem
               icon="information-outline"
               title="About BullionDesk"
-              description="v7.9.6"
+              description="v8.0.0"
               isLast
               onPress={() => setShowAbout(true)}
             />
@@ -849,7 +849,7 @@ If you have any questions about this Privacy Policy, please contact the develope
 
 7. Changes to This Policy
 This privacy policy may be updated as needed. Continued use of the app constitutes acceptance of any changes.`}
-        
+
         buttons={[{ text: 'OK', onPress: () => setShowPrivacyPolicy(false) }]}
         onDismiss={() => setShowPrivacyPolicy(false)}
       />
@@ -896,7 +896,7 @@ These terms are governed by applicable local laws.
 
 9. Contact
 For support or questions, please contact the developer.`}
-        
+
         buttons={[{ text: 'OK', onPress: () => setShowTermsOfService(false) }]}
         onDismiss={() => setShowTermsOfService(false)}
       />
@@ -907,7 +907,7 @@ For support or questions, please contact the developer.`}
         title="About BullionDesk"
         icon="information-outline"
         maxHeight={0.8}
-        message={`BullionDesk v7.9.6
+        message={`BullionDesk v8.0.0
 
 A comprehensive bullion business management app designed for bullion dealers, goldsmiths, and jewelry traders.
 
@@ -925,7 +925,7 @@ A passionate developer focused on creating practical business solutions. Bullion
 If you find this app helpful and would like to support its continued development, consider making a donation. Your support helps maintain and improve the app!
 
 Contact: For feedback, suggestions, or support, please reach out to the developer.`}
-        
+
         buttons={[
           {
             text: 'Donate', onPress: () => {
@@ -972,7 +972,7 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 28,
+    fontSize: 24,
     color: '#1B1B1F', // --on-surface
     letterSpacing: -1,
   },

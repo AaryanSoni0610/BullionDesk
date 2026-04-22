@@ -67,8 +67,6 @@ const isRateCutLocked = (transaction: Transaction): boolean => {
   return false;
 };
 
-const isEditLocked = (transaction: Transaction): boolean => isRateCutLocked(transaction);
-
 const getAmountColor = (transaction: Transaction) => {
   const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
   if (isMoneyOnly) {
@@ -275,7 +273,7 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         borderWidth: 1,
         borderColor: '#cccccc',
         paddingVertical: 10,
-        ...(isPrint ? { paddingLeft: 8, paddingRight: 100 } : { paddingHorizontal: 10 }),
+        ...(isPrint ? { paddingLeft: 8, paddingRight: 90 } : { paddingHorizontal: 10 }),
         marginBottom: 0,
         margin: 0,
         elevation: 0,
@@ -297,11 +295,11 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
               <Icon name="share-variant" size={20} color={theme.colors.success} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.iconBtn, styles.btnEdit, isEditLocked(transaction) && styles.disabledButton]}
-              onPress={() => !isEditLocked(transaction) && onEdit(transaction.id)}
-              disabled={isEditLocked(transaction)}
+              style={[styles.iconBtn, styles.btnEdit, isRateCutLocked(transaction) && styles.disabledButton]}
+              onPress={() => !isRateCutLocked(transaction) && onEdit(transaction.id)}
+              disabled={isRateCutLocked(transaction)}
             >
-              <Icon name="pencil" size={20} color={isEditLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
+              <Icon name="pencil" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -922,7 +920,7 @@ export const HistoryScreen: React.FC = () => {
         return;
       }
       
-      generatePDFDirectly(validTxs);
+      generatePDFDirectly(validTxs, date);
     } catch (e) {
       setIsExporting(false);
       console.error(e);
@@ -1155,7 +1153,7 @@ export const HistoryScreen: React.FC = () => {
     `;
   };
 
-  const generatePDFDirectly = async (transactions: Transaction[]) => {
+  const generatePDFDirectly = async (transactions: Transaction[], selectedDate: Date) => {
     // setIsExporting(true); // Already set in performExport
     // setExportStatus('generating'); // Already set in performExport
     setExportProgress({ current: 0, total: transactions.length });
@@ -1182,11 +1180,15 @@ export const HistoryScreen: React.FC = () => {
           <head>
             <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
-              @media print { body { -webkit-print-color-adjust: exact; } }
-              body { font-family: 'Outfit', sans-serif; padding: 16px; background: #fff; }
-              h1 { text-align: center; color: #000; margin-bottom: 16px; font-size: 20px; font-weight: 700; }
-              .container { column-count: 3; column-gap: 12px; column-fill: balance; }
-              .card { break-inside: avoid; margin-bottom: 12px; background-color: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 10px; }
+              @media print { 
+                body { -webkit-print-color-adjust: exact; } 
+              }
+              body { font-family: 'Outfit', sans-serif; padding: 8px; background: #fff; }
+              .pdf-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; margin-top: -8px; }
+              h1 { color: #000; font-size: 20px; font-weight: 700; margin: 0; flex: 1; text-align: center; }
+              .export-date-label { position: fixed; bottom: 5px; right: 10px; font-size: 9px; color: #000; white-space: nowrap; background: #fff; padding: 2px 4px; border-radius: 4px; border: 1px solid #eee; z-index: 1000; }
+              .container { column-count: 3; column-gap: 8px; column-fill: balance; }
+              .card { break-inside: avoid; margin-bottom: 8px; background-color: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 10px; }
               .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
               .customer-name { font-weight: 700; font-size: 13px; color: #000; }
               .date { font-size: 9px; color: #333; font-weight: 400; margin-top: 2px; }
@@ -1210,7 +1212,10 @@ export const HistoryScreen: React.FC = () => {
             </style>
           </head>
           <body>
-            <h1>Transaction History — ${formatDate(exportDate)}</h1>
+            <div class="export-date-label">${String(new Date().getDate()).padStart(2,'0')}/${String(new Date().getMonth()+1).padStart(2,'0')}/${String(new Date().getFullYear()).slice(-2)}</div>
+            <div class="pdf-header">
+              <h1>Transaction History — ${formatDate(selectedDate)}</h1>
+            </div>
             <div class="container">
               ${htmlBody}
             </div>
@@ -1221,7 +1226,7 @@ export const HistoryScreen: React.FC = () => {
       const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
       
       // Rename PDF
-      const dateStr = exportDate.toLocaleDateString('en-GB').replace(/\//g, '-');
+      const dateStr = selectedDate.toLocaleDateString('en-GB').replace(/\//g, '-');
       const timeStr = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}).replace(':', '-');
       const fileName = `HistoryExport-${dateStr}-${timeStr}.pdf`;
       const finalPdfUri = `${FileSystem.documentDirectory}${fileName}`;
@@ -1657,10 +1662,10 @@ export const HistoryScreen: React.FC = () => {
           <RefreshControl refreshing={isLoading} onRefresh={() => loadTransactions(true)} colors={[theme.colors.primary]} />
         }
         onEndReached={loadMoreTransactions}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={0.2}
         maxToRenderPerBatch={15}
         initialNumToRender={15}
-        windowSize={25}
+        windowSize={15}
         ListFooterComponent={
           isLoadingMore ? (
             <View style={{ paddingVertical: 20, alignItems: 'center' }}>
@@ -1796,7 +1801,7 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 32,
+    fontSize: 28,
     color: theme.colors.onPrimaryContainer,
     letterSpacing: -1,
   },
@@ -1804,6 +1809,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     marginRight: -7,
+    marginTop: -2.5,
     borderRadius: 24,
     backgroundColor: theme.colors.surface,
     alignItems: 'center',

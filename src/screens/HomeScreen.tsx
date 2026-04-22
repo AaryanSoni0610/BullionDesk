@@ -248,11 +248,6 @@ export const HomeScreen = ({ navigation }: any) => {
       else totalColorStyle = styles.textBlue;
     }
 
-    // Handle money-only color based on amountPaid
-    if (!isMetalOnly && displayEntries.length === 0) {
-      totalColorStyle = item.amountPaid >= 0 ? styles.textGreen : styles.textBlue;
-    }
-
     // Determine total label based on item.total
     let totalLabel = 'Total Amount';
     if (item.total > 0) totalLabel = 'Received';
@@ -262,6 +257,7 @@ export const HomeScreen = ({ navigation }: any) => {
     // Handle money-only label based on amountPaid
     if (!isMetalOnly && displayEntries.length === 0) {
       totalLabel = item.amountPaid > 0 ? 'Received' : item.amountPaid < 0 ? 'Given' : 'Settled';
+      totalColorStyle = item.amountPaid >= 0 ? styles.textGreen : styles.textBlue;
     }
 
     return (
@@ -303,7 +299,7 @@ export const HomeScreen = ({ navigation }: any) => {
                   <View style={styles.itemDetails}>
                     <View style={styles.itemHeaderRow}>
                       <Text style={styles.itemName}>
-                        {isSell ? 'Sell' : isPurchase ? 'Buy' : 'Money'}: {getItemDisplayName(entry)}
+                        {getItemDisplayName(entry)}
                       </Text>
                       {/* Price on the right (WITH SIGNS) */}
                       {(entry.subtotal || 0) !== 0 && (
@@ -411,13 +407,13 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     fontFamily: 'Outfit_700Bold',
-    fontSize: 34,
+    fontSize: 32,
     color: theme.colors.onPrimaryContainer,
     letterSpacing: -1,
   },
   greetingText: {
     fontFamily: 'Outfit_500Medium',
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.onSurfaceVariant,
     marginBottom: -4,
   },

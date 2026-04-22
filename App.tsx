@@ -39,6 +39,7 @@ import { AppProvider, useAppContext } from './src/context/AppContext';
 import { NotificationService } from './src/services/notificationService';
 import { BackupService } from './src/services/backupService';
 import { DatabaseService } from './src/services/database.sqlite';
+import { TransactionService } from './src/services/transaction.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin' | 'rateCut';
@@ -462,6 +463,9 @@ export default function App() {
       if (shouldBackup) {
         await BackupService.performAutoBackup();
       }
+
+      // Purge recycle-bin entries that are more than 15 days old
+      await TransactionService.cleanupOldDeletedTransactions();
     };
 
     initializeServices();

@@ -204,12 +204,11 @@ export class MigrationService {
         // Insert transaction directly to preserve IDs and timestamps
         await db.runAsync(
           `INSERT INTO transactions 
-           (id, deviceId, customerId, customerName, date, total, 
+           (id, customerId, customerName, date, total, 
             amountPaid, createdAt, lastUpdatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             transaction.id,
-            transaction.deviceId || null,
             transaction.customerId,
             transaction.customerName,
             transaction.date,

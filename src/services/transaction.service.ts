@@ -1124,10 +1124,10 @@ export class TransactionService {
     try {
       // Calculate date 15 days ago
       const cutoffDateObj = new Date();
-      cutoffDateObj.setDate(cutoffDateObj.getDate() - 15);
+      cutoffDateObj.setDate(cutoffDateObj.getDate() - 16);
       const cutoffDate = cutoffDateObj.toISOString().split('T')[0];
 
-      // Find transactions that were deleted 15 or more days ago
+      // Find transactions where more than 15 full days have passed since soft-delete
       const oldTransactions = await DatabaseService.getAllAsyncBatch<{ id: string }>(
         'SELECT id FROM transactions WHERE deleted_on IS NOT NULL AND deleted_on <= ?',
         [cutoffDate]

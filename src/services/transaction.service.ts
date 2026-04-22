@@ -6,6 +6,113 @@ import { InventoryService } from './inventory.service';
 import { RaniRupaStockService } from './raniRupaStock.service';
 
 export class TransactionService {
+  private static readonly IN_QUERY_CHUNK_SIZE = 900;
+
+  private static chunkArray<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+      chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  private static mapTransactionEntry(entry: any): TransactionEntry {
+    return {
+      id: entry.id,
+      type: entry.type,
+      itemType: entry.itemType,
+      weight: entry.weight,
+      price: entry.price,
+      touch: entry.touch,
+      cut: entry.cut,
+      extraPerKg: entry.extraPerKg,
+      pureWeight: entry.pureWeight,
+      moneyType: entry.moneyType,
+      amount: entry.amount,
+      metalOnly: entry.metalOnly === 1,
+      stock_id: entry.stock_id,
+      subtotal: entry.subtotal,
+      createdAt: entry.createdAt,
+      lastUpdatedAt: entry.lastUpdatedAt,
+    };
+  }
+
+  private static async getEntriesByTransactionIds(
+    transactionIds: string[],
+    itemTypes?: string[]
+  ): Promise<Map<string, TransactionEntry[]>> {
+    const entriesByTxnId = new Map<string, TransactionEntry[]>();
+    if (transactionIds.length === 0) {
+      return entriesByTxnId;
+    }
+
+    const idChunks = this.chunkArray(transactionIds, this.IN_QUERY_CHUNK_SIZE);
+    for (const chunk of idChunks) {
+      const idPlaceholders = chunk.map(() => '?').join(',');
+      let query = `SELECT * FROM transaction_entries WHERE transaction_id IN (${idPlaceholders})`;
+      const params: any[] = [...chunk];
+
+      if (itemTypes && itemTypes.length > 0) {
+        const itemTypePlaceholders = itemTypes.map(() => '?').join(',');
+        query += ` AND itemType IN (${itemTypePlaceholders})`;
+        params.push(...itemTypes);
+      }
+
+      query += ' ORDER BY createdAt ASC';
+      const rows = await DatabaseService.getAllAsyncBatch<any>(query, params);
+
+      for (const row of rows) {
+        const mapped = this.mapTransactionEntry(row);
+        const txId = row.transaction_id;
+        if (!entriesByTxnId.has(txId)) {
+          entriesByTxnId.set(txId, []);
+        }
+        entriesByTxnId.get(txId)!.push(mapped);
+      }
+    }
+
+    return entriesByTxnId;
+  }
+
+  private static async getMoneyEntriesByTransactionIds(
+    transactionIds: string[]
+  ): Promise<Map<string, TransactionEntry[]>> {
+    const moneyEntriesByTxnId = new Map<string, TransactionEntry[]>();
+    if (transactionIds.length === 0) {
+      return moneyEntriesByTxnId;
+    }
+
+    const idChunks = this.chunkArray(transactionIds, this.IN_QUERY_CHUNK_SIZE);
+    for (const chunk of idChunks) {
+      const idPlaceholders = chunk.map(() => '?').join(',');
+      const rows = await DatabaseService.getAllAsyncBatch<any>(
+        `SELECT * FROM ledger_entries
+         WHERE transactionId IN (${idPlaceholders}) AND itemType = 'money'
+         ORDER BY date ASC`,
+        chunk
+      );
+
+      for (const row of rows) {
+        const mapped: TransactionEntry = {
+          id: row.id,
+          type: 'money',
+          itemType: 'money',
+          moneyType: row.type === 'receive' ? 'receive' : 'give',
+          amount: row.amount,
+          subtotal: row.amount,
+          createdAt: row.date,
+          metalOnly: false,
+        };
+        const txId = row.transactionId;
+        if (!moneyEntriesByTxnId.has(txId)) {
+          moneyEntriesByTxnId.set(txId, []);
+        }
+        moneyEntriesByTxnId.get(txId)!.push(mapped);
+      }
+    }
+
+    return moneyEntriesByTxnId;
+  }
   
   // Get all transactions
   static async getAllTransactions(limit?: number): Promise<Transaction[]> {
@@ -54,40 +161,19 @@ export class TransactionService {
         }>(query);
       }
 
-      const result: Transaction[] = [];
+      const transactionIds = transactions.map(t => t.id);
+      if (transactionIds.length === 0) {
+        return [];
+      }
 
-      for (const trans of transactions) {
-        // Get entries for this transaction
-        const entries = await DatabaseService.getAllAsyncBatch<any>(
-          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
-          [trans.id]
-        );
+      const entriesByTxnId = await this.getEntriesByTransactionIds(transactionIds);
 
-        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
-          id: entry.id,
-          type: entry.type,
-          itemType: entry.itemType,
-          weight: entry.weight,
-          price: entry.price,
-          touch: entry.touch,
-          cut: entry.cut,
-          extraPerKg: entry.extraPerKg,
-          pureWeight: entry.pureWeight,
-          moneyType: entry.moneyType,
-          amount: entry.amount,
-          metalOnly: entry.metalOnly === 1,
-          stock_id: entry.stock_id,
-          subtotal: entry.subtotal,
-          createdAt: entry.createdAt,
-          lastUpdatedAt: entry.lastUpdatedAt,
-        }));
-
-        result.push({
+      return transactions.map(trans => ({
           id: trans.id,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
-          entries: mappedEntries,
+          entries: entriesByTxnId.get(trans.id) || [],
           total: trans.total,
           amountPaid: trans.amountPaid,
           note: trans.note,
@@ -98,10 +184,7 @@ export class TransactionService {
             gold995: trans.last_gold995_lock_date || 0,
             silver: trans.last_silver_lock_date || 0,
           }
-        });
-      }
-
-      return result;
+        }));
     } catch (error) {
       console.error('Error getting transactions:', error);
       return [];
@@ -120,39 +203,19 @@ export class TransactionService {
         [customerId]
       );
 
-      const result: Transaction[] = [];
-      
-      for (const trans of transactions) {
-        const entries = await DatabaseService.getAllAsyncBatch<any>(
-          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
-          [trans.id]
-        );
+      const transactionIds = transactions.map(t => t.id);
+      if (transactionIds.length === 0) {
+        return [];
+      }
 
-        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
-          id: entry.id,
-          type: entry.type,
-          itemType: entry.itemType,
-          weight: entry.weight,
-          price: entry.price,
-          touch: entry.touch,
-          cut: entry.cut,
-          extraPerKg: entry.extraPerKg,
-          pureWeight: entry.pureWeight,
-          moneyType: entry.moneyType,
-          amount: entry.amount,
-          metalOnly: entry.metalOnly === 1,
-          stock_id: entry.stock_id,
-          subtotal: entry.subtotal,
-          createdAt: entry.createdAt,
-          lastUpdatedAt: entry.lastUpdatedAt,
-        }));
+      const entriesByTxnId = await this.getEntriesByTransactionIds(transactionIds);
 
-        result.push({
+      return transactions.map(trans => ({
           id: trans.id,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
-          entries: mappedEntries,
+          entries: entriesByTxnId.get(trans.id) || [],
           total: trans.total,
           amountPaid: trans.amountPaid,
           note: trans.note,
@@ -163,10 +226,7 @@ export class TransactionService {
             gold995: trans.last_gold995_lock_date || 0,
             silver: trans.last_silver_lock_date || 0,
           }
-        });
-      }
-
-      return result;
+        }));
     } catch (error) {
       console.error('Error getting transactions by customer ID:', error);
       return [];
@@ -185,7 +245,8 @@ export class TransactionService {
     try {
 
       let query = `
-        SELECT t.*, cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
+         SELECT t.*, cb.balance, cb.gold999, cb.gold995, cb.silver,
+           cb.last_gold999_lock_date, cb.last_gold995_lock_date, cb.last_silver_lock_date
         FROM transactions t
         LEFT JOIN customer_balances cb ON t.customerId = cb.customer_id
         WHERE t.date >= ? AND t.date <= ? AND t.deleted_on IS NULL
@@ -216,64 +277,24 @@ export class TransactionService {
 
       const transactions = await DatabaseService.getAllAsyncBatch<any>(query, params);
 
-      const result: Transaction[] = [];
+      const transactionIds = transactions.map(t => t.id);
+      if (transactionIds.length === 0) {
+        return [];
+      }
 
-      for (const trans of transactions) {
-        let entriesQuery = 'SELECT * FROM transaction_entries WHERE transaction_id = ?';
-        let entriesParams: any[] = [trans.id];
+      const entriesByTxnId = await this.getEntriesByTransactionIds(transactionIds, itemTypes);
+      const includeMoneyEntries = !itemTypes || itemTypes.includes('money');
+      const moneyEntriesByTxnId = includeMoneyEntries
+        ? await this.getMoneyEntriesByTransactionIds(transactionIds)
+        : new Map<string, TransactionEntry[]>();
 
-        // If itemTypes are specified, also filter the entries
-        if (itemTypes && itemTypes.length > 0) {
-          const placeholders = itemTypes.map(() => '?').join(',');
-          entriesQuery += ` AND itemType IN (${placeholders})`;
-          entriesParams.push(...itemTypes);
-        }
+      return transactions.map(trans => {
+        const mappedEntries = [
+          ...(entriesByTxnId.get(trans.id) || []),
+          ...(moneyEntriesByTxnId.get(trans.id) || []),
+        ];
 
-        entriesQuery += ' ORDER BY createdAt ASC';
-
-        const entries = await DatabaseService.getAllAsyncBatch<any>(entriesQuery, entriesParams);
-
-        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
-          id: entry.id,
-          type: entry.type,
-          itemType: entry.itemType,
-          weight: entry.weight,
-          price: entry.price,
-          touch: entry.touch,
-          cut: entry.cut,
-          extraPerKg: entry.extraPerKg,
-          pureWeight: entry.pureWeight,
-          moneyType: entry.moneyType,
-          amount: entry.amount,
-          metalOnly: entry.metalOnly === 1,
-          stock_id: entry.stock_id,
-          subtotal: entry.subtotal,
-          createdAt: entry.createdAt,
-          lastUpdatedAt: entry.lastUpdatedAt,
-        }));
-
-        // Fetch ledger money entries (payments)
-        if (!itemTypes || itemTypes.includes('money')) {
-          const moneyEntries = await DatabaseService.getAllAsyncBatch<any>(
-            'SELECT * FROM ledger_entries WHERE transactionId = ? AND itemType = "money" ORDER BY date ASC',
-            [trans.id]
-          );
-
-          const mappedMoneyEntries: TransactionEntry[] = moneyEntries.map(entry => ({
-            id: entry.id,
-            type: 'money',
-            itemType: 'money',
-            moneyType: entry.type === 'receive' ? 'receive' : 'give',
-            amount: entry.amount,
-            subtotal: entry.amount,
-            createdAt: entry.date,
-            metalOnly: false
-          }));
-
-          mappedEntries.push(...mappedMoneyEntries);
-        }
-
-        result.push({
+        return {
           id: trans.id,
           customerId: trans.customerId,
           customerName: trans.customerName,
@@ -288,11 +309,15 @@ export class TransactionService {
             gold999: trans.last_gold999_lock_date || 0,
             gold995: trans.last_gold995_lock_date || 0,
             silver: trans.last_silver_lock_date || 0,
+          },
+          customerCurrentBalance: {
+            balance: trans.balance || 0,
+            gold999: trans.gold999 || 0,
+            gold995: trans.gold995 || 0,
+            silver: trans.silver || 0,
           }
-        });
-      }
-
-      return result;
+        };
+      });
     } catch (error) {
       console.error('Error getting transactions by date range:', error);
       return [];
@@ -921,52 +946,42 @@ export class TransactionService {
         lastUpdatedAt: string;
       }>('SELECT * FROM transactions WHERE deleted_on IS NOT NULL ORDER BY deleted_on DESC');
 
-      const result: Transaction[] = [];
-      
-      for (const trans of transactions) {
-        const entries = await DatabaseService.getAllAsyncBatch<any>(
-          'SELECT * FROM transaction_entries WHERE transaction_id = ? ORDER BY createdAt ASC',
-          [trans.id]
-        );
+      const transactionIds = transactions.map(t => t.id);
+      if (transactionIds.length === 0) {
+        return [];
+      }
 
-        const mappedEntries: TransactionEntry[] = entries.map(entry => ({
-          id: entry.id,
-          type: entry.type,
-          itemType: entry.itemType,
-          weight: entry.weight,
-          price: entry.price,
-          touch: entry.touch,
-          cut: entry.cut,
-          extraPerKg: entry.extraPerKg,
-          pureWeight: entry.pureWeight,
-          moneyType: entry.moneyType,
-          amount: entry.amount,
-          metalOnly: entry.metalOnly === 1,
-          stock_id: entry.stock_id,
-          subtotal: entry.subtotal,
-          createdAt: entry.createdAt,
-          lastUpdatedAt: entry.lastUpdatedAt,
-        }));
+      const entriesByTxnId = await this.getEntriesByTransactionIds(transactionIds);
 
-        result.push({
+      return transactions.map(trans => ({
           id: trans.id,
           customerId: trans.customerId,
           customerName: trans.customerName,
           date: trans.date,
-          entries: mappedEntries,
+          entries: entriesByTxnId.get(trans.id) || [],
           total: trans.total,
           amountPaid: trans.amountPaid,
           deleted_on: trans.deleted_on,
           note: trans.note || undefined,
           createdAt: trans.createdAt,
           lastUpdatedAt: trans.lastUpdatedAt,
-        });
-      }
-
-      return result;
+        }));
     } catch (error) {
       console.error('Error getting deleted transactions:', error);
       return [];
+    }
+  }
+
+  static async getCustomersWithTransactions(): Promise<Set<string>> {
+    try {
+      const db = DatabaseService.getDatabase();
+      const rows = await db.getAllAsync<{ customerId: string }>(
+        'SELECT DISTINCT customerId FROM transactions WHERE deleted_on IS NULL'
+      );
+      return new Set(rows.map(row => row.customerId));
+    } catch (error) {
+      console.error('Error getting customers with transactions:', error);
+      return new Set<string>();
     }
   }
 

@@ -3,14 +3,14 @@
     "version": ">= 5.16.0"
   },
   "build": {
-    "debug": {
+    "production": {
       "android": {
         "buildType": "apk"
       }
     },
-    "production": {
+    "playstore": {
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
       }
     },
     "development": {

@@ -27,7 +27,6 @@ import * as FileSystem from 'expo-file-system';
 import CustomAlert from '../components/CustomAlert';
 import { AnimatedAccordion } from '../components/AnimatedAccordion';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
-import { InventoryService } from '../services/inventory.service';
 import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
 
 // Define a local interface for display purposes
@@ -110,22 +109,8 @@ export const CustomerListScreen: React.FC = () => {
       setCustomers(allCustomers);
       setFilteredCustomers(allCustomers); // Initially show all customers
 
-      // Check which customers have transactions (optimized with Promise.all)
-      const transactionChecks = await Promise.all(
-        allCustomers.map(async (customer) => {
-          const hasTransactions = await hasCustomerTransactions(customer.id);
-          return { id: customer.id, hasTransactions };
-        })
-      );
-
-      const customersWithTxns = new Set<string>();
-      transactionChecks.forEach(check => {
-        if (check.hasTransactions) {
-          customersWithTxns.add(check.id);
-        }
-      });
-
-      setCustomersWithTransactions(customersWithTxns);
+      const customersWithTxnsSet = await TransactionService.getCustomersWithTransactions();
+      setCustomersWithTransactions(customersWithTxnsSet);
       setAreTransactionsChecked(true);
     } catch (error) {
       console.error('Error loading customers:', error);
@@ -163,80 +148,6 @@ export const CustomerListScreen: React.FC = () => {
       .slice(0, 2);
   };
 
-  const formatBalance = (balance: number) => {
-    if (balance === 0) return 'Settled';
-    // INVERTED: positive = balance (merchant owes), negative = debt (customer owes)
-    if (balance > 0) return `Balance: ₹${formatIndianNumber(Math.abs(balance))}`;
-    else return `Debt: ₹${formatIndianNumber(Math.abs(balance))}`;
-  };
-
-  const formatMetalBalances = (customer: Customer) => {
-    const metalBalances = customer.metalBalances;
-    if (!metalBalances) {
-      return formatBalance(customer.balance);
-    }
-
-    const balanceItems: string[] = [];
-    const debtItems: string[] = [];
-
-    const metalTypeNames: Record<string, string> = {
-      gold999: 'Gold 999',
-      gold995: 'Gold 995',
-      rani: 'Rani',
-      silver: 'Silver',
-      silver98: 'Silver 98',
-      silver96: 'Silver 96',
-      rupu: 'Rupu',
-    };
-
-    Object.entries(metalBalances).forEach(([type, balance]) => {
-      if (balance && Math.abs(balance) > 0.001) {
-        const isGold = type.includes('gold') || type === 'rani';
-        const displayName = metalTypeNames[type] || type;
-        const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
-
-        if (balance > 0) {
-          balanceItems.push(`${displayName} ${formattedBalance}g`);
-        } else {
-          debtItems.push(`${displayName} ${formattedBalance}g`);
-        }
-      }
-    });
-
-    const hasMoneyBalance = customer.balance !== 0;
-    const hasMetalBalance = balanceItems.length > 0 || debtItems.length > 0;
-
-    if (!hasMoneyBalance && !hasMetalBalance) {
-      return 'Settled';
-    }
-
-    const parts: string[] = [];
-
-    if (hasMoneyBalance) {
-      parts.push(formatBalance(customer.balance));
-    }
-
-    if (balanceItems.length > 0) {
-      parts.push(`Balance: ${balanceItems.join(', ')}`);
-    }
-
-    if (debtItems.length > 0) {
-      parts.push(`Debt: ${debtItems.join(', ')}`);
-    }
-
-    return parts.join(' | ');
-  };
-
-  // Check if customer has any transactions
-  const hasCustomerTransactions = async (customerId: string): Promise<boolean> => {
-    try {
-      const transactions = await TransactionService.getTransactionsByCustomerId(customerId);
-      return transactions.length > 0;
-    } catch (error) {
-      console.error('Error checking customer transactions:', error);
-      return true; // Assume has transactions if error occurs
-    }
-  };
 
   const exportCustomersToPDF = async () => {
     try {

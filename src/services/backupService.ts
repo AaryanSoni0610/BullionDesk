@@ -610,6 +610,7 @@ export class BackupService {
       });
       console.log(`BackupService: DB file replaced in ${Date.now() - startTime}ms`);
       await DatabaseService.initDatabase();
+      await DatabaseService.optimizeAfterImport();
       console.log(`BackupService: DB reinitialized in ${Date.now() - startTime}ms`);
 
       this.updateImportProgressAlert('Import complete! 100%');
@@ -694,6 +695,7 @@ export class BackupService {
       });
       console.log(`BackupService: DB file replaced in ${Date.now() - startTime}ms`);
       await DatabaseService.initDatabase();
+      await DatabaseService.optimizeAfterImport();
       console.log(`BackupService: DB reinitialized in ${Date.now() - startTime}ms`);
 
       this.updateImportProgressAlert('Import complete! 100%');

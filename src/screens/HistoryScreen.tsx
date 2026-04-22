@@ -32,8 +32,7 @@ import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
 import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, customFormatPureSilver, formatIndianNumber, formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
-import { CustomerService } from '../services/customer.service';
-import { Transaction, Customer } from '../types';
+import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
 
@@ -154,19 +153,8 @@ type TransactionCardProps = {
 };
 
 const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideActions = false, allowFontScaling = true, isPrint = false, onDelete, onShare, onEdit }) => {
-  const [customerBalance, setCustomerBalance] = useState<Customer | null>(null);
   const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
   const isRaniRupaSellTransaction = transaction.entries.some(e => e.stock_id && e.metalOnly && e.type === 'sell');
-
-  useEffect(() => {
-    if (hideActions && !isRaniRupaSellTransaction) {
-      CustomerService.getCustomerById(transaction.customerId).then(customer => {
-        setCustomerBalance(customer);
-      }).catch(err => {
-        console.error('Failed to load customer balance:', err);
-      });
-    }
-  }, [hideActions, transaction.customerId, isRaniRupaSellTransaction]);
 
   const processedEntries = transaction.entries.map((entry, index) => {
     let displayName = getItemDisplayName(entry);
@@ -471,31 +459,30 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         </View>
       )}
 
-      {hideActions && !isRaniRupaSellTransaction && customerBalance && (() => {
+      {hideActions && !isRaniRupaSellTransaction && transaction.customerCurrentBalance && (() => {
+        const customerBalance = transaction.customerCurrentBalance;
         const balances: string[] = [];
         const debts: string[] = [];
         if (customerBalance.balance && Math.abs(customerBalance.balance) >= 1) {
           if (customerBalance.balance > 0) balances.push(`₹${formatIndianNumber(customerBalance.balance)}`);
           else debts.push(`₹${formatIndianNumber(Math.abs(customerBalance.balance))}`);
         }
-        if (customerBalance.metalBalances) {
-          if (customerBalance.metalBalances.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001) {
-            if (customerBalance.metalBalances.gold999 > 0) balances.push(`Gold 999 ${customerBalance.metalBalances.gold999.toFixed(3)}g`);
-            else debts.push(`Gold 999 ${Math.abs(customerBalance.metalBalances.gold999).toFixed(3)}g`);
-          }
-          if (customerBalance.metalBalances.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001) {
-            if (customerBalance.metalBalances.gold995 > 0) balances.push(`Gold 995 ${customerBalance.metalBalances.gold995.toFixed(3)}g`);
-            else debts.push(`Gold 995 ${Math.abs(customerBalance.metalBalances.gold995).toFixed(3)}g`);
-          }
-          if (customerBalance.metalBalances.silver && Math.abs(customerBalance.metalBalances.silver) >= 1) {
-            if (customerBalance.metalBalances.silver > 0) balances.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
-            else debts.push(`Silver ${Math.abs(customerBalance.metalBalances.silver).toFixed(0)}g`);
-          }
+        if (customerBalance.gold999 && Math.abs(customerBalance.gold999) >= 0.001) {
+          if (customerBalance.gold999 > 0) balances.push(`Gold 999 ${customerBalance.gold999.toFixed(3)}g`);
+          else debts.push(`Gold 999 ${Math.abs(customerBalance.gold999).toFixed(3)}g`);
+        }
+        if (customerBalance.gold995 && Math.abs(customerBalance.gold995) >= 0.001) {
+          if (customerBalance.gold995 > 0) balances.push(`Gold 995 ${customerBalance.gold995.toFixed(3)}g`);
+          else debts.push(`Gold 995 ${Math.abs(customerBalance.gold995).toFixed(3)}g`);
+        }
+        if (customerBalance.silver && Math.abs(customerBalance.silver) >= 1) {
+          if (customerBalance.silver > 0) balances.push(`Silver ${Math.abs(customerBalance.silver).toFixed(0)}g`);
+          else debts.push(`Silver ${Math.abs(customerBalance.silver).toFixed(0)}g`);
         }
         const hasMoneyBalance = customerBalance.balance && Math.abs(customerBalance.balance) >= 1;
-        const hasGold999Balance = customerBalance.metalBalances?.gold999 && Math.abs(customerBalance.metalBalances.gold999) >= 0.001;
-        const hasGold995Balance = customerBalance.metalBalances?.gold995 && Math.abs(customerBalance.metalBalances.gold995) >= 0.001;
-        const hasSilverBalance = customerBalance.metalBalances?.silver && Math.abs(customerBalance.metalBalances.silver) >= 1;
+        const hasGold999Balance = customerBalance.gold999 && Math.abs(customerBalance.gold999) >= 0.001;
+        const hasGold995Balance = customerBalance.gold995 && Math.abs(customerBalance.gold995) >= 0.001;
+        const hasSilverBalance = customerBalance.silver && Math.abs(customerBalance.silver) >= 1;
         const hasAnyBalanceOrDebt = Boolean(hasMoneyBalance || hasGold999Balance || hasGold995Balance || hasSilverBalance);
         return hasAnyBalanceOrDebt ? (
           <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: hideActions ? '#cccccc' : 'rgba(0,0,0,0.05)' }}>
@@ -1159,6 +1146,50 @@ export const HistoryScreen: React.FC = () => {
     setExportProgress({ current: 0, total: transactions.length });
 
     try {
+      const escapeHtml = (value: string) =>
+        value
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+
+      const saveAndSharePdf = async (tempPdfUri: string) => {
+        const dateStr = selectedDate.toLocaleDateString('en-GB').replace(/\//g, '-');
+        const timeStr = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }).replace(':', '-');
+        const fileName = `HistoryExport-${dateStr}-${timeStr}.pdf`;
+        const finalPdfUri = `${FileSystem.documentDirectory}${fileName}`;
+
+        // Ensure deterministic destination and avoid move failure if the same name already exists.
+        await FileSystem.deleteAsync(finalPdfUri, { idempotent: true });
+
+        try {
+          await FileSystem.moveAsync({ from: tempPdfUri, to: finalPdfUri });
+        } catch {
+          // Some platforms/storage providers fail move across boundaries; fallback to copy+delete.
+          await FileSystem.copyAsync({ from: tempPdfUri, to: finalPdfUri });
+          await FileSystem.deleteAsync(tempPdfUri, { idempotent: true });
+        }
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(finalPdfUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Export History'
+          });
+        } else {
+          setAlertTitle('Error');
+          setAlertMessage('Sharing is not available on this device');
+          setAlertButtons([{ text: 'OK' }]);
+          setAlertVisible(true);
+        }
+
+        setTimeout(async () => {
+          try {
+            await FileSystem.deleteAsync(finalPdfUri, { idempotent: true });
+          } catch (e) {}
+        }, 5 * 60 * 1000);
+      };
+
       let htmlBody = '';
       const chunkSize = 20;
       
@@ -1222,36 +1253,53 @@ export const HistoryScreen: React.FC = () => {
           </body>
         </html>
       `;
-      
-      const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
-      
-      // Rename PDF
-      const dateStr = selectedDate.toLocaleDateString('en-GB').replace(/\//g, '-');
-      const timeStr = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}).replace(':', '-');
-      const fileName = `HistoryExport-${dateStr}-${timeStr}.pdf`;
-      const finalPdfUri = `${FileSystem.documentDirectory}${fileName}`;
-      
-      await FileSystem.moveAsync({ from: pdfUri, to: finalPdfUri });
-      
-      // Share
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(finalPdfUri, { mimeType: 'application/pdf', dialogTitle: 'Export History' });
-      } else {
-        setAlertTitle('Error');
-        setAlertMessage('Sharing is not available on this device');
-        setAlertButtons([{ text: 'OK' }]);
-        setAlertVisible(true);
+
+      try {
+        const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
+        await saveAndSharePdf(pdfUri);
+      } catch (richPdfError) {
+        console.error('Rich PDF generation failed, retrying with lightweight layout:', richPdfError);
+
+        // Fallback layout is intentionally simple to reduce renderer/memory pressure.
+        const simpleRows = transactions.map((tx, idx) => {
+          const amountLabel = `₹${formatIndianNumber(Math.abs(tx.total || 0))}`;
+          const paidLabel = `${tx.amountPaid >= 0 ? '+' : '-'}₹${formatIndianNumber(Math.abs(tx.amountPaid || 0))}`;
+          const note = tx.note ? `<div class="note">Note: ${escapeHtml(tx.note)}</div>` : '';
+          return `
+            <div class="row">
+              <div><strong>${idx + 1}. ${escapeHtml(tx.customerName)}</strong></div>
+              <div>Date: ${escapeHtml(formatFullDate(tx.date))}</div>
+              <div>Total: ${amountLabel} | Paid: ${paidLabel}</div>
+              ${note}
+            </div>
+          `;
+        }).join('');
+
+        const fallbackHtml = `
+          <html>
+            <head>
+              <style>
+                body { font-family: sans-serif; padding: 12px; color: #111; }
+                h1 { font-size: 18px; margin: 0 0 10px 0; }
+                .row { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 8px; page-break-inside: avoid; }
+                .note { margin-top: 4px; font-size: 11px; color: #333; }
+              </style>
+            </head>
+            <body>
+              <h1>Transaction History - ${escapeHtml(formatDate(selectedDate))}</h1>
+              ${simpleRows}
+            </body>
+          </html>
+        `;
+
+        const { uri: fallbackPdfUri } = await Print.printToFileAsync({ html: fallbackHtml, base64: false });
+        await saveAndSharePdf(fallbackPdfUri);
       }
-      
-      // Schedule delete
-      setTimeout(async () => {
-        try { await FileSystem.deleteAsync(finalPdfUri, { idempotent: true }); } catch (e) {}
-      }, 5 * 60 * 1000);
       
     } catch (error) {
       console.error('PDF Generation failed:', error);
       setAlertTitle('Export Failed');
-      setAlertMessage('Could not generate PDF.');
+      setAlertMessage('Could not generate PDF. Please free some storage space and try again.');
       setAlertButtons([{ text: 'OK' }]);
       setAlertVisible(true);
     } finally {

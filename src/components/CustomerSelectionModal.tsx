@@ -16,12 +16,8 @@ import {
   Button,
   Text,
   Avatar,
-  Divider,
   IconButton,
-  Surface,
-  ActivityIndicator
 } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Customer } from '../types';
 import { theme } from '../theme';
 import { CustomerService } from '../services/customer.service';

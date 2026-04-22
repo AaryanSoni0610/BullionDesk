@@ -10,6 +10,9 @@ export class DatabaseService {
       // Open database
       db = await SQLite.openDatabaseAsync('bulliondesk.db');
       
+      // Use WAL for faster mixed read/write workloads.
+      await db.execAsync('PRAGMA journal_mode = WAL;');
+
       // Enable foreign keys
       await db.execAsync('PRAGMA foreign_keys = ON;');
       
@@ -289,25 +292,31 @@ export class DatabaseService {
       
       // Export customers with balances
       const customers = await DatabaseService.getAllAsyncBatch('SELECT * FROM customers');
-      const customersWithBalances = [];
-      for (const customer of customers) {
-        const balance = await db.getFirstAsync(
-          'SELECT * FROM customer_balances WHERE customer_id = ?',
-          [(customer as any).id]
-        );
-        customersWithBalances.push({ ...(customer as any), balance });
+      const allBalances = await DatabaseService.getAllAsyncBatch('SELECT * FROM customer_balances');
+      const balancesByCustomerId = new Map<string, any>();
+      for (const balance of allBalances) {
+        balancesByCustomerId.set((balance as any).customer_id, balance as any);
       }
+      const customersWithBalances = customers.map(customer => ({
+        ...(customer as any),
+        balance: balancesByCustomerId.get((customer as any).id) || null,
+      }));
 
       // Export transactions with entries
       const transactions = await DatabaseService.getAllAsyncBatch('SELECT * FROM transactions');
-      const transactionsWithEntries = [];
-      for (const transaction of transactions) {
-        const entries = await DatabaseService.getAllAsyncBatch(
-          'SELECT * FROM transaction_entries WHERE transaction_id = ?',
-          [(transaction as any).id]
-        );
-        transactionsWithEntries.push({ ...(transaction as any), entries });
+      const allEntries = await DatabaseService.getAllAsyncBatch('SELECT * FROM transaction_entries');
+      const entriesByTransactionId = new Map<string, any[]>();
+      for (const entry of allEntries) {
+        const txId = (entry as any).transaction_id;
+        if (!entriesByTransactionId.has(txId)) {
+          entriesByTransactionId.set(txId, []);
+        }
+        entriesByTransactionId.get(txId)!.push(entry as any);
       }
+      const transactionsWithEntries = transactions.map(transaction => ({
+        ...(transaction as any),
+        entries: entriesByTransactionId.get((transaction as any).id) || [],
+      }));
 
       // Export ledger (flattened)
       const ledger = await DatabaseService.getAllAsyncBatch('SELECT * FROM ledger_entries');
@@ -545,6 +554,9 @@ export class DatabaseService {
       }
 
       await db.execAsync('COMMIT');
+
+      // Refresh planner statistics and rebuild existing indexes after large imports.
+      await this.optimizeAfterImport();
       return true;
     } catch (error) {
       await db.execAsync('ROLLBACK');
@@ -592,5 +604,29 @@ export class DatabaseService {
     const rows = await db.getAllAsync(query, params); 
     // 2. Return the rows
     return rows as unknown as T[];
+  }
+
+  /**
+   * Post-import optimization.
+   * - Rebuilds existing indexes (does not create new indexes)
+   * - Updates query planner statistics
+   * - Applies lightweight warm-up reads so first screen query is faster
+   */
+  static async optimizeAfterImport(): Promise<void> {
+    const db = this.getDatabase();
+
+    // Ensure journal mode is correct after file replacement/import.
+    await db.execAsync('PRAGMA journal_mode = WAL;');
+
+    // Rebuild existing indexes only.
+    await db.execAsync('REINDEX;');
+
+    // Populate sqlite_stat tables so query planner can choose better plans.
+    await db.execAsync('ANALYZE;');
+
+    // Warm up a few hot paths to reduce first-query latency after import.
+    await db.getFirstAsync('SELECT COUNT(1) AS c FROM transactions');
+    await db.getFirstAsync('SELECT COUNT(1) AS c FROM ledger_entries');
+    await db.getFirstAsync('SELECT COUNT(1) AS c FROM customers');
   }
 }

@@ -38,6 +38,12 @@ export interface Transaction {
     gold995?: number;
     silver?: number;
   };
+  customerCurrentBalance?: {
+    balance?: number;
+    gold999?: number;
+    gold995?: number;
+    silver?: number;
+  };
 }
 
 export interface TransactionEntry {

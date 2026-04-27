@@ -44,6 +44,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const otherEntries = existingEntries.filter(entry => entry.id !== editingEntry?.id);
   const hasMetalOnlyEntries = otherEntries.some(entry => entry.metalOnly === true);
   const hasPricedEntries = otherEntries.some(entry => entry.type !== 'money' && entry.metalOnly === false);
+  // If editing an entry that previously had a price, do not allow switching to metal-only
+  const editingHadPrice = !!(editingEntry && editingEntry.metalOnly === false && editingEntry.type !== 'money');
   
   // Handle back button navigation
   const handleBack = () => {
@@ -193,10 +195,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   useEffect(() => {
     if (hasMetalOnlyEntries) {
       setMetalOnly(true);
-    } else if (hasPricedEntries) {
+    } else if (hasPricedEntries || editingHadPrice) {
       setMetalOnly(false);
     }
-  }, [hasMetalOnlyEntries, hasPricedEntries]);
+  }, [hasMetalOnlyEntries, hasPricedEntries, editingHadPrice]);
 
   const getItemOptions = () => {
     const allOptions = [
@@ -485,13 +487,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           {/* Metal Only Toggle */}
           <TouchableOpacity 
             style={styles.checkboxRow} 
-            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
-            disabled={hasMetalOnlyEntries || hasPricedEntries}
+            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries || editingHadPrice) && setMetalOnly(!metalOnly)}
+            disabled={hasMetalOnlyEntries || hasPricedEntries || editingHadPrice}
           >
             <View style={[styles.radioCircle, metalOnly && styles.radioCircleActive]}>
               {metalOnly && <View style={styles.radioInner} />}
             </View>
-            <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}>
+            <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries || editingHadPrice) && { color: theme.colors.onSurfaceDisabled }]}>
               Metal Only
             </Text>
           </TouchableOpacity>
@@ -562,13 +564,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           {/* Metal Only Toggle */}
           <TouchableOpacity 
             style={styles.checkboxRow} 
-            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
-            disabled={hasMetalOnlyEntries || hasPricedEntries}
+            onPress={() => !(hasMetalOnlyEntries || hasPricedEntries || editingHadPrice) && setMetalOnly(!metalOnly)}
+            disabled={hasMetalOnlyEntries || hasPricedEntries || editingHadPrice}
           >
             <View style={[styles.radioCircle, metalOnly && styles.radioCircleActive]}>
               {metalOnly && <View style={styles.radioInner} />}
             </View>
-            <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}>
+            <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries || editingHadPrice) && { color: theme.colors.onSurfaceDisabled }]}>
               Metal Only
             </Text>
           </TouchableOpacity>
@@ -607,13 +609,13 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
         {/* Metal Only Toggle */}
         <TouchableOpacity 
           style={styles.checkboxRow} 
-          onPress={() => !(hasMetalOnlyEntries || hasPricedEntries) && setMetalOnly(!metalOnly)}
-          disabled={hasMetalOnlyEntries || hasPricedEntries}
+          onPress={() => !(hasMetalOnlyEntries || hasPricedEntries || editingHadPrice) && setMetalOnly(!metalOnly)}
+          disabled={hasMetalOnlyEntries || hasPricedEntries || editingHadPrice}
         >
           <View style={[styles.radioCircle, metalOnly && styles.radioCircleActive]}>
             {metalOnly && <View style={styles.radioInner} />}
           </View>
-          <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries) && { color: theme.colors.onSurfaceDisabled }]}>
+          <Text style={[styles.checkboxLabel, (hasMetalOnlyEntries || hasPricedEntries || editingHadPrice) && { color: theme.colors.onSurfaceDisabled }]}>
             Metal Only
           </Text>
         </TouchableOpacity>

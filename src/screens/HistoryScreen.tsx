@@ -30,8 +30,9 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 import { theme } from '../theme';
-import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, customFormatPureSilver, formatIndianNumber, formatCurrency } from '../utils/formatting';
+import { formatTransactionAmount, formatFullDate, formatPureGoldPrecise, formatPureGold, formatPureSilver, customFormatPureSilver, formatMoney, formatIndianNumber, formatCurrency } from '../utils/formatting';
 import { TransactionService } from '../services/transaction.service';
+import { RateCutService, RateCutRecord } from '../services/rateCut.service';
 import { Transaction } from '../types';
 import { useAppContext } from '../context/AppContext';
 import CustomAlert from '../components/CustomAlert';
@@ -49,22 +50,6 @@ const getItemDisplayName = (entry: any): string => {
   return typeMap[entry.itemType] || entry.itemType;
 };
 
-const isRateCutLocked = (transaction: Transaction): boolean => {
-  const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
-  if (isMetalOnly) {
-    const txDate = new Date(transaction.date).getTime();
-    const lockDates = transaction.customerLockDates;
-    if (lockDates) {
-      return transaction.entries.some(entry => {
-        if (entry.itemType === 'gold999' && txDate <= (lockDates.gold999 || 0)) return true;
-        if (entry.itemType === 'gold995' && txDate <= (lockDates.gold995 || 0)) return true;
-        if (entry.itemType === 'silver' && txDate <= (lockDates.silver || 0)) return true;
-        return false;
-      });
-    }
-  }
-  return false;
-};
 
 const getAmountColor = (transaction: Transaction) => {
   const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
@@ -154,6 +139,7 @@ type TransactionCardProps = {
 
 const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideActions = false, allowFontScaling = true, isPrint = false, onDelete, onShare, onEdit }) => {
   const isMetalOnly = transaction.entries.some(entry => entry.metalOnly === true);
+  const isAllMetalOnly = transaction.entries.length > 0 && transaction.entries.every(entry => entry.metalOnly === true);
   const isRaniRupaSellTransaction = transaction.entries.some(e => e.stock_id && e.metalOnly && e.type === 'sell');
 
   const processedEntries = transaction.entries.map((entry, index) => {
@@ -273,21 +259,20 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         <View style={styles.cardTopActions}>
           <View style={styles.actionPill}>
             <TouchableOpacity
-              style={[styles.iconBtn, styles.btnDelete, isRateCutLocked(transaction) && styles.disabledButton]}
-              onPress={() => !isRateCutLocked(transaction) && onDelete(transaction)}
-              disabled={isRateCutLocked(transaction)}
+              style={[styles.iconBtn, styles.btnDelete]}
+              onPress={() => onDelete(transaction)}
             >
-              <Icon name="delete" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
+              <Icon name="delete" size={20} color={theme.colors.error} />
             </TouchableOpacity>
             <TouchableOpacity style={[styles.iconBtn, styles.btnShare]} onPress={() => onShare(transaction)}>
               <Icon name="share-variant" size={20} color={theme.colors.success} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.iconBtn, styles.btnEdit, isRateCutLocked(transaction) && styles.disabledButton]}
-              onPress={() => !isRateCutLocked(transaction) && onEdit(transaction.id)}
-              disabled={isRateCutLocked(transaction)}
+              style={[styles.iconBtn, styles.btnEdit, isAllMetalOnly && styles.disabledButton]}
+              onPress={() => !isAllMetalOnly && onEdit(transaction.id)}
+              disabled={isAllMetalOnly}
             >
-              <Icon name="pencil" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
+              <Icon name="pencil" size={20} color={isAllMetalOnly ? theme.colors.onSurfaceDisabled : theme.colors.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -897,17 +882,20 @@ export const HistoryScreen: React.FC = () => {
         t.customerName.toLowerCase() !== 'adjust' &&
         !(t.entries.length === 1 && t.entries[0].type === 'money')
       );
+
+      // Fetch rate cuts for this date (cut_date is stored as unix ms)
+      const rateCuts = await RateCutService.getRateCutsByDateRange(start.getTime(), end.getTime());
       
-      if (validTxs.length === 0) {
+      if (validTxs.length === 0 && rateCuts.length === 0) {
         setIsExporting(false);
         setAlertTitle('No Data');
-        setAlertMessage('No transactions found for this date.');
+        setAlertMessage('No transactions or rate cuts found for this date.');
         setAlertButtons([{ text: 'OK' }]);
         setAlertVisible(true);
         return;
       }
       
-      generatePDFDirectly(validTxs, date);
+      generatePDFDirectly(validTxs, date, rateCuts);
     } catch (e) {
       setIsExporting(false);
       console.error(e);
@@ -1140,7 +1128,43 @@ export const HistoryScreen: React.FC = () => {
     `;
   };
 
-  const generatePDFDirectly = async (transactions: Transaction[], selectedDate: Date) => {
+  const generateRateCutCardHTML = (item: RateCutRecord): string => {
+    const isGold = item.metal_type.includes('gold');
+    const metalLabel = item.metal_type === 'gold999' ? 'Gold 999'
+      : item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
+    const cutDate = new Date(item.cut_date);
+    const formattedDate = `${cutDate.getDate().toString().padStart(2, '0')}/${(cutDate.getMonth() + 1).toString().padStart(2, '0')}/${cutDate.getFullYear()}`;
+    const directionLabel = item.direction === 'sell' ? 'Sell' : 'Buy';
+    const metalBadgeColor = isGold ? '#6F4C00' : '#263238';
+    const metalBadgeBg = isGold ? '#FFF8E1' : '#ECEFF1';
+    const metalBadgeBorder = isGold ? 'rgba(255,193,7,0.3)' : 'rgba(120,144,156,0.3)';
+    const dirBadgeColor = item.direction === 'sell' ? '#C62828' : '#2E7D32';
+    const dirBadgeBg = item.direction === 'sell' ? '#FFEBEE' : '#E8F5E9';
+    const dirBadgeBorder = item.direction === 'sell' ? 'rgba(211,47,47,0.2)' : 'rgba(56,142,60,0.2)';
+    const totalFormatted = formatIndianNumber(Math.abs(parseFloat(formatMoney(item.total_amount.toFixed(0)))));
+    return `
+      <div class="rc-card">
+        <div class="rc-top">
+          <span class="rc-date">${formattedDate}</span>
+          <div class="rc-badges">
+            <span class="rc-badge" style="color:${metalBadgeColor};background:${metalBadgeBg};border:1px solid ${metalBadgeBorder}">${metalLabel}</span>
+            <span class="rc-badge" style="color:${dirBadgeColor};background:${dirBadgeBg};border:1px solid ${dirBadgeBorder}">${directionLabel}</span>
+          </div>
+        </div>
+        <div class="rc-customer">${item.customer_name || 'Unknown'}</div>
+        <div class="rc-row">
+          <span class="rc-detail">Weight: <strong>${Math.abs(item.weight_cut).toFixed(3)}g</strong></span>
+          <span class="rc-sep"> - </span>
+          <span class="rc-detail">Price: <strong>₹${formatIndianNumber(item.rate)}</strong></span>
+        </div>
+        <div class="rc-row">
+          <span class="rc-detail">Total: <strong class="rc-total">₹${totalFormatted}</strong></span>
+        </div>
+      </div>
+    `;
+  };
+
+  const generatePDFDirectly = async (transactions: Transaction[], selectedDate: Date, rateCuts: RateCutRecord[] = []) => {
     // setIsExporting(true); // Already set in performExport
     // setExportStatus('generating'); // Already set in performExport
     setExportProgress({ current: 0, total: transactions.length });
@@ -1240,6 +1264,18 @@ export const HistoryScreen: React.FC = () => {
               .note-row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ccc; }
               .note-label { font-size: 10px; font-weight: 600; color: #444; }
               .note-text { font-size: 10px; color: #000; text-align: right; flex: 1; margin-left: 6px; }
+              /* Rate Cut Cards */
+              .rc-section-heading { column-span: all; font-size: 11px; font-weight: 700; color: #44474F; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 6px 0; padding-top: 8px; border-top: 2px solid #005AC1; }
+              .rc-card { break-inside: avoid; margin-bottom: 8px; background-color: #fff; border: 1px solid #0b0b0c; border-radius: 8px; padding: 10px; }
+              .rc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+              .rc-date { font-size: 10px; color: #44474F; font-weight: 500; }
+              .rc-badges { display: flex; gap: 5px; align-items: center; }
+              .rc-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 50px; }
+              .rc-customer { font-size: 12px; font-weight: 700; color: #1B1B1F; margin-bottom: 4px; }
+              .rc-row { display: flex; align-items: center; margin-bottom: 3px; }
+              .rc-detail { font-size: 11px; color: #44474F; }
+              .rc-sep { font-size: 11px; color: #44474F; margin: 0 4px; }
+              .rc-total { font-size: 13px; font-weight: 700; color: #1B1B1F; }
             </style>
           </head>
           <body>
@@ -1249,6 +1285,10 @@ export const HistoryScreen: React.FC = () => {
             </div>
             <div class="container">
               ${htmlBody}
+              ${rateCuts.length > 0 ? `
+                <div class="rc-section-heading">Rate Cuts — ${formatDate(selectedDate)}</div>
+                ${rateCuts.map(rc => generateRateCutCardHTML(rc)).join('')}
+              ` : ''}
             </div>
           </body>
         </html>

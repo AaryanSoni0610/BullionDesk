@@ -249,6 +249,23 @@ export class RateCutService {
     }
   }
 
+  static async getRateCutsByDateRange(startMs: number, endMs: number): Promise<RateCutRecord[]> {
+    try {
+      const db = DatabaseService.getDatabase();
+      return await db.getAllAsync<RateCutRecord>(
+        `SELECT rch.*, c.name as customer_name
+         FROM rate_cut_history rch
+         LEFT JOIN customers c ON rch.customer_id = c.id
+         WHERE rch.cut_date >= ? AND rch.cut_date <= ?
+         ORDER BY rch.cut_date DESC, rch.created_at DESC`,
+        [startMs, endMs]
+      );
+    } catch (error) {
+      console.error('Error getting rate cuts by date range:', error);
+      return [];
+    }
+  }
+
   static async getAllRateCutHistory(limit = 50, offset = 0): Promise<RateCutRecord[]> {
     try {
       const db = DatabaseService.getDatabase();

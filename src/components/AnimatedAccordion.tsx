@@ -1,62 +1,64 @@
-import React, { useState, useEffect } from 'react';
-import { View, LayoutChangeEvent } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   Easing,
 } from 'react-native-reanimated';
+// useSharedValue must not be called conditionally or re-initialised on every
+// render — that triggers Reanimated strict-mode warnings. We call it once and
+// hold the result in a ref so it survives re-renders without being recreated.
 
 interface AnimatedAccordionProps {
   isExpanded: boolean;
   children: React.ReactNode;
+  // Fixed height the accordion opens to. When provided, no onLayout
+  // measurement is needed — the animation is perfectly stable every time.
+  expandedHeight?: number;
 }
 
-export const AnimatedAccordion: React.FC<AnimatedAccordionProps> = ({ isExpanded, children }) => {
-  const height = useSharedValue(0);
-  const [contentHeight, setContentHeight] = useState<number | null>(null);
+const TIMING_CONFIG = {
+  duration: 250,
+  easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+};
+
+const DEFAULT_EXPANDED_HEIGHT = 300;
+
+export const AnimatedAccordion: React.FC<AnimatedAccordionProps> = ({
+  isExpanded,
+  children,
+  expandedHeight = DEFAULT_EXPANDED_HEIGHT,
+}) => {
+  // Create the shared value exactly once (on mount). If we called
+  // useSharedValue(0) directly it would run on every render, which Reanimated
+  // strict mode flags as "writing to a shared value during render".
+  const animatedHeightRef = useRef(useSharedValue(0));
+  const animatedHeight = animatedHeightRef.current;
+
+  // Children stay mounted once ever expanded. overflow:hidden hides them
+  // at height 0 — no unmount needed, no measurement resets.
+  const hasEverExpandedRef = useRef(isExpanded);
+  if (isExpanded) hasEverExpandedRef.current = true;
 
   useEffect(() => {
-    if (contentHeight !== null) {
-      if (isExpanded) {
-        height.value = withTiming(contentHeight, {
-          duration: 250,
-          easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-        });
-      } else {
-        height.value = withTiming(0, {
-          duration: 250,
-          easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-        });
-      }
-    }
-  }, [isExpanded, contentHeight]);
+    animatedHeight.value = withTiming(
+      isExpanded ? expandedHeight : 0,
+      TIMING_CONFIG,
+    );
+  }, [isExpanded, expandedHeight]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    height: height.value,
-    overflow: 'hidden',
+    height: animatedHeight.value,
   }));
 
-  const handleLayout = (event: LayoutChangeEvent) => {
-    const { height: measuredHeight } = event.nativeEvent.layout;
-    if (measuredHeight > 0 && measuredHeight !== contentHeight) {
-      setContentHeight(measuredHeight);
-    }
-  };
-
-  // Render content off-screen to measure it first
-  if (contentHeight === null) {
-    return (
-      <View style={{ position: 'absolute', opacity: 0, zIndex: -1 }} onLayout={handleLayout}>
-        {children}
-      </View>
-    );
-  }
-
   return (
-    <Animated.View style={animatedStyle}>
-      <View style={{ position: 'absolute', width: '100%', top: 0 }} onLayout={handleLayout}>
-        {children}
+    <Animated.View style={[animatedStyle, { overflow: 'hidden' }]}>
+      {/* No flex:1 here — the inner View must size to its content, not its
+          parent. flex:1 would make it match the animating parent height (0→300)
+          which breaks layout. The parent's overflow:hidden clips it visually. */}
+      <View>
+        {hasEverExpandedRef.current ? children : null}
       </View>
     </Animated.View>
   );

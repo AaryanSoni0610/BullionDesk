@@ -207,8 +207,11 @@ export const CustomerListScreen: React.FC = () => {
   const [deleteAlertMessage, setDeleteAlertMessage] = useState('');
   const [deleteAlertIcon, setDeleteAlertIcon] = useState<string | undefined>(undefined);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
-  const [isLoadingLedger, setIsLoadingLedger] = useState(false);
-  
+  // NOTE: isLoadingLedger is intentionally NOT a component-level state anymore.
+  // It was causing a full-screen re-render (and React.memo bypass on every row)
+  // every time a fetch started/finished. Loading state is now derived per-row
+  // inside renderCustomerItem by checking if the cache entry is absent.
+
   // Quick-add state
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showBalancesDialog, setShowBalancesDialog] = useState(false);
@@ -238,15 +241,33 @@ export const CustomerListScreen: React.FC = () => {
     expandedCardIdRef.current = expandedCardId;
   }, [expandedCardId]);
 
+  // A ref mirror of ledgerCache so fetchCustomerLedger (useCallback) can always
+  // read the latest cache without capturing a stale closure value.
+  const ledgerCacheRef = useRef(ledgerCache);
+  useEffect(() => {
+    ledgerCacheRef.current = ledgerCache;
+  }, [ledgerCache]);
+
+  // A stable ref to fetchCustomerLedger so useFocusEffect (defined before the
+  // function declaration) can call it without a "used before declaration" error.
+  // The ref is kept up-to-date by the useEffect below fetchCustomerLedger.
+  const fetchCustomerLedgerRef = useRef<(id: string) => Promise<CustomerLedgerItem[]>>(() => Promise.resolve([]));
+
   // Load all customers on focus and refresh expanded cards
   useFocusEffect(
     useCallback(() => {
       loadAllCustomers();
-      // Refresh ledger data for the open card
+      // Refresh ledger data for the open card (bypass cache so data is fresh on re-focus)
       if (expandedCardIdRef.current) {
-        fetchCustomerLedger(expandedCardIdRef.current);
+        // Clear cached entry so fetchCustomerLedger skips the TTL guard on re-focus
+        setLedgerCache(prev => {
+          const next = new Map(prev);
+          next.delete(expandedCardIdRef.current!);
+          return next;
+        });
+        fetchCustomerLedgerRef.current(expandedCardIdRef.current);
       }
-    }, [])
+    }, []) // stable: only reads refs, never stale
   );
 
   const loadAllCustomers = async () => {
@@ -730,12 +751,32 @@ export const CustomerListScreen: React.FC = () => {
     }
   }, []);
 
+  // Per-row loading state: tracks which customerId is currently being fetched.
+  // Using a ref (not useState) so flipping it never triggers a component re-render.
+  // The FlatList row that needs to show a spinner derives it from ledgerCache absence.
+  const fetchingCustomerIdRef = useRef<string | null>(null);
+
   // ── Fast UI fetch: uses only LedgerService (no TransactionService) ──────────
-  // The ledger_entries table stores pureWeight in its weight column, so no
-  // touch/cut math is needed here. Do NOT add TransactionService to this path.
-  const fetchCustomerLedger = async (customerId: string): Promise<CustomerLedgerItem[]> => {
-    setIsLoadingLedger(true);
+  // KEY FIXES vs previous version:
+  //   1. Wrapped in useCallback so its reference is stable → toggleCardExpansion
+  //      and renderCustomerItem keep their stable references → React.memo works.
+  //   2. Cache-hit check at the top: second open is instant (no DB call at all).
+  //   3. Uses ledgerCacheRef to read latest cache state without a stale closure.
+  //   4. Cache writes use the functional updater form (new Map each time) so React
+  //      sees a genuinely new reference and rerenders the affected row only.
+  const fetchCustomerLedger = useCallback(async (customerId: string): Promise<CustomerLedgerItem[]> => {
     const now = Date.now();
+    const CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute TTL
+
+    // ✅ CHECK CACHE FIRST — makes every repeat open instant
+    const cached = ledgerCacheRef.current.get(customerId);
+    if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    // Guard: don't fire duplicate fetches for the same customer
+    if (fetchingCustomerIdRef.current === customerId) return [];
+    fetchingCustomerIdRef.current = customerId;
 
     try {
       // 1. Fetch ONLY Ledger and RateCuts - Lightning Fast!
@@ -809,21 +850,31 @@ export const CustomerListScreen: React.FC = () => {
         return dateB - dateA; // Newest first
       });
 
-      // Prevent memory bloat: cap cache at 10 customers
-      if (ledgerCache.size > 10) {
-        const oldestKey = ledgerCache.keys().next().value;
-        if (oldestKey) ledgerCache.delete(oldestKey);
-      }
+      // ✅ Functional updater creates a NEW Map reference each time — React sees
+      //    the change and rerenders only the row whose ledgerData just arrived.
+      //    Cap cache at 10 customers to prevent memory bloat.
+      setLedgerCache(prev => {
+        const next = new Map(prev);
+        if (next.size >= 10) {
+          const oldestKey = next.keys().next().value;
+          if (oldestKey) next.delete(oldestKey);
+        }
+        next.set(customerId, { data: sortedItems, timestamp: now });
+        return next;
+      });
 
-      setLedgerCache(prev => new Map(prev.set(customerId, { data: sortedItems, timestamp: now })));
-      setIsLoadingLedger(false);
       return sortedItems;
     } catch (error) {
-      setIsLoadingLedger(false);
       console.error('Error fetching customer ledger:', error);
       return [];
+    } finally {
+      fetchingCustomerIdRef.current = null;
     }
-  };
+  }, []); // ✅ Empty deps: function reference is permanently stable
+
+  // Keep the ref in sync so useFocusEffect (declared above) always calls the
+  // real implementation even though it can't reference it directly.
+  fetchCustomerLedgerRef.current = fetchCustomerLedger;
 
   // ── Heavy PDF fetch: uses TransactionService for full gross/touch/cut detail ─
   // This is the ONLY place TransactionService should be called in this screen.
@@ -1019,19 +1070,35 @@ export const CustomerListScreen: React.FC = () => {
   };
 
   const toggleCardExpansion = useCallback((customerId: string) => {
-    if (expandedCardId === customerId) {
-      setExpandedCardId(null);
+    if (expandedCardIdRef.current === customerId) {
+      // Collapse: update the ref immediately (so any in-flight InteractionManager
+      // callback that checks the ref sees the card is already closed), then defer
+      // the React state update until after all pending interactions settle.
+      // This means the JS thread is completely free when the close animation runs —
+      // setExpandedCardId(null) triggers reconciliation of the open row's subtree,
+      // and deferring it ensures that work happens after the 250ms animation, not
+      // competing with it.
+      expandedCardIdRef.current = null;
+      InteractionManager.runAfterInteractions(() => {
+        setExpandedCardId(null);
+      });
     } else {
-      // 1. Flip the accordion open immediately so the animation starts on this frame.
+      // Expand: update ref and state immediately so the animation starts on this
+      // frame. Defer only the heavy DB fetch.
+      expandedCardIdRef.current = customerId;
       setExpandedCardId(customerId);
 
-      // 2. Defer the DB fetch until AFTER all pending interactions (animations) finish.
-      //    This ensures the JS thread is free to drive the accordion animation at 60fps.
+      // Defer DB fetch until after the accordion open animation finishes,
+      // so the JS thread is fully free to drive the animation at 60 fps.
       InteractionManager.runAfterInteractions(() => {
         fetchCustomerLedger(customerId);
       });
     }
-  }, [expandedCardId, fetchCustomerLedger, ledgerCache]);
+    // ✅ No longer depends on expandedCardId state — reading the ref instead
+    //    means this callback's identity is permanently stable, which means
+    //    renderCustomerItem's identity is stable, which means React.memo on
+    //    every closed CustomerRow fires zero re-renders when a card toggles.
+  }, [fetchCustomerLedger]);
 
   const renderLedgerEntry = useCallback((entry: CustomerLedgerItem) => {
     const date = formatFullDate(entry.date);
@@ -1199,24 +1266,32 @@ export const CustomerListScreen: React.FC = () => {
   }, []);
 
   // Wrap in useCallback so FlatList gets a stable function reference and does not
-  // re-render every visible row whenever unrelated state (e.g. isLoadingLedger) changes.
+  // re-render every visible row whenever unrelated state changes.
   const renderCustomerItem = useCallback(({ item }: { item: Customer }) => {
     const isExpanded = expandedCardId === item.id;
+    const cachedEntry = ledgerCache.get(item.id);
+
+    // ✅ isLoadingLedger is derived per-row, never from a global state boolean.
+    //    A row is "loading" only when it IS expanded AND its data hasn't arrived yet.
+    //    Closed rows always derive false → their props are permanently stable →
+    //    React.memo bails out instantly for every closed row on every render.
+    const isLoadingLedger = isExpanded && !cachedEntry;
+
     return (
       <CustomerRow
         item={item}
         isExpanded={isExpanded}
-        ledgerData={ledgerCache.get(item.id)?.data || EMPTY_LEDGER_ARRAY}
-        isLoadingLedger={isExpanded ? isLoadingLedger : false}
+        ledgerData={cachedEntry?.data || EMPTY_LEDGER_ARRAY}
+        isLoadingLedger={isLoadingLedger}
         areTransactionsChecked={areTransactionsChecked}
-      customersWithTransactions={customersWithTransactions}
-      onToggle={toggleCardExpansion}
-      onDelete={handleDeleteCustomer}
-      onExport={exportCustomerTransactionHistoryToPDF}
-      renderLedgerEntry={renderLedgerEntry}
-    />
+        customersWithTransactions={customersWithTransactions}
+        onToggle={toggleCardExpansion}
+        onDelete={handleDeleteCustomer}
+        onExport={exportCustomerTransactionHistoryToPDF}
+        renderLedgerEntry={renderLedgerEntry}
+      />
     );
-  }, [expandedCardId, ledgerCache, isLoadingLedger, areTransactionsChecked, customersWithTransactions,
+  }, [expandedCardId, ledgerCache, areTransactionsChecked, customersWithTransactions,
       toggleCardExpansion, handleDeleteCustomer, exportCustomerTransactionHistoryToPDF, renderLedgerEntry]);
 
   const displayedCustomers = searchQuery.trim() === '' ? customers : filteredCustomers;
@@ -1530,9 +1605,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     overflow: 'hidden',
+    // minHeight fills the full accordion window so the white card always
+    // stretches to 300px even when there are only 1-2 rows of data.
+    // 300 (accordion) - 12 (marginTop) = 288px
+    minHeight: 288,
   },
   scrollableContent: {
-    maxHeight: 250,
+    // Fixed height = accordion(300) - marginTop(12) - paddingVertical(24) - tableHeader(~36)
+    height: 228,
   },
   tableHeader: {
     flexDirection: 'row',

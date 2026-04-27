@@ -37,7 +37,7 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
   onDismiss,
   onSelectCustomer,
   onCreateCustomer,
-  allowCreateCustomer = true,
+  allowCreateCustomer = true, 
   filterFn,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,7 +11,7 @@ import {
   Text,
 } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
-import Animated from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 import { Trade, Customer, ItemType } from '../types';
 import { theme } from '../theme';
@@ -22,6 +22,143 @@ import { useAppContext } from '../context/AppContext';
 import { InventoryInputDialog } from '../components/InventoryInputDialog';
 import { CustomerSelectionModal } from '../components/CustomerSelectionModal';
 import { AnimatedAccordion } from '../components/AnimatedAccordion';
+
+// ── Stable components defined outside TradeScreen ────────────────────────────
+// Defined here so React.memo can do a proper shallow-prop comparison.
+// If these were defined inside TradeScreen they'd be recreated on every render
+// and memo would never bail out.
+
+const TradeEmptyState = React.memo(() => (
+  <View style={styles.emptyState}>
+    <Icon name="swap-vertical-bold" size={72} color={theme.colors.onSurfaceVariant} />
+    <Text variant="headlineSmall" style={styles.emptyTitle}>
+      No Trades Yet
+    </Text>
+    <Text variant="bodyLarge" style={styles.emptyDescription}>
+      Start by adding your first trade record
+    </Text>
+  </View>
+));
+
+type CustomerGroupRowProps = {
+  item: { customerId: string; customerName: string; trades: Trade[] };
+  isExpanded: boolean;
+  onToggle: (id: string | null) => void;
+  onQuickAdd: (customerId: string, customerName: string) => void;
+  renderTradeItem: ({ item }: { item: Trade }) => React.ReactNode;
+};
+
+const CHEVRON_TIMING = { duration: 250, easing: Easing.bezier(0.25, 0.1, 0.25, 1) };
+
+const CustomerGroupRow = React.memo(({
+  item,
+  isExpanded,
+  onToggle,
+  onQuickAdd,
+  renderTradeItem,
+}: CustomerGroupRowProps) => {
+  const tradeCount = item.trades.length;
+
+  // Totals memoized per-row — only recalculates when this group's trades change
+  const totals = useMemo(() =>
+    item.trades.reduce((acc, trade) => {
+      acc[trade.itemType] = (acc[trade.itemType] || 0) + trade.weight;
+      return acc;
+    }, {} as Record<string, number>),
+  [item.trades]);
+
+  // ✅ Chevron animates on the UI thread via Reanimated shared value.
+  // useSharedValue is held in a ref so it is created exactly once on mount —
+  // calling useSharedValue() directly would re-initialise on every render and
+  // trigger Reanimated strict-mode warnings about writes during render.
+  // The animation is triggered in a useEffect (not inline during render) for
+  // the same reason — writing .value during render is also flagged.
+  const chevronRotationRef = useRef(useSharedValue(isExpanded ? 180 : 0));
+  const chevronRotation = chevronRotationRef.current;
+
+  useEffect(() => {
+    chevronRotation.value = withTiming(isExpanded ? 180 : 0, CHEVRON_TIMING);
+  }, [isExpanded]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
+  return (
+    <View style={styles.customerGroupContainer}>
+      <TouchableOpacity
+        style={styles.customerGroupHeader}
+        onPress={() => onToggle(isExpanded ? null : item.customerId)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.customerGroupLeft}>
+          <View style={styles.customerAvatar}>
+            <Text style={styles.customerAvatarText}>
+              {item.customerName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          <View style={styles.customerGroupInfo}>
+            <Text style={styles.customerGroupName}>{item.customerName}</Text>
+            <Text style={styles.customerGroupMeta}>
+              {tradeCount} trade{tradeCount !== 1 ? 's' : ''}
+              {Object.entries(totals).length > 0 && (
+                <Text style={styles.customerGroupMetaSecondary}>
+                  {' • '}
+                  {Object.entries(totals).map(([type, weight], idx) => (
+                    <Text key={type} style={{ fontFamily: 'Outfit_400Regular' }}>
+                      {idx > 0 && ', '}
+                      {formatItemType(type)}: {type.includes('gold') ? weight.toFixed(3) : weight.toFixed(1)}g
+                    </Text>
+                  ))}
+                </Text>
+              )}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.customerGroupRight}>
+          <TouchableOpacity
+            style={styles.quickAddBtn}
+            onPress={() => onQuickAdd(item.customerId, item.customerName)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Icon name="plus" size={18} color="#fff" />
+          </TouchableOpacity>
+          <Animated.View style={chevronStyle}>
+            <Icon name="chevron-down" size={24} color={theme.colors.onSurfaceVariant} />
+          </Animated.View>
+        </View>
+      </TouchableOpacity>
+
+      <AnimatedAccordion isExpanded={isExpanded}>
+        <ScrollView
+          style={styles.tradesScrollView}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.tradesContainer}>
+            {item.trades.map((trade, index) => (
+              <View key={trade.id} style={{ marginBottom: index < item.trades.length - 1 ? 12 : 0 }}>
+                {renderTradeItem({ item: trade })}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </AnimatedAccordion>
+    </View>
+  );
+});
+
+// Needed by CustomerGroupRow which is defined outside TradeScreen
+const formatItemType = (itemType: string) => {
+  const typeMap: Record<string, string> = {
+    gold999: 'Gold 999',
+    gold995: 'Gold 995',
+    silver: 'Silver',
+    rani: 'Rani',
+    rupu: 'Rupu',
+  };
+  return typeMap[itemType] || itemType;
+};
 
 export const TradeScreen: React.FC = () => {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -103,26 +240,28 @@ export const TradeScreen: React.FC = () => {
     }
   };
 
-  // Group trades by customer
-  const groupedTrades = trades.reduce((acc, trade) => {
-    const customerId = trade.customerId || 'unknown';
-    if (!acc[customerId]) {
-      acc[customerId] = {
-        customerId,
-        customerName: trade.customerName,
-        trades: [],
-      };
-    }
-    acc[customerId].trades.push(trade);
-    return acc;
-  }, {} as Record<string, { customerId: string; customerName: string; trades: Trade[] }>);
+  // Memoized so these expensive reduce+sort don't re-run on every render
+  // (e.g. when the trade dialog opens/closes). Only recomputes when trades changes.
+  const customerGroups = useMemo(() => {
+    const groupedTrades = trades.reduce((acc, trade) => {
+      const customerId = trade.customerId || 'unknown';
+      if (!acc[customerId]) {
+        acc[customerId] = {
+          customerId,
+          customerName: trade.customerName,
+          trades: [],
+        };
+      }
+      acc[customerId].trades.push(trade);
+      return acc;
+    }, {} as Record<string, { customerId: string; customerName: string; trades: Trade[] }>);
 
-  const customerGroups = Object.values(groupedTrades).sort((a, b) => {
-    // Sort by most recent trade date
-    const aLatest = Math.max(...a.trades.map(t => new Date(t.date).getTime()));
-    const bLatest = Math.max(...b.trades.map(t => new Date(t.date).getTime()));
-    return bLatest - aLatest;
-  });
+    return Object.values(groupedTrades).sort((a, b) => {
+      const aLatest = Math.max(...a.trades.map(t => new Date(t.date).getTime()));
+      const bLatest = Math.max(...b.trades.map(t => new Date(t.date).getTime()));
+      return bLatest - aLatest;
+    });
+  }, [trades]);
 
   const handleDeleteTrade = async (trade: Trade) => {
     showAlert(
@@ -387,23 +526,12 @@ export const TradeScreen: React.FC = () => {
     }
   };
 
-  const formatItemType = (itemType: string) => {
-    const typeMap: Record<string, string> = {
-      gold999: 'Gold 999',
-      gold995: 'Gold 995',
-      silver: 'Silver',
-      rani: 'Rani',
-      rupu: 'Rupu',
-    };
-    return typeMap[itemType] || itemType;
-  };
-
   const getCardVariant = (itemType: string) => {
     const isGold = itemType.includes('gold') || itemType === 'rani';
     return isGold ? 'gold' : 'silver';
   };
 
-  const renderTradeItem = ({ item }: { item: Trade }) => {
+  const renderTradeItem = useCallback(({ item }: { item: Trade }) => {
     const variant = getCardVariant(item.itemType);
     const isGold = variant === 'gold';
     
@@ -458,98 +586,20 @@ export const TradeScreen: React.FC = () => {
 
       </View>
     );
-  };
-
-  // Empty State Component
-  const EmptyState: React.FC = () => (
-    <View style={styles.emptyState}>
-      <Icon name="swap-vertical-bold" size={72} color={theme.colors.onSurfaceVariant} />
-      <Text variant="headlineSmall" style={styles.emptyTitle}>
-        No Trades Yet
-      </Text>
-      <Text variant="bodyLarge" style={styles.emptyDescription}>
-        Start by adding your first trade record
-      </Text>
-    </View>
-  );
+  }, [handleDeleteTrade, handleAddTrade]);
 
   // Customer Group Header Component
-  const renderCustomerGroup = ({ item }: { item: { customerId: string; customerName: string; trades: Trade[] } }) => {
-    const isExpanded = expandedCustomerId === item.customerId;
-    const tradeCount = item.trades.length;
-    
-    // Calculate total weight by metal type
-    const totals = item.trades.reduce((acc, trade) => {
-      const key = trade.itemType;
-      if (!acc[key]) acc[key] = 0;
-      acc[key] += trade.weight;
-      return acc;
-    }, {} as Record<string, number>);
-
+  const renderCustomerGroup = useCallback(({ item }: { item: { customerId: string; customerName: string; trades: Trade[] } }) => {
     return (
-      <View style={styles.customerGroupContainer}>
-        <TouchableOpacity
-          style={styles.customerGroupHeader}
-          onPress={() => setExpandedCustomerId(isExpanded ? null : item.customerId)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.customerGroupLeft}>
-            <View style={styles.customerAvatar}>
-              <Text style={styles.customerAvatarText}>
-                {item.customerName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.customerGroupInfo}>
-              <Text style={styles.customerGroupName}>{item.customerName}</Text>
-              <Text style={styles.customerGroupMeta}>
-                {tradeCount} trade{tradeCount !== 1 ? 's' : ''}
-                {Object.entries(totals).length > 0 && (
-                  <Text style={styles.customerGroupMetaSecondary}>
-                    {' • '}
-                    {Object.entries(totals).map(([type, weight], idx) => (
-                      <Text key={type}>
-                        {idx > 0 && ', '}
-                        {formatItemType(type)}: {type.includes('gold') ? weight.toFixed(3) : weight.toFixed(1)}g
-                      </Text>
-                    ))}
-                  </Text>
-                )}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.customerGroupRight}>
-            {/* Quick-add button for this customer */}
-            <TouchableOpacity
-              style={styles.quickAddBtn}
-              onPress={() => handleQuickAddTrade(item.customerId, item.customerName)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Icon name="plus" size={18} color="#fff" />
-            </TouchableOpacity>
-            <Animated.View style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}>
-              <Icon name="chevron-down" size={24} color={theme.colors.onSurfaceVariant} />
-            </Animated.View>
-          </View>
-        </TouchableOpacity>
-        
-        <AnimatedAccordion isExpanded={isExpanded}>
-          <ScrollView
-            style={styles.tradesScrollView}
-            nestedScrollEnabled={true}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.tradesContainer}>
-              {item.trades.map((trade, index) => (
-                <View key={trade.id} style={{ marginBottom: index < item.trades.length - 1 ? 12 : 0 }}>
-                  {renderTradeItem({ item: trade })}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </AnimatedAccordion>
-      </View>
+      <CustomerGroupRow
+        item={item}
+        isExpanded={expandedCustomerId === item.customerId}
+        onToggle={setExpandedCustomerId}
+        onQuickAdd={handleQuickAddTrade}
+        renderTradeItem={renderTradeItem}
+      />
     );
-  };
+  }, [expandedCustomerId, handleQuickAddTrade, renderTradeItem]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -564,7 +614,7 @@ export const TradeScreen: React.FC = () => {
 
       <View style={styles.content}>
         {trades.length === 0 ? (
-          <EmptyState />
+          <TradeEmptyState />
         ) : (
           <FlatList
             data={customerGroups}
@@ -840,6 +890,7 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
   },
   customerGroupMetaSecondary: {
+    fontFamily: 'Outfit_400Regular',
     opacity: 0.7,
   },
   customerGroupRight: {

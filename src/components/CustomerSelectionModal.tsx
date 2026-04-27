@@ -243,6 +243,8 @@ export const CustomerSelectionModal: React.FC<CustomerSelectionModalProps> = ({
         else if (type.includes('gold')) formattedWeight = Math.abs(balance).toFixed(3);
         else formattedWeight = Math.floor(Math.abs(balance)).toString();
 
+        if (parseFloat(formattedWeight) === 0) return;
+
         const label = `${displayName} ${formattedWeight}g`;
 
         if (balance > 0) {

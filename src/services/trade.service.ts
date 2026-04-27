@@ -1,10 +1,6 @@
-import * as BackgroundFetch from 'expo-background-fetch';
 import { Trade } from '../types';
 import { DatabaseService } from './database.sqlite';
 import { SettingsService } from './settings.service';
-
-// Background task constants
-const TRADE_CLEANUP_TASK = 'trade-cleanup-task';
 
 export class TradeService {
   // Get all trades

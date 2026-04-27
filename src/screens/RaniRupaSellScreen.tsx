@@ -52,7 +52,6 @@ export const RaniRupaSellScreen: React.FC = () => {
   // Format date for display in DD/MM/YYYY format
   const formatDateDisplay = (date: Date): string => {
     const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     return `${day} ${monthNames[date.getMonth()]} ${year}`;
@@ -288,8 +287,6 @@ export const RaniRupaSellScreen: React.FC = () => {
       // Create transaction entries
       const entries: TransactionEntry[] = [];
       const cut = parseFloat(cutValue) || 0;
-      const hasCut = cut > 0;
-      const itemType = selectedType === 'rani' ? (hasCut ? 'gold999' : 'gold995') : 'silver';
       
       // Create purchase entries for each selected item (metal-only)
       selectedItems.forEach(itemId => {
@@ -315,8 +312,6 @@ export const RaniRupaSellScreen: React.FC = () => {
         }
       });
 
-      const allStock = await RaniRupaStockService.getAllStock();
-      
       const missingItems: string[] = [];
       for (const itemId of selectedItems) {
         const item = inventoryItems.find(i => i.id === itemId);

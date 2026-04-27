@@ -1,15 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, BackHandler, Alert, Platform, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, BackHandler, Platform, TouchableOpacity } from 'react-native';
 import {
-  Surface,
   Text,
   Button,
-  Card,
   IconButton,
-  FAB,
-  Divider,
   TextInput,
-  HelperText,
   Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -93,7 +88,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   // Format date for display in DD Mon YYYY format
   const formatDateDisplay = (date: Date): string => {
     const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     return `${day} ${monthNames[date.getMonth()]} ${year}`;
@@ -464,7 +458,6 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   }
 
   const renderEntryCard = (entry: TransactionEntry, index: number) => {
-
 
     return (
     <View key={entry.id} style={styles.entryCard}>

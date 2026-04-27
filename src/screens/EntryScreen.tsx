@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Portal,
   Modal,
-  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -298,9 +297,10 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     }
 
     // For metal-only transactions, price is not required
+    const weightVal = parseFloat(weight);
     const hasRequiredFields = metalOnly 
-      ? weight.trim() !== '' 
-      : weight.trim() !== '' && price.trim() !== '';
+      ? weight.trim() !== '' && weightVal !== 0
+      : weight.trim() !== '' && weightVal !== 0 && price.trim() !== '';
     
     if (itemType === 'rani' || itemType === 'rupu') {
       const hasTouch = touch.trim() !== '';

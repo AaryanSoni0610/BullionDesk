@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   BackHandler,
   TouchableOpacity,
   TextInput,
+  InteractionManager,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -47,6 +48,151 @@ interface CustomerLedgerItem {
   };
 }
 
+const EMPTY_LEDGER_ARRAY: CustomerLedgerItem[] = [];
+// ── Memoized row component ────────────────────────────────────────────────────
+// Defined outside the screen so React.memo can do a shallow-prop comparison.
+// When the user taps a customer, only THAT row's props change (isExpanded /
+// ledgerData). Every other row bails out immediately → zero wasted re-renders.
+type CustomerRowProps = {
+  item: Customer;
+  isExpanded: boolean;
+  ledgerData: any[];
+  isLoadingLedger: boolean;
+  areTransactionsChecked: boolean;
+  customersWithTransactions: Set<string>;
+  onToggle: (id: string) => void;
+  onDelete: (c: Customer) => void;
+  onExport: (c: Customer) => void;
+  renderLedgerEntry: (entry: any) => React.ReactNode;
+};
+
+const CustomerRow = memo(({
+  item,
+  isExpanded,
+  ledgerData,
+  isLoadingLedger,
+  areTransactionsChecked,
+  customersWithTransactions,
+  onToggle,
+  onDelete,
+  onExport,
+  renderLedgerEntry,
+}: CustomerRowProps) => {
+  // Badge logic
+  const badges: React.ReactNode[] = [];
+
+  if (item.balance > 0) {
+    badges.push(
+      <View key="money-bal" style={[styles.badge, styles.badgeGreen]}>
+        <Text style={styles.badgeTextGreen}>Bal: ₹{formatIndianNumber(item.balance)}</Text>
+      </View>
+    );
+  } else if (item.balance < 0) {
+    badges.push(
+      <View key="money-debt" style={[styles.badge, styles.badgeRed]}>
+        <Text style={styles.badgeTextRed}>Debt: ₹{formatIndianNumber(Math.abs(item.balance))}</Text>
+      </View>
+    );
+  }
+
+  if (item.metalBalances) {
+    Object.entries(item.metalBalances).forEach(([type, balance]) => {
+      if (balance && Math.abs(balance) > 0.001) {
+        const isGold = type.includes('gold') || type === 'rani';
+        const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
+        if (parseFloat(formattedBalance.toString()) === 0) return;
+
+        const typeName = type === 'gold999' ? 'Gold999' :
+          type === 'gold995' ? 'Gold995' :
+            type === 'rani' ? 'Rani' :
+              type === 'silver' ? 'Silver' :
+                type === 'rupu' ? 'Rupu' : type;
+
+        const label = `${typeName} ${formattedBalance}g`;
+
+        if (balance < 0) {
+          badges.push(
+            <View key={`metal-${type}`} style={[styles.badge, styles.badgeRed]}>
+              <Text style={styles.badgeTextRed}>Debt: {label}</Text>
+            </View>
+          );
+        } else {
+          badges.push(
+            <View key={`metal-${type}`} style={[styles.badge, styles.badgeMetal]}>
+              <Text style={styles.badgeTextMetal}>Bal: {label}</Text>
+            </View>
+          );
+        }
+      }
+    });
+  }
+
+  const initials = item.name
+    .split(' ')
+    .map(w => w.charAt(0))
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  return (
+    <View style={styles.customerItemContainer}>
+      <TouchableOpacity
+        style={styles.customerMain}
+        onPress={() => onToggle(item.id)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.avatarContainer}>
+          <Text style={styles.avatarText}>{initials}</Text>
+        </View>
+
+        <View style={styles.infoContainer}>
+          <Text style={styles.customerName}>{item.name}</Text>
+          <View style={styles.statusRow}>{badges}</View>
+        </View>
+
+        <View style={styles.actionsContainer}>
+          {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
+            <TouchableOpacity onPress={() => onDelete(item)} style={styles.actionIconBtn}>
+              <MaterialCommunityIcons name="delete-outline" size={22} color="#BA1A1A" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => onExport(item)} style={styles.actionIconBtn}>
+            <MaterialCommunityIcons name="export-variant" size={20} color="#44474F" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onToggle(item.id)} style={styles.actionIconBtn}>
+            <MaterialCommunityIcons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color="#44474F" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+
+      <AnimatedAccordion isExpanded={isExpanded}>
+        <View style={styles.expandedView}>
+          <ScrollView style={styles.scrollableContent} nestedScrollEnabled={true}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, styles.colDate]}>Date</Text>
+              <Text style={[styles.th, styles.colMoney]}>Money</Text>
+              <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
+            </View>
+
+            {isLoadingLedger && ledgerData.length === 0 ? (
+              <Text style={styles.noLedgerData}>Loading transactions...</Text>
+            ) : ledgerData.length === 0 ? (
+              <Text style={styles.noLedgerData}>No transactions found</Text>
+            ) : (
+              // Render cap: 20 rows max to keep mount cost low
+              ledgerData.slice(0, 20).map((entry, index) => (
+                <React.Fragment key={index}>
+                  {renderLedgerEntry(entry)}
+                </React.Fragment>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </AnimatedAccordion>
+    </View>
+  );
+});
+
 export const CustomerListScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -61,7 +207,8 @@ export const CustomerListScreen: React.FC = () => {
   const [deleteAlertMessage, setDeleteAlertMessage] = useState('');
   const [deleteAlertIcon, setDeleteAlertIcon] = useState<string | undefined>(undefined);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
-
+  const [isLoadingLedger, setIsLoadingLedger] = useState(false);
+  
   // Quick-add state
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showBalancesDialog, setShowBalancesDialog] = useState(false);
@@ -371,13 +518,10 @@ export const CustomerListScreen: React.FC = () => {
     }
   };
 
-  const exportCustomerTransactionHistoryToPDF = async (customer: Customer) => {
+  const exportCustomerTransactionHistoryToPDF = useCallback(async (customer: Customer) => {
     try {
-      // Fetch ledger data if not cached
-      let ledgerData = ledgerCache.get(customer.id)?.data;
-      if (!ledgerData) {
-        ledgerData = await fetchCustomerLedger(customer.id);
-      }
+      // ALWAYS fetch detailed data explicitly for the PDF, ignoring UI cache
+      const ledgerData = await fetchDetailedLedgerForPDF(customer.id);
 
       // Generate HTML for PDF
       const htmlContent = `
@@ -584,11 +728,107 @@ export const CustomerListScreen: React.FC = () => {
       console.error('Error generating PDF:', error);
       setError('Failed to generate PDF');
     }
-  };
+  }, []);
 
+  // ── Fast UI fetch: uses only LedgerService (no TransactionService) ──────────
+  // The ledger_entries table stores pureWeight in its weight column, so no
+  // touch/cut math is needed here. Do NOT add TransactionService to this path.
   const fetchCustomerLedger = async (customerId: string): Promise<CustomerLedgerItem[]> => {
+    setIsLoadingLedger(true);
     const now = Date.now();
 
+    try {
+      // 1. Fetch ONLY Ledger and RateCuts - Lightning Fast!
+      const [ledgerEntries, rateCuts] = await Promise.all([
+        LedgerService.getLedgerEntriesByCustomerId(customerId),
+        RateCutService.getRateCutHistory(customerId, 1000, 0)
+      ]);
+
+      const groupedItems = new Map<string, CustomerLedgerItem>();
+
+      // 2. Process ledger entries directly
+      ledgerEntries.forEach(entry => {
+        // Fast date grouping: slice 'YYYY-MM-DDTHH:mm' to group by minute
+        const minuteString = entry.date.substring(0, 16);
+        const key = `${entry.transactionId}_${minuteString}`;
+
+        if (!groupedItems.has(key)) {
+          groupedItems.set(key, {
+            id: key,
+            transactionId: entry.transactionId,
+            date: entry.date,
+            receivedAmount: 0,
+            givenAmount: 0,
+            entries: [],
+            note: undefined // Not displayed in UI accordion
+          });
+        }
+
+        const group = groupedItems.get(key)!;
+
+        if (entry.itemType === 'money') {
+          if (entry.type === 'receive') {
+            group.receivedAmount += entry.amount || 0;
+          } else if (entry.type === 'give') {
+            group.givenAmount += entry.amount || 0;
+          }
+        } else {
+          // Metal entry: entry.weight IS already the pureWeight from sync logic.
+          // Do NOT apply touch/cut math here — that would double-shrink the value.
+          group.entries.push({
+            type: entry.type,
+            itemType: entry.itemType,
+            weight: entry.weight,
+          });
+        }
+      });
+
+      const ledgerItems = Array.from(groupedItems.values());
+
+      // 3. Add Rate Cuts and Sort
+      const rateCutItems: CustomerLedgerItem[] = rateCuts.map(rc => ({
+        id: rc.id,
+        transactionId: rc.id,
+        date: new Date(rc.cut_date).toISOString(),
+        receivedAmount: 0,
+        givenAmount: 0,
+        entries: [],
+        isRateCut: true,
+        rateCutData: {
+          metalType: rc.metal_type,
+          weight: rc.weight_cut,
+          rate: rc.rate,
+          totalAmount: rc.total_amount
+        }
+      }));
+
+      const allItems = [...ledgerItems, ...rateCutItems];
+      const sortedItems = allItems.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA; // Newest first
+      });
+
+      // Prevent memory bloat: cap cache at 10 customers
+      if (ledgerCache.size > 10) {
+        const oldestKey = ledgerCache.keys().next().value;
+        if (oldestKey) ledgerCache.delete(oldestKey);
+      }
+
+      setLedgerCache(prev => new Map(prev.set(customerId, { data: sortedItems, timestamp: now })));
+      setIsLoadingLedger(false);
+      return sortedItems;
+    } catch (error) {
+      setIsLoadingLedger(false);
+      console.error('Error fetching customer ledger:', error);
+      return [];
+    }
+  };
+
+  // ── Heavy PDF fetch: uses TransactionService for full gross/touch/cut detail ─
+  // This is the ONLY place TransactionService should be called in this screen.
+  // It intentionally bypasses the UI cache so it never pollutes it.
+  const fetchDetailedLedgerForPDF = async (customerId: string): Promise<CustomerLedgerItem[]> => {
     try {
       const [ledgerEntries, customerTransactions, rateCuts] = await Promise.all([
         LedgerService.getLedgerEntriesByCustomerId(customerId),
@@ -599,12 +839,11 @@ export const CustomerListScreen: React.FC = () => {
       const transactionMap = new Map(customerTransactions.map(t => [t.id, t]));
       const groupedItems = new Map<string, CustomerLedgerItem>();
 
-      // Process ledger entries
       ledgerEntries.forEach(entry => {
         // Group by transactionId + formatted date (rounded to minute)
         // This ensures entries created at the same time (same minute) are grouped together
-        const formattedDate = formatFullDate(entry.date);
-        const key = `${entry.transactionId}_${formattedDate}`;
+        const formattedTime = entry.date.substring(0, 16);
+        const key = `${entry.transactionId}_${formattedTime}`;
 
         if (!groupedItems.has(key)) {
           groupedItems.set(key, {
@@ -627,16 +866,12 @@ export const CustomerListScreen: React.FC = () => {
             group.givenAmount += entry.amount || 0;
           }
         } else {
-          // It's a metal entry. 
-          // If this group corresponds to the transaction date, we can populate entries from the transaction.
           const transaction = transactionMap.get(entry.transactionId);
           if (transaction && transaction.date === entry.date) {
-            // Only populate once
             if (group.entries.length === 0) {
               group.entries = transaction.entries.filter(e => e.itemType !== 'money');
             }
           } else {
-            // Fallback if dates don't match exactly or transaction missing
             group.entries.push({
               type: entry.type,
               itemType: entry.itemType,
@@ -648,10 +883,8 @@ export const CustomerListScreen: React.FC = () => {
         }
       });
 
-      // Convert map to array
       const ledgerItems = Array.from(groupedItems.values());
 
-      // Add rate cut records as separate items
       const rateCutItems: CustomerLedgerItem[] = rateCuts.map(rc => ({
         id: rc.id,
         transactionId: rc.id,
@@ -662,29 +895,25 @@ export const CustomerListScreen: React.FC = () => {
         isRateCut: true,
         rateCutData: {
           metalType: rc.metal_type,
-          weight: rc.weight_cut, // Keep signed value to determine balance vs debt
+          weight: rc.weight_cut,
           rate: rc.rate,
           totalAmount: rc.total_amount
         }
       }));
 
-      // Combine and sort all items
       const allItems = [...ledgerItems, ...rateCutItems];
-      const sortedItems = allItems.sort((a, b) => {
+      return allItems.sort((a, b) => {
         const dateA = new Date(a.date).getTime();
         const dateB = new Date(b.date).getTime();
-        return dateB - dateA; // Newest first
+        return dateB - dateA;
       });
-
-      setLedgerCache(prev => new Map(prev.set(customerId, { data: sortedItems, timestamp: now })));
-      return sortedItems;
     } catch (error) {
-      console.error('Error fetching customer ledger:', error);
+      console.error('Error fetching detailed ledger for PDF:', error);
       return [];
     }
   };
 
-  const handleDeleteCustomer = async (customer: Customer) => {
+  const handleDeleteCustomer = useCallback(async (customer: Customer) => {
     try {
       // Prevent deletion of Expense(Kharch) account
       if (customer.name === 'Expense(Kharch)') {
@@ -702,7 +931,7 @@ export const CustomerListScreen: React.FC = () => {
       console.error('Error checking customer transactions:', error);
       setError('Failed to check customer transactions');
     }
-  };
+  }, []);
 
   const handleDeleteConfirm = async () => {
     if (!customerToDelete) return;
@@ -789,18 +1018,22 @@ export const CustomerListScreen: React.FC = () => {
     setPendingCustomerName('');
   };
 
-  const toggleCardExpansion = async (customerId: string) => {
+  const toggleCardExpansion = useCallback((customerId: string) => {
     if (expandedCardId === customerId) {
-      // Collapse
       setExpandedCardId(null);
     } else {
-      // Pre-fetch ledger data, then open
-      await fetchCustomerLedger(customerId);
+      // 1. Flip the accordion open immediately so the animation starts on this frame.
       setExpandedCardId(customerId);
-    }
-  };
 
-  const renderLedgerEntry = (entry: CustomerLedgerItem) => {
+      // 2. Defer the DB fetch until AFTER all pending interactions (animations) finish.
+      //    This ensures the JS thread is free to drive the accordion animation at 60fps.
+      InteractionManager.runAfterInteractions(() => {
+        fetchCustomerLedger(customerId);
+      });
+    }
+  }, [expandedCardId, fetchCustomerLedger, ledgerCache]);
+
+  const renderLedgerEntry = useCallback((entry: CustomerLedgerItem) => {
     const date = formatFullDate(entry.date);
 
     // Handle rate cut entries
@@ -903,33 +1136,28 @@ export const CustomerListScreen: React.FC = () => {
         let details = '';
 
         if (e.itemType === 'rani' || e.itemType === 'rupu') {
-          const weight = e.weight || 0;
-          const touch = e.touch || 100;
-          const cut = e.cut || 0;
-          const effectiveTouch = e.itemType === 'rani' ? Math.max(0, touch - cut) : touch;
-          const pureWeight = (weight * effectiveTouch) / 100;
+          // entry.weight is ALREADY the pureWeight stored by LedgerService.syncMetalLedgerEntries.
+          // Do NOT apply touch/cut math — the ledger already has the final value.
+          const pureWeight = e.weight || 0;
 
+          let detailsStr = '';
           if (e.itemType === 'rani') {
             if (isSell) {
-              // 3 decimal precision
-              details = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
+              detailsStr = `${formatPureGoldPrecise(pureWeight).toFixed(3)}g`;
             } else {
-              // Purchase: 2 decimal precision (X.YZ0)
-              details = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
+              detailsStr = `${(Math.floor(pureWeight * 100) / 100).toFixed(3)}g`;
             }
           } else {
             // Rupu
             if (isSell) {
-              // Use precision from raniRupuBulkSell screen (usually 1 decimal for silver)
-              details = `${formatPureSilver(pureWeight).toFixed(1)}g`;
+              detailsStr = `${formatPureSilver(pureWeight).toFixed(1)}g`;
             } else {
-              // Purchase: same as purchase entry in entry screen (integer)
-              details = `${formatPureSilver(pureWeight)}g`;
+              detailsStr = `${formatPureSilver(pureWeight)}g`;
             }
           }
 
           const typeName = e.itemType === 'rani' ? 'Rani' : 'Rupu';
-          details = `${details}\n${typeName}`;
+          details = `${detailsStr}\n${typeName}`;
 
         } else {
           // Gold/Silver
@@ -968,121 +1196,28 @@ export const CustomerListScreen: React.FC = () => {
         </View>
       </View>
     );
-  };
+  }, []);
 
-  const renderCustomerItem = ({ item }: { item: Customer }) => {
+  // Wrap in useCallback so FlatList gets a stable function reference and does not
+  // re-render every visible row whenever unrelated state (e.g. isLoadingLedger) changes.
+  const renderCustomerItem = useCallback(({ item }: { item: Customer }) => {
     const isExpanded = expandedCardId === item.id;
-    const ledgerData = ledgerCache.get(item.id)?.data || [];
-
-    // Badge Logic
-    const badges: React.ReactNode[] = [];
-
-    // Money Balance
-    if (item.balance > 0) {
-      badges.push(
-        <View key="money-bal" style={[styles.badge, styles.badgeGreen]}>
-          <Text style={styles.badgeTextGreen}>Bal: ₹{formatIndianNumber(item.balance)}</Text>
-        </View>
-      );
-    } else if (item.balance < 0) {
-      badges.push(
-        <View key="money-debt" style={[styles.badge, styles.badgeRed]}>
-          <Text style={styles.badgeTextRed}>Debt: ₹{formatIndianNumber(Math.abs(item.balance))}</Text>
-        </View>
-      );
-    }
-
-    // Metal Balances
-    if (item.metalBalances) {
-      Object.entries(item.metalBalances).forEach(([type, balance]) => {
-        if (balance && Math.abs(balance) > 0.001) {
-          const isGold = type.includes('gold') || type === 'rani';
-          const formattedBalance = isGold ? Math.abs(balance).toFixed(3) : Math.floor(Math.abs(balance));
-
-          const typeName = type === 'gold999' ? 'Gold999' :
-            type === 'gold995' ? 'Gold995' :
-              type === 'rani' ? 'Rani' :
-                type === 'silver' ? 'Silver' :
-                  type === 'rupu' ? 'Rupu' : type;
-
-          const label = `${typeName} ${formattedBalance}g`;
-
-          if (balance < 0) {
-            // Debt
-            badges.push(
-              <View key={`metal-${type}`} style={[styles.badge, styles.badgeRed]}>
-                <Text style={styles.badgeTextRed}>Debt: {label}</Text>
-              </View>
-            );
-          } else {
-            // Balance (Credit)
-            badges.push(
-              <View key={`metal-${type}`} style={[styles.badge, styles.badgeMetal]}>
-                <Text style={styles.badgeTextMetal}>Bal: {label}</Text>
-              </View>
-            );
-          }
-        }
-      });
-    }
-
     return (
-      <View style={styles.customerItemContainer}>
-        <TouchableOpacity
-          style={styles.customerMain}
-          onPress={() => toggleCardExpansion(item.id)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.avatarContainer}>
-            <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
-          </View>
-
-          <View style={styles.infoContainer}>
-            <Text style={styles.customerName}>{item.name}</Text>
-            <View style={styles.statusRow}>
-              {badges}
-            </View>
-          </View>
-
-          <View style={styles.actionsContainer}>
-            {areTransactionsChecked && !customersWithTransactions.has(item.id) && (
-              <TouchableOpacity onPress={() => handleDeleteCustomer(item)} style={styles.actionIconBtn}>
-                <MaterialCommunityIcons name="delete-outline" size={22} color="#BA1A1A" />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => exportCustomerTransactionHistoryToPDF(item)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name="export-variant" size={20} color="#44474F" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => toggleCardExpansion(item.id)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#44474F" />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-
-        <AnimatedAccordion isExpanded={isExpanded}>
-          <View style={styles.expandedView}>
-            <ScrollView style={styles.scrollableContent} nestedScrollEnabled={true}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.th, styles.colDate]}>Date</Text>
-                <Text style={[styles.th, styles.colMoney]}>Money</Text>
-                <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
-              </View>
-
-              {ledgerData.length === 0 ? (
-                <Text style={styles.noLedgerData}>No transactions found</Text>
-              ) : (
-                ledgerData.map((entry, index) => (
-                  <React.Fragment key={index}>
-                    {renderLedgerEntry(entry)}
-                  </React.Fragment>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </AnimatedAccordion>
-      </View>
+      <CustomerRow
+        item={item}
+        isExpanded={isExpanded}
+        ledgerData={ledgerCache.get(item.id)?.data || EMPTY_LEDGER_ARRAY}
+        isLoadingLedger={isExpanded ? isLoadingLedger : false}
+        areTransactionsChecked={areTransactionsChecked}
+      customersWithTransactions={customersWithTransactions}
+      onToggle={toggleCardExpansion}
+      onDelete={handleDeleteCustomer}
+      onExport={exportCustomerTransactionHistoryToPDF}
+      renderLedgerEntry={renderLedgerEntry}
+    />
     );
-  };
+  }, [expandedCardId, ledgerCache, isLoadingLedger, areTransactionsChecked, customersWithTransactions,
+      toggleCardExpansion, handleDeleteCustomer, exportCustomerTransactionHistoryToPDF, renderLedgerEntry]);
 
   const displayedCustomers = searchQuery.trim() === '' ? customers : filteredCustomers;
 
@@ -1109,6 +1244,16 @@ export const CustomerListScreen: React.FC = () => {
             value={searchQuery}
             style={styles.searchInput}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <MaterialCommunityIcons
+                name="close-circle"
+                size={24}
+                color="#44474F"
+                style={{ marginRight: -4 }}
+              />
+            </TouchableOpacity>
+          )}
         </View>
         <TouchableOpacity style={styles.exportBtn} onPress={exportCustomersToPDF}>
           <MaterialCommunityIcons name="export-variant" size={24} color="#1B1B1F" />
@@ -1288,7 +1433,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     bottom: 36,
-    right: 44,
+    right: 36,
     width: 56,
     height: 56,
     borderRadius: 28,

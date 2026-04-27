@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList, ScrollView } from 'react-native';
+import { View, StyleSheet, BackHandler, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';

@@ -446,8 +446,8 @@ export default function App() {
         await BackupService.performAutoBackup();
       }
 
-      // Purge recycle-bin entries that are more than 15 days old
-      await TransactionService.cleanupOldDeletedTransactions();
+      // Start background process to purge recycle-bin entries that are more than 15 days old
+      TransactionService.startCleanupBackgroundProcess();
     };
 
     initializeServices();

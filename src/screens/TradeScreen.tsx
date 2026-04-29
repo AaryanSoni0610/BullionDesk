@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -73,8 +73,7 @@ const CustomerGroupRow = React.memo(({
   // trigger Reanimated strict-mode warnings about writes during render.
   // The animation is triggered in a useEffect (not inline during render) for
   // the same reason — writing .value during render is also flagged.
-  const chevronRotationRef = useRef(useSharedValue(isExpanded ? 180 : 0));
-  const chevronRotation = chevronRotationRef.current;
+  const chevronRotation = useSharedValue(isExpanded ? 180 : 0);
 
   useEffect(() => {
     chevronRotation.value = withTiming(isExpanded ? 180 : 0, CHEVRON_TIMING);
@@ -130,18 +129,20 @@ const CustomerGroupRow = React.memo(({
       </TouchableOpacity>
 
       <AnimatedAccordion isExpanded={isExpanded}>
+        <View style={styles.accordionDivider} />
         <ScrollView
           style={styles.tradesScrollView}
+          // 1. Move padding to contentContainerStyle so it calculates scroll height correctly
+          contentContainerStyle={styles.tradesContainer} 
           nestedScrollEnabled={true}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.tradesContainer}>
-            {item.trades.map((trade, index) => (
-              <View key={trade.id} style={{ marginBottom: index < item.trades.length - 1 ? 12 : 0 }}>
-                {renderTradeItem({ item: trade })}
-              </View>
-            ))}
-          </View>
+          {item.trades.map((trade, index) => (
+            // 2. Give EVERY item a consistent bottom margin so the last one doesn't get clipped
+            <View key={trade.id} style={{ marginBottom: 12 }}>
+              {renderTradeItem({ item: trade })}
+            </View>
+          ))}
         </ScrollView>
       </AnimatedAccordion>
     </View>
@@ -622,6 +623,13 @@ export const TradeScreen: React.FC = () => {
             keyExtractor={item => item.customerId}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            
+            // ── PERFORMANCE PROPS ──
+            initialNumToRender={10} 
+            maxToRenderPerBatch={10} 
+            windowSize={11} 
+            removeClippedSubviews={false} 
+            updateCellsBatchingPeriod={10} 
           />
         )}
       </View>
@@ -697,10 +705,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: 16,
     paddingBottom: 80,
   },
   tradeCard: {
+    marginHorizontal: 6,
     borderRadius: 32,
     padding: 24,
     position: 'relative',
@@ -836,25 +844,23 @@ const styles = StyleSheet.create({
   },
   // Customer Group Styles
   customerGroupContainer: {
-    marginBottom: 12,
-    backgroundColor: theme.colors.surface,
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E2E5',
+    backgroundColor: theme.colors.background,
   },
   customerGroupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.outline + '20',
-    borderTopColor: theme.colors.outline + '20',
-    borderTopWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  accordionDivider: {
+    height: 1,
+    backgroundColor: '#E0E2E5', // Matches outline color
+    width: '92.5%',
+    alignSelf: 'center',
+    marginBottom: 4,
   },
   customerGroupLeft: {
     flexDirection: 'row',
@@ -911,6 +917,8 @@ const styles = StyleSheet.create({
   },
   tradesContainer: {
     backgroundColor: theme.colors.surface,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 100, // Extra clearance at the bottom
   },
 });

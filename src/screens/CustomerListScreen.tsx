@@ -167,26 +167,28 @@ const CustomerRow = memo(({
 
       <AnimatedAccordion isExpanded={isExpanded}>
         <View style={styles.expandedView}>
-          <ScrollView style={styles.scrollableContent} nestedScrollEnabled={true}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, styles.colDate]}>Date</Text>
-              <Text style={[styles.th, styles.colMoney]}>Money</Text>
-              <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
-            </View>
+          {isExpanded && (
+            <ScrollView style={styles.scrollableContent} nestedScrollEnabled={true}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th, styles.colDate]}>Date</Text>
+                <Text style={[styles.th, styles.colMoney]}>Money</Text>
+                <Text style={[styles.th, styles.colBullion]}>Bullion</Text>
+              </View>
 
-            {isLoadingLedger && ledgerData.length === 0 ? (
-              <Text style={styles.noLedgerData}>Loading transactions...</Text>
-            ) : ledgerData.length === 0 ? (
-              <Text style={styles.noLedgerData}>No transactions found</Text>
-            ) : (
-              // Render cap: 20 rows max to keep mount cost low
-              ledgerData.slice(0, 20).map((entry, index) => (
-                <React.Fragment key={index}>
-                  {renderLedgerEntry(entry)}
-                </React.Fragment>
-              ))
-            )}
-          </ScrollView>
+              {isLoadingLedger && ledgerData.length === 0 ? (
+                <Text style={styles.noLedgerData}>Loading transactions...</Text>
+              ) : ledgerData.length === 0 ? (
+                <Text style={styles.noLedgerData}>No transactions found</Text>
+              ) : (
+                // Render cap: 20 rows max to keep mount cost low
+                ledgerData.slice(0, 20).map((entry, index) => (
+                  <React.Fragment key={index}>
+                    {renderLedgerEntry(entry)}
+                  </React.Fragment>
+                ))
+              )}
+            </ScrollView>
+          )}
         </View>
       </AnimatedAccordion>
     </View>
@@ -306,16 +308,6 @@ export const CustomerListScreen: React.FC = () => {
       };
     }, [navigateToSettings])
   );
-
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(word => word.charAt(0))
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
 
   const exportCustomersToPDF = async () => {
     try {
@@ -1344,7 +1336,12 @@ export const CustomerListScreen: React.FC = () => {
             renderItem={renderCustomerItem}
             keyExtractor={item => item.id}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 40 }}
+            contentContainerStyle={{ paddingBottom: 100 }}
+            initialNumToRender={15}
+            maxToRenderPerBatch={15}
+            windowSize={11}
+            removeClippedSubviews={false}
+            updateCellsBatchingPeriod={25}
             ListEmptyComponent={
               <Text style={styles.noResults}>
                 {searchQuery.trim() !== '' ? 'No customers found' : 'No customers yet'}

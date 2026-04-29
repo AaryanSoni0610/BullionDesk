@@ -18,6 +18,70 @@ const hasMetalBalance = (customer: Customer) => {
          (Math.abs(customer.metalBalances?.silver || 0) > 0.01);
 };
 
+// Define OUTSIDE the main component
+const RateCutCard = React.memo(({ item, onDelete }: { item: RateCutRecord, onDelete: (cut: RateCutRecord) => void }) => {
+  const isGold = item.metal_type.includes('gold');
+  const badgeStyle = isGold ? styles.badgeGold : styles.badgeSilver;
+  const badgeTextStyle = isGold ? styles.badgeTextGold : styles.badgeTextSilver;
+  const metalLabel = item.metal_type === 'gold999' ? 'Gold 999' : 
+                     item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
+
+  const cutDate = new Date(item.cut_date);
+  const formattedDate = `${cutDate.getDate().toString().padStart(2, '0')}/${(cutDate.getMonth() + 1).toString().padStart(2, '0')}/${cutDate.getFullYear()}`;
+
+  const directionBadgeStyle = item.direction === 'sell' ? styles.badgeSell : styles.badgePurchase;
+  const directionBadgeTextStyle = item.direction === 'sell' ? styles.badgeTextSell : styles.badgeTextPurchase;
+  const directionLabel = item.direction === 'sell' ? 'Sell' : 'Buy';
+
+  return (
+    <View style={styles.historyCard}>
+      {/* Row 1: Date, Badges, Delete Icon */}
+      <View style={styles.cardTop}>
+        <Text style={styles.hDate}>{formattedDate}</Text>
+        <View style={styles.cardTopRight}>
+          <View style={[styles.hBadge, badgeStyle]}>
+            <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
+          </View>
+          <View style={[styles.hBadge, directionBadgeStyle]}>
+            <Text style={[styles.hBadgeText, directionBadgeTextStyle]}>{directionLabel}</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.deleteIcon}
+            onPress={() => onDelete(item)}
+          >
+            <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Row 2: Customer Name */}
+      <Text style={styles.hCustomerName}>{item.customer_name || 'Unknown'}</Text>
+      
+      {/* Row 3: Weight and Price */}
+      <View style={styles.cardRow3}>
+        <Text style={styles.cardDetailText}>
+          Weight: <Text style={styles.cardDetailValue}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
+        </Text>
+        <Text style={styles.cardDetailText}> - </Text>
+        <Text style={styles.cardDetailText}>
+          Price: <Text style={styles.cardDetailValue}>₹{formatIndianNumber(item.rate)}</Text>
+        </Text>
+      </View>
+      
+      {/* Row 4: Total */}
+      <View style={styles.cardRow3}>
+        <Text style={styles.cardDetailText}>
+          Total: <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(parseFloat(formatMoney((item.total_amount.toFixed(0))))))}</Text>
+        </Text>
+      </View>
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Since history items are effectively immutable after creation, 
+  // checking the ID is enough to know if it needs a re-render
+  return prevProps.item.id === nextProps.item.id;
+});
+
 export const RateCutScreen: React.FC = () => {
   const { navigateToSettings } = useAppContext();
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -206,10 +270,10 @@ export const RateCutScreen: React.FC = () => {
     setLoading(false);
   };
 
-  const handleDelete = async (cut: RateCutRecord) => {
+  const handleDelete = useCallback((cut: RateCutRecord) => {
     setDeleteTarget(cut);
     setShowDeleteConfirmAlert(true);
-  };
+  }, []);
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
@@ -229,65 +293,9 @@ export const RateCutScreen: React.FC = () => {
     setDeleteTarget(null);
   };
 
-  const renderHistoryItem = ({ item }: { item: RateCutRecord }) => {
-    const isGold = item.metal_type.includes('gold');
-    const badgeStyle = isGold ? styles.badgeGold : styles.badgeSilver;
-    const badgeTextStyle = isGold ? styles.badgeTextGold : styles.badgeTextSilver;
-    const metalLabel = item.metal_type === 'gold999' ? 'Gold 999' : 
-                       item.metal_type === 'gold995' ? 'Gold 995' : 'Silver';
-
-    const cutDate = new Date(item.cut_date);
-    const formattedDate = `${cutDate.getDate().toString().padStart(2, '0')}/${(cutDate.getMonth() + 1).toString().padStart(2, '0')}/${cutDate.getFullYear()}`;
-
-    // Direction badge styles
-    const directionBadgeStyle = item.direction === 'sell' ? styles.badgeSell : styles.badgePurchase;
-    const directionBadgeTextStyle = item.direction === 'sell' ? styles.badgeTextSell : styles.badgeTextPurchase;
-    const directionLabel = item.direction === 'sell' ? 'Sell' : 'Buy';
-
-    return (
-    <View style={styles.historyCard}>
-      {/* Row 1: Date, Badges, Delete Icon */}
-      <View style={styles.cardTop}>
-        <Text style={styles.hDate}>{formattedDate}</Text>
-        <View style={styles.cardTopRight}>
-          <View style={[styles.hBadge, badgeStyle]}>
-            <Text style={[styles.hBadgeText, badgeTextStyle]}>{metalLabel}</Text>
-          </View>
-          <View style={[styles.hBadge, directionBadgeStyle]}>
-            <Text style={[styles.hBadgeText, directionBadgeTextStyle]}>{directionLabel}</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.deleteIcon}
-            onPress={() => handleDelete(item)}
-          >
-            <MaterialCommunityIcons name="delete" size={18} color="#BA1A1A" />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
-      {/* Row 2: Customer Name */}
-      <Text style={styles.hCustomerName}>{item.customer_name || 'Unknown'}</Text>
-      
-      {/* Row 3: Weight and Price */}
-      <View style={styles.cardRow3}>
-        <Text style={styles.cardDetailText}>
-          Weight: <Text style={styles.cardDetailValue}>{Math.abs(item.weight_cut).toFixed(3)}g</Text>
-        </Text>
-        <Text style={styles.cardDetailText}> - </Text>
-        <Text style={styles.cardDetailText}>
-          Price: <Text style={styles.cardDetailValue}>₹{formatIndianNumber(item.rate)}</Text>
-        </Text>
-      </View>
-      
-      {/* Row 4: Total */}
-      <View style={styles.cardRow3}>
-        <Text style={styles.cardDetailText}>
-          Total: <Text style={styles.hTotal}>₹{formatIndianNumber(Math.abs(parseFloat(formatMoney((item.total_amount.toFixed(0))))))}</Text>
-        </Text>
-      </View>
-    </View>
-  );
-  };
+  const renderHistoryItem = useCallback(({ item }: { item: RateCutRecord }) => {
+    return <RateCutCard item={item} onDelete={handleDelete} />;
+  }, [handleDelete]);
 
   const renderHeader = () => (
     <View style={styles.formContainer}>
@@ -480,6 +488,14 @@ export const RateCutScreen: React.FC = () => {
         style={styles.content}
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        
+        // ── PERFORMANCE PROPS ──
+        initialNumToRender={15} 
+        maxToRenderPerBatch={15} 
+        windowSize={11} 
+        removeClippedSubviews={false} 
+        updateCellsBatchingPeriod={10} 
+
         ListHeaderComponent={
           <>
             {renderHeader()}

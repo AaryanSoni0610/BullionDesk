@@ -1122,6 +1122,7 @@ export class TransactionService {
     try {
       // Delete ledger entries permanently
       await db.runAsync('DELETE FROM ledger_entries WHERE transactionId = ?', [transactionId]);
+      await db.runAsync('DELETE FROM transaction_entries WHERE transaction_id = ?', [transactionId]);
 
       // Delete the transaction permanently (cascade will delete entries)
       await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);
@@ -1133,14 +1134,29 @@ export class TransactionService {
     }
   }
 
+  // Wrapper to automatically call cleanup every 6 hours in background process
+  static startCleanupBackgroundProcess(): void {
+    // Run immediately on start
+    this.cleanupOldDeletedTransactions();
+    
+    // Run every 6 hours
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    setInterval(() => {
+      this.cleanupOldDeletedTransactions();
+    }, SIX_HOURS);
+  }
+
   // Automatically delete transactions that have been in recycle bin for 15+ days
   static async cleanupOldDeletedTransactions(): Promise<number> {
     
     try {
       // Calculate date 15 days ago
       const cutoffDateObj = new Date();
-      cutoffDateObj.setDate(cutoffDateObj.getDate() - 16);
-      const cutoffDate = cutoffDateObj.toISOString().split('T')[0];
+      cutoffDateObj.setDate(cutoffDateObj.getDate() - 15);
+      const year = cutoffDateObj.getFullYear();
+      const month = String(cutoffDateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(cutoffDateObj.getDate()).padStart(2, '0');
+      const cutoffDate = `${year}-${month}-${day}`;
 
       // Find transactions where more than 15 full days have passed since soft-delete
       const oldTransactions = await DatabaseService.getAllAsyncBatch<{ id: string }>(

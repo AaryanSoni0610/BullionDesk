@@ -580,7 +580,7 @@ export const HistoryScreen: React.FC = () => {
 
   const formatDate = (date: Date) => formatDateLabel(date);
 
-  const handleDeleteTransaction = async (transaction: Transaction) => {
+  const handleDeleteTransaction = useCallback(async (transaction: Transaction) => {
     setAlertTitle('Delete Transaction');
     setAlertMessage(`Are you sure you want to delete this transaction?\n\nCustomer: ${transaction.customerName}\nDate: ${formatFullDate(transaction.date)}\n\nThis action cannot be undone and will reverse all inventory changes.`);
     setAlertButtons([
@@ -613,7 +613,7 @@ export const HistoryScreen: React.FC = () => {
       },
     ]);
     setAlertVisible(true);
-  };
+  }, []);
 
   // Request Bluetooth permissions for Android
   const requestBluetoothPermissions = async (): Promise<boolean> => {
@@ -744,7 +744,7 @@ export const HistoryScreen: React.FC = () => {
   };
 
   // Handle the share/print action choice
-  const handleShareOrPrintTransaction = (transaction: Transaction) => {
+  const handleShareOrPrintTransaction = useCallback((transaction: Transaction) => {
     setAlertTitle('Share or Print');
     setAlertMessage('Would you like to share this transaction as an image or print it to your thermal printer?');
     setAlertButtons([
@@ -762,7 +762,7 @@ export const HistoryScreen: React.FC = () => {
       },
     ]);
     setAlertVisible(true);
-  };
+  }, []);
 
   // Original share functionality
   const performShare = async (transaction: Transaction) => {
@@ -1605,18 +1605,14 @@ export const HistoryScreen: React.FC = () => {
       return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
   }, [navigation]));
 
-  const handleCardDelete = useCallback((t: Transaction) => handleDeleteTransaction(t), []);
-  const handleCardShare = useCallback((t: Transaction) => handleShareTransaction(t), []);
-  const handleCardEdit = useCallback((id: string) => loadTransactionForEdit(id), [loadTransactionForEdit]);
-
   const renderItem = useCallback(({ item }: { item: Transaction }) => (
     <TransactionCard
       transaction={item}
-      onDelete={handleCardDelete}
-      onShare={handleCardShare}
-      onEdit={handleCardEdit}
+      onDelete={handleDeleteTransaction}
+      onShare={handleShareOrPrintTransaction}
+      onEdit={loadTransactionForEdit}
     />
-  ), [handleCardDelete, handleCardShare, handleCardEdit]);
+  ), [handleDeleteTransaction, handleShareOrPrintTransaction, loadTransactionForEdit]);
 
   // Empty State Component
   const EmptyState = () => (
@@ -1771,7 +1767,9 @@ export const HistoryScreen: React.FC = () => {
         onEndReachedThreshold={0.2}
         maxToRenderPerBatch={15}
         initialNumToRender={15}
-        windowSize={15}
+        windowSize={10}
+        removeClippedSubviews={false}
+        updateCellsBatchingPeriod={10}
         ListFooterComponent={
           isLoadingMore ? (
             <View style={{ paddingVertical: 20, alignItems: 'center' }}>

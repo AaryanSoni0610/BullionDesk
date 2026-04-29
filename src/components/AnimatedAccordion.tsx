@@ -30,11 +30,7 @@ export const AnimatedAccordion: React.FC<AnimatedAccordionProps> = ({
   children,
   expandedHeight = DEFAULT_EXPANDED_HEIGHT,
 }) => {
-  // Create the shared value exactly once (on mount). If we called
-  // useSharedValue(0) directly it would run on every render, which Reanimated
-  // strict mode flags as "writing to a shared value during render".
-  const animatedHeightRef = useRef(useSharedValue(0));
-  const animatedHeight = animatedHeightRef.current;
+  const animatedHeight = useSharedValue(isExpanded ? expandedHeight : 0);
 
   // Children stay mounted once ever expanded. overflow:hidden hides them
   // at height 0 — no unmount needed, no measurement resets.

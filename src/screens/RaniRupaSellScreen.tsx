@@ -31,6 +31,47 @@ interface InventoryItem {
   stock_id: string; // Reference to stock item
 }
 
+// Define OUTSIDE the main component
+const InventoryRow = React.memo(({ 
+  item, 
+  isSelected, 
+  selectedType, 
+  onToggle, 
+  onEdit 
+}: any) => {
+  return (
+    <TouchableOpacity 
+      style={[styles.itemCard, isSelected && styles.itemCardSelected]} 
+      onPress={() => onToggle(item.id)}
+      activeOpacity={0.9}
+    >
+      <View style={[styles.itemCheckbox, isSelected && styles.itemCheckboxSelected]}>
+        {isSelected && <MaterialCommunityIcons name="check" size={16} color="white" />}
+      </View>
+      <View style={styles.itemContent}>
+        <Text style={styles.itemName}>{item.name}</Text>
+        <Text style={styles.itemMeta}>
+          Weight: <Text style={styles.itemMetaValue}>{selectedType === 'rani' ? item.weight.toFixed(3) : item.weight.toFixed(1)}g</Text>
+          {item.touch ? <Text> • Touch: <Text style={styles.itemMetaValue}>{item.touch.toFixed(2)}%</Text></Text> : ''}
+          {' '} • Pure: <Text style={styles.itemMetaValue}>{selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g</Text>
+        </Text>
+      </View>
+      <TouchableOpacity style={styles.editBtn} onPress={() => onEdit(item)}>
+        <MaterialCommunityIcons name="pencil" size={20} color="#005AC1" />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render if selection status or item data specifically changes
+  return (
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.selectedType === nextProps.selectedType &&
+    prevProps.item.weight === nextProps.item.weight &&
+    prevProps.item.touch === nextProps.item.touch &&
+    prevProps.item.pureWeight === nextProps.item.pureWeight
+  );
+});
+
 export const RaniRupaSellScreen: React.FC = () => {
   const [selectedType, setSelectedType] = useState<'rani' | 'rupu'>('rani');
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -189,22 +230,27 @@ export const RaniRupaSellScreen: React.FC = () => {
     }, [navigateToSettings])
   );
 
-  const toggleItemSelection = (itemId: string) => {
-    const newSelected = new Set(selectedItems);
-    if (newSelected.has(itemId)) {
-      newSelected.delete(itemId);
-    } else {
-      newSelected.add(itemId);
-    }
-    setSelectedItems(newSelected);
-    
-    // Update selectAll state based on whether all items are selected
-    if (inventoryItems.length > 0 && newSelected.size === inventoryItems.length) {
+  // 1. Use functional state updates for the toggle
+  const toggleItemSelection = useCallback((itemId: string) => {
+    setSelectedItems(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(itemId)) {
+        newSelected.delete(itemId);
+      } else {
+        newSelected.add(itemId);
+      }
+      return newSelected;
+    });
+  }, []);
+
+  // 2. Decouple the "Select All" UI sync into a useEffect so it doesn't break the callback above
+  useEffect(() => {
+    if (inventoryItems.length > 0 && selectedItems.size === inventoryItems.length) {
       setSelectAll(true);
     } else {
       setSelectAll(false);
     }
-  };
+  }, [selectedItems, inventoryItems]);
 
   const toggleSelectAll = () => {
     const newSelectAll = !selectAll;
@@ -431,10 +477,24 @@ export const RaniRupaSellScreen: React.FC = () => {
     }
   };
 
-  const handleEditItem = (item: InventoryItem) => {
+  // 3. Stabilize the edit handler
+  const handleEditItem = useCallback((item: InventoryItem) => {
     setEditingItem(item);
     setShowEditDialog(true);
-  };
+  }, []);
+
+  // 4. Memoize the renderItem function itself
+  const renderItem = useCallback(({ item }: { item: InventoryItem }) => {
+    return (
+      <InventoryRow
+        item={item}
+        isSelected={selectedItems.has(item.id)}
+        selectedType={selectedType}
+        onToggle={toggleItemSelection}
+        onEdit={handleEditItem}
+      />
+    );
+  }, [selectedItems, selectedType, toggleItemSelection, handleEditItem]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -499,33 +559,17 @@ export const RaniRupaSellScreen: React.FC = () => {
       {/* List */}
       <FlatList
         data={inventoryItems}
-        renderItem={({ item }) => {
-            const isSelected = selectedItems.has(item.id);
-            return (
-                <TouchableOpacity 
-                    style={[styles.itemCard, isSelected && styles.itemCardSelected]} 
-                    onPress={() => toggleItemSelection(item.id)}
-                    activeOpacity={0.9}
-                >
-                    <View style={[styles.itemCheckbox, isSelected && styles.itemCheckboxSelected]}>
-                        {isSelected && <MaterialCommunityIcons name="check" size={16} color="white" />}
-                    </View>
-                    <View style={styles.itemContent}>
-                        <Text style={styles.itemName}>{item.name}</Text>
-                        <Text style={styles.itemMeta}>
-                            Weight: <Text style={styles.itemMetaValue}>{selectedType === 'rani' ? item.weight.toFixed(3) : item.weight.toFixed(1)}g</Text>
-                            {item.touch ? <Text> • Touch: <Text style={styles.itemMetaValue}>{item.touch.toFixed(2)}%</Text></Text> : ''}
-                            {' '} • Pure: <Text style={styles.itemMetaValue}>{selectedType === 'rani' ? item.pureWeight.toFixed(3) : item.pureWeight.toFixed(1)}g</Text>
-                        </Text>
-                    </View>
-                    <TouchableOpacity style={styles.editBtn} onPress={() => handleEditItem(item)}>
-                      <MaterialCommunityIcons name="pencil" size={20} color={theme.colors.primary} />
-                    </TouchableOpacity>
-                </TouchableOpacity>
-            );
-        }}
+        renderItem={renderItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        
+        // Performance Props
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+        windowSize={11}
+        removeClippedSubviews={false}
+        updateCellsBatchingPeriod={10}
+
         ListEmptyComponent={
             isLoading ? (
               <Text style={styles.loadingText}>Loading items...</Text>

@@ -936,9 +936,9 @@ export const LedgerScreen: React.FC = () => {
                        const weightNum = entry.entry.weight || 0;
                        const pureGoldPrecise = (weightNum * touchNum) / 100;
                        weight = formatPureGoldPrecise(pureGoldPrecise);
-                       return `${entry.customerName} - ${weightNum.toFixed(3)}g - ${touchNum.toFixed(2)}% - ${weight.toFixed(3)}g`;
+                       return `${weightNum.toFixed(3)}g - ${touchNum.toFixed(2)}% - ${weight.toFixed(3)}g - ${entry.customerName}`;
                     }
-                    return `${entry.customerName} - ${formatWeight(weight, false)} ${entry.entry.itemType}`;
+                    return `${formatWeight(weight, false)} ${entry.entry.itemType} - ${entry.customerName}`;
                   };
                   rows.push(`<tr><td>${buildCell(inList[i])}</td><td>${buildCell(outList[i])}</td></tr>`);
                 }
@@ -986,9 +986,9 @@ export const LedgerScreen: React.FC = () => {
                     if (entry.entry.itemType === 'rupu') {
                        const touchNum = entry.entry.touch || 0;
                        const pureSilv = customFormatPureSilver(weight, touchNum);
-                       return `${entry.customerName} - ${weight.toFixed(1)}g - ${touchNum.toFixed(2)}% - ${pureSilv.toFixed(1)}g`;
+                       return `${weight.toFixed(1)}g - ${touchNum.toFixed(2)}% - ${pureSilv.toFixed(1)}g - ${entry.customerName}`;
                     }
-                    return `${entry.customerName} - ${formatWeight(weight, true)}`;
+                    return `${formatWeight(weight, true)} - ${entry.customerName}`;
                   };
                   rows.push(`<tr><td>${buildCell(inList[i])}</td><td>${buildCell(outList[i])}</td></tr>`);
                 }
@@ -1027,7 +1027,7 @@ export const LedgerScreen: React.FC = () => {
                 for(let i=0; i<maxLen; i++) {
                   const buildCell = (entry: any) => {
                     if (!entry) return '-';
-                    return `${entry.customerName} - ${formatCurrency(entry.entry.amount||0)}`;
+                    return `${formatCurrency(entry.entry.amount||0)} - ${entry.customerName}`;
                   };
                   rows.push(`<tr><td>${buildCell(inList[i])}</td><td>${buildCell(outList[i])}</td></tr>`);
                 }

@@ -5,8 +5,6 @@ export class CustomerService {
   // Get all customers
   static async getAllCustomers(): Promise<Customer[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       // Optimized query with JOIN
       const rows = await DatabaseService.getAllAsyncBatch<{
         id: string;
@@ -53,8 +51,6 @@ export class CustomerService {
   // Search customers by name (database-level filtering)
   static async searchCustomersByName(searchQuery: string): Promise<Customer[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       // Use LIKE for case-insensitive search
       const searchPattern = `%${searchQuery}%`;
       

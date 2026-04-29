@@ -51,6 +51,23 @@ const getItemDisplayName = (entry: any): string => {
 };
 
 
+const isRateCutLocked = (transaction: Transaction): boolean => {
+  const isMetalOnly = transaction.entries.every(entry => entry.metalOnly === true);
+  if (isMetalOnly) {
+    const txDate = new Date(transaction.date).getTime();
+    const lockDates = transaction.customerLockDates;
+    if (lockDates) {
+      return transaction.entries.some(entry => {
+        if (entry.itemType === 'gold999' && txDate <= (lockDates.gold999 || 0)) return true;
+        if (entry.itemType === 'gold995' && txDate <= (lockDates.gold995 || 0)) return true;
+        if (entry.itemType === 'silver' && txDate <= (lockDates.silver || 0)) return true;
+        return false;
+      });
+    }
+  }
+  return false;
+};
+
 const getAmountColor = (transaction: Transaction) => {
   const isMoneyOnly = transaction.entries.length === 1 && transaction.entries[0].type === 'money';
   if (isMoneyOnly) {
@@ -259,10 +276,11 @@ const TransactionCard = React.memo<TransactionCardProps>(({ transaction, hideAct
         <View style={styles.cardTopActions}>
           <View style={styles.actionPill}>
             <TouchableOpacity
-              style={[styles.iconBtn, styles.btnDelete]}
-              onPress={() => onDelete(transaction)}
+              style={[styles.iconBtn, styles.btnDelete, isRateCutLocked(transaction) && styles.disabledButton]}
+              onPress={() => !isRateCutLocked(transaction) && onDelete(transaction)}
+              disabled={isRateCutLocked(transaction)}
             >
-              <Icon name="delete" size={20} color={theme.colors.error} />
+              <Icon name="delete" size={20} color={isRateCutLocked(transaction) ? theme.colors.onSurfaceDisabled : theme.colors.error} />
             </TouchableOpacity>
             <TouchableOpacity style={[styles.iconBtn, styles.btnShare]} onPress={() => onShare(transaction)}>
               <Icon name="share-variant" size={20} color={theme.colors.success} />

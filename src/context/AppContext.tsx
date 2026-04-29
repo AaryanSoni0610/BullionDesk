@@ -3,6 +3,9 @@ import { Customer, TransactionEntry, ItemType, PaymentInput } from '../types';
 import { CustomerService } from '../services/customer.service';
 import { TransactionService } from '../services/transaction.service';
 import { TradeService } from '../services/trade.service';
+import { LedgerService } from '../services/ledger.service';
+
+export type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin' | 'rateCut';
 
 export interface LastEntryState {
   transactionType: 'purchase' | 'sell' | 'money';
@@ -18,6 +21,10 @@ interface AlertButton {
 }
 
 interface AppContextType {
+  // App State
+  appState: AppState;
+  setAppState: (state: AppState) => void;
+
   // Customer and Entry Management
   currentCustomer: Customer | null;
   setCurrentCustomer: (customer: Customer | null) => void;
@@ -34,6 +41,10 @@ interface AppContextType {
   transactionCreatedAt: string | null;
   transactionLastUpdatedAt: string | null;
   
+  // Payments (pre-loaded for edit flow)
+  currentPayments: PaymentInput[];
+  setCurrentPayments: (payments: PaymentInput[]) => void;
+
   // Trade Conversion State
   tradeIdToDeleteOnSave: string | null;
   setTradeIdToDeleteOnSave: (id: string | null) => void;
@@ -100,31 +111,15 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 interface AppProviderProps {
   children: ReactNode;
-  onNavigateToEntry: () => void;
-  onNavigateToSettlement: () => void;
-  onNavigateToSettings: () => void;
-  onNavigateToTabs: () => void;
-  onNavigateToCustomers: () => void;
-  onNavigateToTrade: () => void;
-  onNavigateToRaniRupaSell: () => void;
-  onNavigateToRecycleBin: () => void;
-  onNavigateToRateCut: () => void;
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ 
-  children, 
-  onNavigateToEntry,
-  onNavigateToSettlement,
-  onNavigateToSettings,
-  onNavigateToTabs,
-  onNavigateToCustomers,
-  onNavigateToTrade,
-  onNavigateToRaniRupaSell,
-  onNavigateToRecycleBin,
-  onNavigateToRateCut,
+  children 
 }) => {
+  const [appState, setAppState] = useState<AppState>('tabs');
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [currentEntries, setCurrentEntries] = useState<TransactionEntry[]>([]);
+  const [currentPayments, setCurrentPayments] = useState<PaymentInput[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [pendingMoneyAmount, setPendingMoneyAmount] = useState<number>(0);
@@ -151,20 +146,22 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   const navigateToEntry = (customer: Customer) => {
     setCurrentCustomer(customer);
     setCurrentEntries([]);
-    onNavigateToEntry();
+    setCurrentPayments([]);
+    setAppState('entry');
   };
 
   const navigateToSettlement = () => {
-    onNavigateToSettlement();
+    setAppState('settlement');
   };
 
   const navigateToSettings = () => {
-    onNavigateToSettings();
+    setAppState('settings');
   };
 
   const navigateToTabs = () => {
     setCurrentCustomer(null);
     setCurrentEntries([]);
+    setCurrentPayments([]);
     setEditingEntryId(null);
     setEditingTransactionId(null);
     setPendingMoneyAmount(0);
@@ -173,27 +170,27 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     setTransactionLastUpdatedAt(null);
     setLastEntryState(null);
     setTradeIdToDeleteOnSave(null);
-    onNavigateToTabs();
+    setAppState('tabs');
   };
 
   const navigateToCustomers = () => {
-    onNavigateToCustomers();
+    setAppState('customers');
   };
 
   const navigateToTrade = () => {
-    onNavigateToTrade();
+    setAppState('trade');
   };
 
   const navigateToRaniRupaSell = () => {
-    onNavigateToRaniRupaSell();
+    setAppState('raniRupaSell');
   };
 
   const navigateToRecycleBin = () => {
-    onNavigateToRecycleBin();
+    setAppState('recycleBin');
   };
 
   const navigateToRateCut = () => {
-    onNavigateToRateCut();
+    setAppState('rateCut');
   };
 
   const handleSelectCustomer = (customer: Customer) => {
@@ -268,19 +265,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       setCurrentEntries(prev => [...prev, entry]);
     }
     // Navigate to settlement summary after adding/updating entry
-    onNavigateToSettlement();
+    setAppState('settlement');
   };
 
   const handleEditEntry = (entryId: string) => {
     setEditingEntryId(entryId);
-    onNavigateToEntry();
+    setAppState('entry');
   };
 
   const handleDeleteEntry = (entryId: string) => {
     setCurrentEntries(prev => prev.filter(entry => entry.id !== entryId));
     // If no entries left, go back to entry screen
     if (currentEntries.length <= 1) {
-      onNavigateToEntry();
+      setAppState('entry');
     }
   };
 
@@ -322,7 +319,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
         // Navigate back to tabs (no snackbar message)
         setLastEntryState(null);
-        onNavigateToTabs();
+        navigateToTabs();
       } else {
         console.error('❌ Transaction save failed:', result.error);
         // Show error message
@@ -348,8 +345,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const loadTransactionForEdit = async (transactionId: string) => {
     try {
-      // Get the specific transaction by ID
-      const transaction = await TransactionService.getTransactionById(transactionId);
+      // Fetch transaction and its ledger payments in parallel
+      const [transaction, ledgerEntries] = await Promise.all([
+        TransactionService.getTransactionById(transactionId),
+        LedgerService.getLedgerEntriesByTransactionId(transactionId),
+      ]);
 
       if (!transaction) {
         setSnackbarMessage('Transaction not found');
@@ -357,47 +357,57 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         return;
       }
 
-      // Get the customer
-      const customer = await CustomerService.getCustomerById(transaction.customerId);
-      if (!customer) {
-        setSnackbarMessage('Customer not found');
-        setSnackbarVisible(true);
-        return;
-      }
+      // Pre-process payments so SettlementSummaryScreen has them ready on mount
+      const loadedPayments = ledgerEntries
+        .filter(l => l.itemType === 'money')
+        .map(l => ({
+          id: l.id,
+          amount: l.amount || 0,
+          date: l.date,
+          type: l.type as 'receive' | 'give',
+        }))
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      // Set the current customer, entries, transaction ID
-      setCurrentCustomer(customer);
+      // All setState calls + navigation in one batch → single render
+      setCurrentCustomer({
+        id: transaction.customerId,
+        name: transaction.customerName,
+        balance: 0,
+      });
       setCurrentEntries(transaction.entries);
+      setCurrentPayments(loadedPayments);
       setEditingTransactionId(transactionId);
       setTransactionCreatedAt(transaction.createdAt || transaction.date);
       setTransactionLastUpdatedAt(transaction.lastUpdatedAt || transaction.date);
 
-      // For money-only transactions, set the pending money type based on amountPaid
       if (transaction.entries.length === 0) {
         if (transaction.amountPaid > 0) {
-          setPendingMoneyType('receive'); // Money received from customer
+          setPendingMoneyType('receive');
           setPendingMoneyAmount(transaction.amountPaid);
         } else if (transaction.amountPaid < 0) {
-          setPendingMoneyType('give'); // Money given to customer
+          setPendingMoneyType('give');
           setPendingMoneyAmount(Math.abs(transaction.amountPaid));
         } else {
-          setPendingMoneyType('receive'); // Default to receive
+          setPendingMoneyType('receive');
           setPendingMoneyAmount(0);
         }
       }
 
-      // Navigate to settlement screen to show transaction details
-      onNavigateToSettlement();
+      setAppState('settlement');
     } catch (error) {
       console.error('Error loading transaction for edit:', error);
       setSnackbarMessage('Error loading transaction');
       setSnackbarVisible(true);
     }
   };  const contextValue: AppContextType = {
+    appState,
+    setAppState,
     currentCustomer,
     setCurrentCustomer,
     currentEntries,
     setCurrentEntries,
+    currentPayments,
+    setCurrentPayments,
     editingEntryId,
     setEditingEntryId,
     editingTransactionId,

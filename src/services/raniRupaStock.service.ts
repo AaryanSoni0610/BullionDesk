@@ -5,8 +5,6 @@ export class RaniRupaStockService {
   // Get all available (unsold) stock items
   static async getAllStock(): Promise<RaniRupaStock[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       const stock = await DatabaseService.getAllAsyncBatch<{
         stock_id: string;
         itemtype: string;
@@ -194,8 +192,6 @@ export class RaniRupaStockService {
   // Get stock by itemtype
   static async getStockByType(itemtype: 'rani' | 'rupu'): Promise<RaniRupaStock[]> {
     try {
-      const db = DatabaseService.getDatabase();
-      
       const stock = await DatabaseService.getAllAsyncBatch<{
         stock_id: string;
         itemtype: string;

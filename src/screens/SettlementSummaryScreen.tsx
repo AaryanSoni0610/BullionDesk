@@ -14,7 +14,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { formatWeight, formatIndianNumber } from '../utils/formatting';
 import { Customer, TransactionEntry, PaymentInput } from '../types';
-import { LedgerService } from '../services/ledger.service';
 import CustomAlert from '../components/CustomAlert';
 import { useAppContext } from '../context/AppContext';
 
@@ -44,34 +43,35 @@ export const SettlementSummaryScreen: React.FC<SettlementSummaryScreenProps> = (
   transactionCreatedAt,
   initialNote = '',
 }) => {
-  const { pendingMoneyAmount, setPendingMoneyAmount, pendingMoneyType } = useAppContext();
-  
-  const [payments, setPayments] = useState<PaymentInput[]>([]);
-  
-  // Load payments
+  const { pendingMoneyAmount, setPendingMoneyAmount, pendingMoneyType, currentPayments, setCurrentPayments } = useAppContext();
+
+  const [payments, setPayments] = useState<PaymentInput[]>(() => {
+    // Restore payments from context (covers both edit flow and return-from-entry flow)
+    if (currentPayments.length > 0) {
+      return currentPayments;
+    }
+    // For new transaction flow: use pendingMoneyAmount if set
+    if (pendingMoneyAmount !== 0) {
+      return [{
+        amount: Math.abs(pendingMoneyAmount),
+        date: new Date().toISOString(),
+        type: pendingMoneyType,
+      }];
+    }
+    return [];
+  });
+
+  // On mount: clear pendingMoneyAmount if it was consumed above
   React.useEffect(() => {
-    const loadPayments = async () => {
-      if (editingTransactionId) {
-        const ledgerEntries = await LedgerService.getLedgerEntriesByTransactionId(editingTransactionId);
-        const moneyEntries = ledgerEntries.filter(l => l.itemType === 'money');
-        const loadedPayments = moneyEntries.map(l => ({
-          id: l.id,
-          amount: l.amount || 0,
-          date: l.date,
-          type: l.type as 'receive' | 'give'
-        })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        setPayments(loadedPayments);
-      } else if (pendingMoneyAmount !== 0) {
-         setPayments([{
-           amount: Math.abs(pendingMoneyAmount), 
-           date: new Date().toISOString(),
-           type: pendingMoneyType
-         }]);
-         setPendingMoneyAmount(0);
-      }
-    };
-    loadPayments();
-  }, [editingTransactionId]);
+    if (pendingMoneyAmount !== 0) {
+      setPendingMoneyAmount(0);
+    }
+  }, []);
+
+  // Keep context payments in sync so they survive unmount (e.g. when navigating to entry screen)
+  React.useEffect(() => {
+    setCurrentPayments(payments);
+  }, [payments]);
   
   const [paymentError, setPaymentError] = useState('');
   const [note, setNote] = useState(initialNote);

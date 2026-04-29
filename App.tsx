@@ -42,9 +42,6 @@ import { DatabaseService } from './src/services/database.sqlite';
 import { TransactionService } from './src/services/transaction.service';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-type AppState = 'tabs' | 'entry' | 'settlement' | 'settings' | 'customers' | 'trade' | 'raniRupaSell' | 'recycleBin' | 'rateCut';
-
-// 1. Define the Custom Tab Bar Component
 const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: any) => {
   // Shared Values
   const translateX = useSharedValue(0);
@@ -154,7 +151,7 @@ const CustomTabBar = ({ state, descriptors, navigation, fabIcon, onFabPress }: a
 // Main Tab Navigator Component with Stack for smooth transitions
 const MainTabNavigator = () => {
   const Tab = createBottomTabNavigator();
-  const { setCustomerModalVisible, setTradeDialogVisible, setLedgerDialogVisible, setIsCustomerSelectionForTrade } = useAppContext();
+  const { setCustomerModalVisible, setLedgerDialogVisible, setIsCustomerSelectionForTrade } = useAppContext();
   const [activeRoute, setActiveRoute] = useState('Home');
 
   const getFabIcon = () => {
@@ -276,26 +273,12 @@ const styles = StyleSheet.create({
 });
 
 // Main App Component with Context
-interface AppContentProps {
-  appState: AppState;
-  onNavigateToEntry: () => void;
-  onNavigateToSettlement: () => void;
-  onNavigateToSettings: () => void;
-  onNavigateToTabs: () => void;
-  onNavigateToCustomers: () => void;
-  onNavigateToTrade: () => void;
-  onNavigateToRaniRupaSell: () => void;
-  onNavigateToRecycleBin: () => void;
-  onNavigateToRateCut: () => void;
-}
-
-const AppContent: React.FC<AppContentProps> = ({
-  appState,
-  onNavigateToEntry,
-  onNavigateToSettlement,
-  onNavigateToTabs,
-}) => {
+const AppContent: React.FC = () => {
   const {
+    appState,
+    setAppState,
+    navigateToTabs,
+    navigateToSettlement,
     currentCustomer,
     currentEntries,
     editingEntryId,
@@ -324,7 +307,7 @@ const AppContent: React.FC<AppContentProps> = ({
   } = useAppContext();
 
   const handleAddMoreEntry = () => {
-    onNavigateToEntry();
+    setAppState('entry');
   };
 
   return (
@@ -340,8 +323,8 @@ const AppContent: React.FC<AppContentProps> = ({
               customer={currentCustomer}
               editingEntry={editingEntryId ? currentEntries.find(e => e.id === editingEntryId) : undefined}
               existingEntries={currentEntries}
-              onBack={onNavigateToTabs}
-              onNavigateToSummary={onNavigateToSettlement}
+              onBack={navigateToTabs}
+              onNavigateToSummary={navigateToSettlement}
               onAddEntry={handleAddEntry}
               isFirstEntryForMoneyOnlyTransaction={editingTransactionId !== null && currentEntries.length === 0}
               originalMoneyOnlyType={pendingMoneyType}
@@ -352,7 +335,7 @@ const AppContent: React.FC<AppContentProps> = ({
             <SettlementSummaryScreen
               customer={currentCustomer}
               entries={currentEntries}
-              onBack={onNavigateToTabs}
+              onBack={navigateToTabs}
               onAddMoreEntry={handleAddMoreEntry}
               onDeleteEntry={handleDeleteEntry}
               onEditEntry={handleEditEntry}
@@ -439,7 +422,6 @@ export default function App() {
     Outfit_600SemiBold,
     Outfit_700Bold
    });
-  const [appState, setAppState] = useState<AppState>('tabs');
 
   React.useEffect(() => {
     const initializeServices = async () => {
@@ -471,44 +453,13 @@ export default function App() {
     initializeServices();
   }, []);
 
-  const handleNavigateToEntry = () => setAppState('entry');
-  const handleNavigateToSettlement = () => setAppState('settlement');
-  const handleNavigateToSettings = () => setAppState('settings');
-  const handleNavigateToTabs = () => setAppState('tabs');
-  const handleNavigateToCustomers = () => setAppState('customers');
-  const handleNavigateToTrade = () => setAppState('trade');
-  const handleNavigateToRaniRupaSell = () => setAppState('raniRupaSell');
-  const handleNavigateToRecycleBin = () => setAppState('recycleBin');
-  const handleNavigateToRateCut = () => setAppState('rateCut');
-
   if (!fontsLoaded) {
     return null; // or a loading screen
   }
 
   return (
-    <AppProvider
-      onNavigateToEntry={handleNavigateToEntry}
-      onNavigateToSettlement={handleNavigateToSettlement}
-      onNavigateToSettings={handleNavigateToSettings}
-      onNavigateToTabs={handleNavigateToTabs}
-      onNavigateToCustomers={handleNavigateToCustomers}
-      onNavigateToTrade={handleNavigateToTrade}
-      onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
-      onNavigateToRecycleBin={handleNavigateToRecycleBin}
-      onNavigateToRateCut={handleNavigateToRateCut}
-    >
-      <AppContent 
-        appState={appState}
-        onNavigateToEntry={handleNavigateToEntry}
-        onNavigateToSettlement={handleNavigateToSettlement}
-        onNavigateToSettings={handleNavigateToSettings}
-        onNavigateToTabs={handleNavigateToTabs}
-        onNavigateToCustomers={handleNavigateToCustomers}
-        onNavigateToTrade={handleNavigateToTrade}
-        onNavigateToRaniRupaSell={handleNavigateToRaniRupaSell}
-        onNavigateToRecycleBin={handleNavigateToRecycleBin}
-        onNavigateToRateCut={handleNavigateToRateCut}
-      />
+    <AppProvider>
+      <AppContent />
     </AppProvider>
   );
 }
